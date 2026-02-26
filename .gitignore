@@ -1,0 +1,29 @@
+# env
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+
+# node / builds
+**/node_modules/
+**/dist/
+**/.next/
+**/build/
+*.tsbuildinfo
+
+# php / laravel
+backend/madvapers-api/vendor/
+backend/madvapers-api/storage/logs/*.log
+
+# IDE / OS
+.vs/
+backend/.vs/
+.vscode/
+
+# accidental nested repo
+madvapers/
+
+# local temp artifacts
+tmp/
+tmp_loader_ref/
