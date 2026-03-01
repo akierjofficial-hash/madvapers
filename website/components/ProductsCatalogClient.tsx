@@ -53,11 +53,36 @@ export default function ProductsCatalogClient({
     });
   }, [products, query, selectedFlavor, selectedStrength, selectedType]);
 
+  const hasActiveFilters =
+    query.trim().length > 0 ||
+    selectedStrength !== allOption ||
+    selectedFlavor !== allOption ||
+    selectedType !== allOption;
+
+  const resetFilters = () => {
+    setQuery("");
+    setSelectedStrength(allOption);
+    setSelectedFlavor(allOption);
+    setSelectedType(allOption);
+  };
+
   return (
     <div className="page-wrap space-y-8">
       <SectionHeader title={title} subtitleJa={subtitleJa} description={description} />
 
-      <section className="sticker-panel grunge-paper corner-cut p-4" aria-label="Catalog filters">
+      <section className="sticker-panel grunge-paper corner-cut p-3 sm:p-4" aria-label="Catalog filters">
+        <div className="mb-3 flex items-center justify-between gap-3 border-b border-brand-line pb-3">
+          <p className="font-body text-xs font-semibold uppercase tracking-[0.14em] text-brand-muted">Filters</p>
+          <button
+            type="button"
+            onClick={resetFilters}
+            disabled={!hasActiveFilters}
+            className="h-9 border border-brand-line px-3 font-body text-xs font-semibold uppercase tracking-[0.08em] text-brand-muted transition hover:border-brand-yellow hover:text-brand-ink disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            Reset
+          </button>
+        </div>
+
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
           <label className="space-y-1 text-xs uppercase tracking-[0.14em] text-brand-muted">
             Search
@@ -106,11 +131,11 @@ export default function ProductsCatalogClient({
       </section>
 
       <section aria-live="polite" className="space-y-4">
-        <p className="inline-flex border border-brand-line bg-brand-surface px-3 py-1 text-sm uppercase tracking-[0.08em] text-brand-muted">
+        <p className="inline-flex border border-brand-line bg-brand-surface px-3 py-1 text-xs font-semibold uppercase tracking-[0.1em] text-brand-muted sm:text-sm">
           {filteredProducts.length} results
         </p>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
           {filteredProducts.map((product) => (
             <ProductCard key={product.id} product={product} />
           ))}

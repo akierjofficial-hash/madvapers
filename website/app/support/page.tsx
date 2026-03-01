@@ -29,26 +29,26 @@ export default function SupportPage() {
     <div className="page-wrap space-y-8">
       <SectionHeader title="Support" subtitleJa="help center" description="Answers for product details, branch lookup, and customer support." />
 
-      <section className="grid gap-6 lg:grid-cols-[1fr_0.9fr]">
-        <div className="sticker-panel grunge-paper corner-cut p-5">
-          <h2 className="font-heading text-5xl uppercase text-brand-ink">FAQ</h2>
+      <section className="grid gap-4 lg:grid-cols-[1fr_0.9fr] lg:gap-6">
+        <div className="sticker-panel grunge-paper corner-cut p-4 sm:p-5">
+          <h2 className="font-heading text-4xl uppercase text-brand-ink sm:text-5xl">FAQ</h2>
           <div className="mt-4 space-y-3">
             {faqs.map((faq) => (
               <details key={faq.question} className="border border-brand-line bg-brand-surface px-4 py-3">
                 <summary className="cursor-pointer text-base uppercase tracking-[0.06em] text-brand-ink">{faq.question}</summary>
-                <p className="mt-2 text-base text-brand-muted">{faq.answer}</p>
+                <p className="mt-2 text-sm text-brand-muted sm:text-base">{faq.answer}</p>
               </details>
             ))}
           </div>
         </div>
 
-        <aside className="sticker-panel grunge-paper corner-cut p-5">
+        <aside className="sticker-panel grunge-paper corner-cut p-4 sm:p-5">
           <p className="jp-label">direct contact</p>
-          <h2 className="mt-1 font-heading text-6xl uppercase leading-[0.86] text-brand-ink">Need Help Fast?</h2>
-          <p className="mt-3 text-base text-brand-muted">
+          <h2 className="mt-1 font-heading text-5xl uppercase leading-[0.86] text-brand-ink sm:text-6xl">Need Help Fast?</h2>
+          <p className="mt-3 text-sm text-brand-muted sm:text-base">
             Reach our support desk for branch guidance, product references, and ordering concerns.
           </p>
-          <div className="mt-4 space-y-1 border border-brand-line bg-brand-surface p-4 text-base text-brand-muted">
+          <div className="mt-4 space-y-1 border border-brand-line bg-brand-surface p-4 text-sm text-brand-muted sm:text-base">
             <p>
               <strong>Email:</strong> support@mdvprs.example
             </p>
@@ -65,7 +65,7 @@ export default function SupportPage() {
               Browse Products
             </StickerButton>
           </div>
-          <p className="mt-4 text-sm uppercase tracking-[0.1em] text-brand-muted">
+          <p className="mt-4 text-xs uppercase tracking-[0.12em] text-brand-muted sm:text-sm">
             Adult-use information only. Keep out of reach of children and pets.
           </p>
         </aside>

@@ -3,10 +3,10 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 
 export function HomeRedirect() {
-  const { token, isLoadingUser, user, can } = useAuth();
+  const { isAuthenticated, isLoadingUser, user, can } = useAuth();
 
-  if (!token) return <Navigate to="/login" replace />;
   if (isLoadingUser) return <Alert severity="info">Loading…</Alert>;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
 
   const role = user?.role?.code ?? '';
 

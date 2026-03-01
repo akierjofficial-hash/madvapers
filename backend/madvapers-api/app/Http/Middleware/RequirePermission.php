@@ -26,10 +26,12 @@ class RequirePermission
 
         // If user has no role assigned, deny
         if (!$user->role) {
-            return response()->json([
-                'message' => 'Forbidden (no role).',
-                'required' => $permissionCode,
-            ], 403);
+            $payload = ['message' => 'Forbidden.'];
+            if (!app()->environment('production')) {
+                $payload['details'] = 'no role';
+                $payload['required'] = $permissionCode;
+            }
+            return response()->json($payload, 403);
         }
 
         if (!$user->is_active) {
@@ -55,12 +57,14 @@ class RequirePermission
         }
 
         if (!$authorized) {
-            return response()->json([
-                'message' => 'Forbidden (missing permission).',
-                'required' => $permissionCode,
-                'accepted' => $allowedCodes,
-                'role' => $user->role->code,
-            ], 403);
+            $payload = ['message' => 'Forbidden.'];
+            if (!app()->environment('production')) {
+                $payload['details'] = 'missing permission';
+                $payload['required'] = $permissionCode;
+                $payload['accepted'] = $allowedCodes;
+                $payload['role'] = $user->role->code;
+            }
+            return response()->json($payload, 403);
         }
 
         return $next($request);

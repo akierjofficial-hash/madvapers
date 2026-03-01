@@ -16,7 +16,7 @@ const variantStyles: Record<NonNullable<StickerButtonProps["variant"]>, string> 
 };
 
 const baseStyles =
-  "corner-cut inline-flex h-11 items-center justify-center border px-5 font-body text-sm font-semibold uppercase tracking-[0.08em] transition-all duration-200 ease-pop hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-yellow focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg disabled:cursor-not-allowed disabled:opacity-60";
+  "corner-cut inline-flex h-[46px] items-center justify-center border px-4 font-body text-sm font-semibold uppercase tracking-[0.08em] transition-all duration-200 ease-pop hover:-translate-y-0.5 sm:h-11 sm:px-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-yellow focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg disabled:cursor-not-allowed disabled:opacity-60";
 
 export default function StickerButton({
   children,

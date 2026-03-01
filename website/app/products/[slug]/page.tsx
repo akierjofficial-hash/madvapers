@@ -7,13 +7,14 @@ import StickerButton from "@/components/StickerButton";
 import { getPublicCatalogProductBySlug, getPublicCatalogProducts } from "@/lib/publicCatalog";
 
 type ProductDetailPageProps = {
-  params: {
+  params: Promise<{
     slug: string;
-  };
+  }>;
 };
 
 export async function generateMetadata({ params }: ProductDetailPageProps): Promise<Metadata> {
-  const product = await getPublicCatalogProductBySlug(params.slug);
+  const { slug } = await params;
+  const product = await getPublicCatalogProductBySlug(slug);
   if (!product) {
     return {
       title: "Product Not Found | MDVPRS",
@@ -26,8 +27,9 @@ export async function generateMetadata({ params }: ProductDetailPageProps): Prom
 }
 
 export default async function ProductDetailPage({ params }: ProductDetailPageProps) {
+  const { slug } = await params;
   const [product, allProducts] = await Promise.all([
-    getPublicCatalogProductBySlug(params.slug),
+    getPublicCatalogProductBySlug(slug),
     getPublicCatalogProducts(),
   ]);
 
@@ -43,50 +45,52 @@ export default async function ProductDetailPage({ params }: ProductDetailPagePro
     <div className="page-wrap space-y-10">
       <SectionHeader title={product.name} subtitleJa={product.jpName} description="Specs, compatibility, and support details." />
 
-      <section className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-        <div className="visual-placeholder corner-cut relative min-h-[340px] overflow-hidden p-5 sm:min-h-[420px]">
+      <section className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr] lg:gap-6">
+        <div className="visual-placeholder corner-cut relative min-h-[250px] overflow-hidden p-4 sm:min-h-[420px] sm:p-5">
           <div className="grid-overlay absolute inset-0 opacity-25" aria-hidden="true" />
           <div className="relative z-[1] flex h-full flex-col justify-between">
             <p className="jp-label">product visual placeholder</p>
-            <p className="font-heading text-7xl uppercase leading-[0.88] text-brand-ink">{product.name}</p>
+            <p className="font-heading text-5xl uppercase leading-[0.88] text-brand-ink sm:text-7xl">{product.name}</p>
           </div>
         </div>
 
-        <aside className="sticker-card grunge-paper corner-cut p-5">
+        <aside className="sticker-card grunge-paper corner-cut p-4 sm:p-5">
           <div className="mb-3 flex flex-wrap gap-2">
             {product.tags.map((tag) => (
               <BadgeTag key={`${product.slug}-${tag}`} tag={tag} />
             ))}
           </div>
 
-          <h2 className="font-heading text-6xl uppercase leading-[0.86] text-brand-ink">{product.name}</h2>
-          <p className="mt-1 text-base uppercase tracking-[0.08em] text-brand-muted">
+          <h2 className="font-heading text-5xl uppercase leading-[0.86] text-brand-ink sm:text-6xl">{product.name}</h2>
+          <p className="mt-1 text-sm uppercase tracking-[0.08em] text-brand-muted sm:text-base">
             {product.deviceType} {"\u2022"} {product.strength}
           </p>
-          <p className="mt-3 text-base text-brand-muted">{product.notes}</p>
+          <p className="mt-3 text-sm text-brand-muted sm:text-base">{product.notes}</p>
 
           <dl className="mt-5 space-y-2 border-t border-brand-line pt-4">
             {product.specs.map((spec) => (
               <div key={spec.label} className="flex items-center justify-between gap-3">
                 <dt className="text-sm uppercase tracking-[0.1em] text-brand-muted">{spec.label}</dt>
-                <dd className="font-display text-[30px] uppercase text-brand-ink">{spec.value}</dd>
+                <dd className="font-display text-[24px] uppercase text-brand-ink sm:text-[30px]">{spec.value}</dd>
               </div>
             ))}
           </dl>
 
-          <div className="mt-6 flex flex-wrap gap-3">
-            <StickerButton href="/products">Shop Now</StickerButton>
-            <StickerButton href="/support" variant="secondary">
+          <div className="mt-6 grid gap-2 sm:flex sm:flex-wrap sm:gap-3">
+            <StickerButton href="/products" className="w-full sm:w-auto">
+              Shop Now
+            </StickerButton>
+            <StickerButton href="/support" variant="secondary" className="w-full sm:w-auto">
               Support
             </StickerButton>
           </div>
-          <p className="mt-3 font-display text-[32px] uppercase text-brand-yellow">From PHP {product.priceFrom}</p>
+          <p className="mt-3 font-display text-[28px] uppercase text-brand-yellow sm:text-[32px]">From PHP {product.priceFrom}</p>
         </aside>
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-2">
-        <article className="sticker-panel grunge-paper corner-cut p-5">
-          <h3 className="font-heading text-5xl uppercase text-brand-ink">Flavor Notes</h3>
+      <section className="grid gap-4 lg:grid-cols-2 lg:gap-6">
+        <article className="sticker-panel grunge-paper corner-cut p-4 sm:p-5">
+          <h3 className="font-heading text-4xl uppercase text-brand-ink sm:text-5xl">Flavor Notes</h3>
           <ul className="mt-3 flex flex-wrap gap-2">
             {product.flavorNotes.map((note) => (
               <li key={note} className="border border-brand-line bg-brand-surface px-3 py-1 text-sm uppercase tracking-[0.08em] text-brand-ink">
@@ -96,11 +100,11 @@ export default async function ProductDetailPage({ params }: ProductDetailPagePro
           </ul>
         </article>
 
-        <article className="sticker-panel grunge-paper corner-cut p-5">
-          <h3 className="font-heading text-5xl uppercase text-brand-ink">In The Box</h3>
+        <article className="sticker-panel grunge-paper corner-cut p-4 sm:p-5">
+          <h3 className="font-heading text-4xl uppercase text-brand-ink sm:text-5xl">In The Box</h3>
           <ul className="mt-3 space-y-2">
             {product.inBox.map((item) => (
-              <li key={item} className="border border-brand-line bg-brand-surface px-3 py-2 text-base text-brand-muted">
+              <li key={item} className="border border-brand-line bg-brand-surface px-3 py-2 text-sm text-brand-muted sm:text-base">
                 {item}
               </li>
             ))}
@@ -108,13 +112,13 @@ export default async function ProductDetailPage({ params }: ProductDetailPagePro
         </article>
       </section>
 
-      <section className="sticker-panel grunge-paper corner-cut p-5">
-        <h3 className="font-heading text-5xl uppercase text-brand-ink">FAQ</h3>
+      <section className="sticker-panel grunge-paper corner-cut p-4 sm:p-5">
+        <h3 className="font-heading text-4xl uppercase text-brand-ink sm:text-5xl">FAQ</h3>
         <div className="mt-4 space-y-3">
           {product.faq.map((entry) => (
             <details key={entry.question} className="border border-brand-line bg-brand-surface px-4 py-3">
               <summary className="cursor-pointer text-base uppercase tracking-[0.06em] text-brand-ink">{entry.question}</summary>
-              <p className="mt-2 text-base text-brand-muted">{entry.answer}</p>
+              <p className="mt-2 text-sm text-brand-muted sm:text-base">{entry.answer}</p>
             </details>
           ))}
         </div>

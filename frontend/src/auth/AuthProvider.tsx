@@ -10,17 +10,17 @@ import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { authStorage } from './authStorage';
 import { useMeQuery, qk } from '../api/queries';
-import { api } from '../lib/http';
+import { logout as apiLogout } from '../api/auth';
 import type { User } from '../types/models';
 
 type AuthContextValue = {
-  token: string | null;
+  isAuthenticated: boolean;
   user: User | null;
   permissions: string[];
   can: (perm: string) => boolean;
   isLoadingUser: boolean;
-  setToken: (token: string | null) => void;
-  logout: () => void;
+  isLoggingOut: boolean;
+  logout: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -28,44 +28,36 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [token, setTokenState] = useState<string | null>(() => authStorage.getToken());
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const meQuery = useMeQuery(!!token);
+  const meQuery = useMeQuery(!isLoggingOut);
   const user = meQuery.data?.user ?? null;
+  const isAuthenticated = !!user;
 
   const permissions = meQuery.data?.permissions ?? [];
   const can = useCallback((perm: string) => permissions.includes(perm), [permissions]);
 
-  const setToken = (next: string | null) => {
-    setTokenState(next);
-    if (next) authStorage.setToken(next);
-    else authStorage.clearToken();
-  };
-
   const clearClientSession = useCallback(() => {
-    authStorage.clearToken();
     authStorage.clearLastBranchId();
-    setTokenState(null);
     qc.clear();
   }, [qc]);
 
-  const logout = () => {
-    const t = token;
+  const logout = useCallback(async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
 
-    // Best-effort revoke on server (don’t block UI logout if it fails)
-    if (t) {
-      api
-        .post('/auth/logout', null, {
-          headers: { Authorization: `Bearer ${t}` },
-        })
-        .catch(() => {});
+    // Wait for server-side session invalidation before redirecting.
+    try {
+      await apiLogout();
+    } catch {
+      // Continue client-side cleanup even if server logout fails.
     }
 
     clearClientSession();
     qc.removeQueries({ queryKey: qk.me });
-
     navigate('/login', { replace: true });
-  };
+    setIsLoggingOut(false);
+  }, [clearClientSession, navigate, qc, isLoggingOut]);
 
   useEffect(() => {
     const onUnauthorized = () => {
@@ -77,25 +69,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('auth:unauthorized', onUnauthorized);
   }, [navigate, clearClientSession]);
 
-  // If token exists but /me fails (e.g. revoked), bounce to login
-  useEffect(() => {
-    if (token && meQuery.isError) {
-      logout();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, meQuery.isError]);
-
   const value = useMemo<AuthContextValue>(
     () => ({
-      token,
+      isAuthenticated,
       user,
       permissions,
       can,
-      isLoadingUser: !!token && meQuery.isLoading,
-      setToken,
+      isLoadingUser: !isLoggingOut && meQuery.isLoading,
+      isLoggingOut,
       logout,
     }),
-    [token, user, permissions, can, meQuery.isLoading]
+    [isAuthenticated, user, permissions, can, meQuery.isLoading, isLoggingOut, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

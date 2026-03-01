@@ -28,32 +28,32 @@ export default function AboutPage() {
         description="A minimalist urban street-poster identity built for fast adult retail communication."
       />
 
-      <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-        <article className="sticker-panel grunge-paper corner-cut p-6">
+      <section className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr] lg:gap-6">
+        <article className="sticker-panel grunge-paper corner-cut p-4 sm:p-6">
           <p className="jp-label">identity</p>
-          <h2 className="mt-1 font-heading text-6xl uppercase leading-[0.84] text-brand-ink">Built For The Grind</h2>
-          <p className="mt-3 text-base text-brand-muted">
+          <h2 className="mt-1 font-heading text-5xl uppercase leading-[0.84] text-brand-ink sm:text-6xl">Built For The Grind</h2>
+          <p className="mt-3 text-sm text-brand-muted sm:text-base">
             MDVPRS blends gritty poster energy with modern UX discipline. The website is focused on product clarity, speed, and branch-ready utility.
           </p>
-          <p className="mt-2 text-base text-brand-muted">
+          <p className="mt-2 text-sm text-brand-muted sm:text-base">
             We keep content direct and structured, so adult customers can move from discovery to decision quickly.
           </p>
         </article>
 
-        <div className="visual-placeholder corner-cut relative min-h-[280px] overflow-hidden p-5">
+        <div className="visual-placeholder corner-cut relative min-h-[240px] overflow-hidden p-4 sm:min-h-[280px] sm:p-5">
           <div className="grid-overlay absolute inset-0 opacity-30" aria-hidden="true" />
           <div className="relative z-[1] flex h-full flex-col justify-between">
             <p className="jp-label">brand visual placeholder</p>
-            <p className="font-heading text-6xl uppercase leading-[0.86] text-brand-ink">Urban Poster Block</p>
+            <p className="font-heading text-5xl uppercase leading-[0.86] text-brand-ink sm:text-6xl">Urban Poster Block</p>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2">
+      <section className="grid gap-3 sm:grid-cols-2 sm:gap-4">
         {values.map((value) => (
           <article key={value.title} className="sticker-card corner-cut p-4">
-            <h3 className="font-heading text-4xl uppercase text-brand-ink">{value.title}</h3>
-            <p className="mt-1 text-base text-brand-muted">{value.text}</p>
+            <h3 className="font-heading text-3xl uppercase text-brand-ink sm:text-4xl">{value.title}</h3>
+            <p className="mt-1 text-sm text-brand-muted sm:text-base">{value.text}</p>
           </article>
         ))}
       </section>

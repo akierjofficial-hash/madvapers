@@ -80,7 +80,7 @@ a {
 
 @layer components {
   .page-wrap {
-    @apply relative z-[1] mx-auto w-full max-w-7xl px-4 pb-16 pt-10 sm:px-6 lg:px-8;
+    @apply relative z-[1] mx-auto w-full max-w-7xl px-4 pb-20 pt-8 sm:px-6 sm:pt-10 lg:px-8;
   }
 
   .sticker-card {
@@ -92,7 +92,7 @@ a {
   }
 
   .sticker-input {
-    @apply h-11 w-full border border-brand-line bg-[#0f1215] px-3 text-base text-brand-ink placeholder:text-brand-muted focus:border-brand-yellow focus:outline-none focus:ring-1 focus:ring-brand-yellow;
+    @apply h-12 w-full border border-brand-line bg-[#0f1215] px-3 text-base text-brand-ink placeholder:text-brand-muted focus:border-brand-yellow focus:outline-none focus:ring-1 focus:ring-brand-yellow;
   }
 
   .jp-label {
@@ -135,6 +135,14 @@ a {
 
   .corner-cut {
     border-radius: 10px;
+  }
+
+  .mobile-surface {
+    @apply border border-brand-line bg-brand-surface backdrop-blur-sm;
+  }
+
+  .touch-row {
+    @apply min-h-12;
   }
 
   .route-loader-backdrop {
@@ -190,6 +198,18 @@ a {
     font-size: 12px;
     color: var(--brand-muted);
     text-align: center;
+  }
+}
+
+@media (max-width: 767px) {
+  .display-h1 {
+    font-size: clamp(3.2rem, 18vw, 4.2rem);
+    line-height: 0.92;
+  }
+
+  .display-h2 {
+    font-size: clamp(2.2rem, 13vw, 3.2rem);
+    line-height: 0.94;
   }
 }
 

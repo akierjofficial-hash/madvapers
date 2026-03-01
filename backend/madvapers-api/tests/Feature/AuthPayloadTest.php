@@ -26,7 +26,6 @@ class AuthPayloadTest extends TestCase
 
         $res->assertOk()
             ->assertJsonStructure([
-                'token',
                 'user' => ['id','email','role' => ['code']],
                 'permissions',
             ])
@@ -52,5 +51,14 @@ class AuthPayloadTest extends TestCase
         $this->assertContains('INVENTORY_VIEW', $perms);
         $this->assertNotContains('ADJUSTMENT_POST', $perms);
         $this->assertNotContains('PO_APPROVE', $perms);
+    }
+
+    public function test_logout_does_not_crash_for_cookie_or_transient_auth(): void
+    {
+        $admin = User::where('email', 'admin@madvapers.local')->firstOrFail();
+        Sanctum::actingAs($admin);
+
+        $res = $this->postJson('/api/auth/logout');
+        $res->assertOk()->assertJsonPath('status', 'ok');
     }
 }

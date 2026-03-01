@@ -20,18 +20,20 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\PublicCatalogController;
 use App\Http\Controllers\Api\PublicBranchController;
 
-// Probe + health
-Route::get('/__probe', fn () => response()->json(['ok' => true, 'where' => 'api.php']));
+// Health
 Route::get('/health', fn () => response()->json(['where' => 'api.php', 'status' => 'ok']));
 
 // Public auth
-Route::post('/auth/login', [AuthController::class, 'login']);
-Route::get('/public/products', [PublicCatalogController::class, 'index']);
-Route::get('/public/products/{variant}', [PublicCatalogController::class, 'show']);
-Route::get('/public/branches', [PublicBranchController::class, 'index']);
+Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
+
+Route::middleware(['throttle:public-api'])->group(function () {
+    Route::get('/public/products', [PublicCatalogController::class, 'index']);
+    Route::get('/public/products/{variant}', [PublicCatalogController::class, 'show']);
+    Route::get('/public/branches', [PublicBranchController::class, 'index']);
+});
 
 // Protected routes
-Route::middleware(['auth:sanctum'])->group(function () {
+Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
     // Auth
     Route::get('/auth/me', [AuthController::class, 'me']);

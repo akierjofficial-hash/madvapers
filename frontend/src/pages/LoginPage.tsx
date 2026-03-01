@@ -29,7 +29,7 @@ type FormValues = z.infer<typeof schema>;
 
 export function LoginPage() {
   const nav = useNavigate();
-  const { setToken, token } = useAuth();
+  const { isAuthenticated } = useAuth();
   const loginMutation = useLoginMutation();
 
   const {
@@ -40,13 +40,12 @@ export function LoginPage() {
   } = useForm<FormValues>({ resolver: zodResolver(schema) });
 
   React.useEffect(() => {
-    if (token) nav('/', { replace: true });
-  }, [token, nav]);
+    if (isAuthenticated) nav('/', { replace: true });
+  }, [isAuthenticated, nav]);
 
   const onSubmit = async (values: FormValues) => {
     try {
-      const res = await loginMutation.mutateAsync(values);
-      setToken(res.token);
+      await loginMutation.mutateAsync(values);
       nav('/', { replace: true });
     } catch (err) {
       const validation = getLaravelValidationErrors(err);
@@ -136,4 +135,3 @@ export function LoginPage() {
     </Container>
   );
 }
-

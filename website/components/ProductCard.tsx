@@ -12,15 +12,12 @@ export default function ProductCard({ product }: ProductCardProps) {
   const flavorNote = product.flavorNotes[0] ?? product.notes;
 
   return (
-    <article className="corner-cut sticker-card overflow-hidden p-4 transition-all duration-200 ease-pop hover:-translate-y-0.5 hover:border-brand-yellow hover:shadow-stickerHover">
+    <article className="corner-cut sticker-card overflow-hidden p-3.5 transition-all duration-200 ease-pop hover:-translate-y-0.5 hover:border-brand-yellow hover:shadow-stickerHover sm:p-4">
       <div className="visual-placeholder corner-cut relative mb-4 aspect-[4/3] overflow-hidden">
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-black/20 to-transparent" aria-hidden="true" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-black/35 via-transparent to-transparent" aria-hidden="true" />
         <div className="absolute inset-x-3 top-3 flex items-start justify-between">
           <BadgeTag tag={primaryTag} />
-          <span className="jp-label text-brand-muted">商品</span>
-        </div>
-        <div className="absolute inset-x-4 bottom-3">
-          <p className="font-body text-xs font-semibold uppercase tracking-[0.08em] text-brand-muted">Image Placeholder</p>
+          <span className="jp-label text-brand-muted">drop</span>
         </div>
       </div>
 
@@ -30,9 +27,9 @@ export default function ProductCard({ product }: ProductCardProps) {
         {product.deviceType} {"\u2022"} {product.strength}
       </p>
 
-      <div className="mt-4 flex items-center justify-between gap-3">
+      <div className="mt-4 grid gap-2 sm:flex sm:items-center sm:justify-between sm:gap-3">
         <p className="font-body text-base font-semibold text-brand-ink">PHP {product.priceFrom}</p>
-        <StickerButton href={`/products/${product.slug}`} variant="primary" className="h-10 px-4">
+        <StickerButton href={`/products/${product.slug}`} variant="primary" className="h-10 w-full px-4 sm:w-auto">
           Shop
         </StickerButton>
       </div>

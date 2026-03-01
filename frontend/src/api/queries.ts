@@ -1,5 +1,4 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { authStorage } from '../auth/authStorage';
 import type { LaravelPaginator } from '../types/api';
 import type {
   Branch,
@@ -123,6 +122,27 @@ import {
   type CreateAdjustmentInput,
 } from './adjustments';
 
+function parsePollMs(value: string | undefined, fallbackMs: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallbackMs;
+  return Math.floor(n);
+}
+
+const REALTIME_POLLING_ENABLED = String(import.meta.env.VITE_REALTIME_POLLING ?? 'true').toLowerCase() !== 'false';
+
+const POLL_MS = {
+  inventory: parsePollMs(import.meta.env.VITE_REALTIME_INVENTORY_MS, 5000),
+  ledger: parsePollMs(import.meta.env.VITE_REALTIME_LEDGER_MS, 5000),
+  adjustments: parsePollMs(import.meta.env.VITE_REALTIME_ADJUSTMENTS_MS, 5000),
+  transfers: parsePollMs(import.meta.env.VITE_REALTIME_TRANSFERS_MS, 6000),
+  purchaseOrders: parsePollMs(import.meta.env.VITE_REALTIME_PURCHASE_ORDERS_MS, 6000),
+} as const;
+
+function realtimeInterval(enabled: boolean, ms: number): number | false {
+  if (!enabled || !REALTIME_POLLING_ENABLED) return false;
+  return ms;
+}
+
 export const qk = {
   me: ['me'] as const,
   branches: ['branches'] as const,
@@ -156,7 +176,7 @@ export function useMeQuery(enabled?: boolean) {
   return useQuery<MeResponse>({
     queryKey: qk.me,
     queryFn: me,
-    enabled: enabled ?? !!authStorage.getToken(),
+    enabled: enabled ?? true,
     staleTime: 60_000,
   });
 }
@@ -166,8 +186,6 @@ export function useLoginMutation() {
   return useMutation<LoginResponse, unknown, LoginInput>({
     mutationFn: login,
     onSuccess: (data) => {
-      authStorage.setToken(data.token);
-
       const meData: MeResponse = {
         user: data.user as User,
         permissions: data.permissions ?? [],
@@ -183,7 +201,6 @@ export function useLogoutMutation() {
   return useMutation<{ status: string }, unknown, void>({
     mutationFn: logout as any,
     onSettled: () => {
-      authStorage.clearToken();
       qc.clear();
     },
   });
@@ -392,6 +409,9 @@ export function useInventoryQuery(params: InventoryQuery, enabled = true) {
     queryFn: () => getInventory(params),
     enabled,
     placeholderData: keepPreviousData,
+    refetchInterval: realtimeInterval(enabled, POLL_MS.inventory),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -401,6 +421,9 @@ export function useLedgerQuery(params: LedgerQuery, enabled = true) {
     queryFn: () => getLedger(params),
     enabled,
     placeholderData: keepPreviousData,
+    refetchInterval: realtimeInterval(enabled, POLL_MS.ledger),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -414,6 +437,9 @@ export function useTransfersQuery(params: TransfersQuery, enabled = true) {
     queryFn: () => getTransfers(params),
     enabled,
     placeholderData: keepPreviousData,
+    refetchInterval: realtimeInterval(enabled, POLL_MS.transfers),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -422,6 +448,9 @@ export function useTransferQuery(id: number, enabled = true) {
     queryKey: qk.transfer(id),
     queryFn: () => getTransfer(id),
     enabled,
+    refetchInterval: realtimeInterval(enabled, POLL_MS.transfers),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -490,6 +519,9 @@ export function usePurchaseOrdersQuery(params: PurchaseOrdersQuery, enabled = tr
     queryFn: () => getPurchaseOrders(params),
     enabled,
     placeholderData: keepPreviousData,
+    refetchInterval: realtimeInterval(enabled, POLL_MS.purchaseOrders),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -498,6 +530,9 @@ export function usePurchaseOrderQuery(id: number, enabled = true) {
     queryKey: qk.purchaseOrder(id),
     queryFn: () => getPurchaseOrder(id),
     enabled,
+    refetchInterval: realtimeInterval(enabled, POLL_MS.purchaseOrders),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -694,6 +729,9 @@ export function useAdjustmentsQuery(params: AdjustmentsQuery, enabled = true) {
     queryFn: () => getAdjustments(params),
     enabled,
     placeholderData: keepPreviousData,
+    refetchInterval: realtimeInterval(enabled, POLL_MS.adjustments),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -702,6 +740,9 @@ export function useAdjustmentQuery(id: number, enabled = true) {
     queryKey: qk.adjustment(id),
     queryFn: () => getAdjustment(id),
     enabled,
+    refetchInterval: realtimeInterval(enabled, POLL_MS.adjustments),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 }
 

@@ -9,10 +9,14 @@ const footerLinks = [
 export default function Footer() {
   return (
     <footer className="soft-divider bg-brand-bg">
-      <div className="mx-auto grid w-full max-w-7xl gap-6 px-4 py-10 sm:px-6 lg:px-8">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <p className="font-heading text-[40px] leading-none text-brand-ink">MDVPRS</p>
-          <nav aria-label="Footer links" className="flex flex-wrap items-center gap-5">
+      <div className="mx-auto grid w-full max-w-7xl gap-7 px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+        <div className="mobile-surface corner-cut flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+          <div>
+            <p className="font-heading text-[34px] leading-none text-brand-ink sm:text-[40px]">MDVPRS</p>
+            <p className="mt-1 font-body text-xs uppercase tracking-[0.12em] text-brand-muted">Premium Adult Product Catalog</p>
+          </div>
+
+          <nav aria-label="Footer links" className="grid grid-cols-2 gap-x-5 gap-y-2 sm:flex sm:flex-wrap sm:items-center sm:gap-5">
             {footerLinks.map((link) => (
               <Link
                 key={link.href}
@@ -28,7 +32,7 @@ export default function Footer() {
         <div className="flex items-center gap-3" aria-label="Social links">
           <button
             type="button"
-            className="grid h-8 w-8 place-items-center rounded-sm border border-brand-line text-brand-muted transition hover:border-brand-yellow hover:text-brand-ink"
+            className="grid h-10 w-10 place-items-center rounded-sm border border-brand-line text-brand-muted transition hover:border-brand-yellow hover:text-brand-ink"
             aria-label="Instagram"
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4 stroke-current" fill="none" strokeWidth="2">
@@ -39,7 +43,7 @@ export default function Footer() {
           </button>
           <button
             type="button"
-            className="grid h-8 w-8 place-items-center rounded-sm border border-brand-line text-brand-muted transition hover:border-brand-yellow hover:text-brand-ink"
+            className="grid h-10 w-10 place-items-center rounded-sm border border-brand-line text-brand-muted transition hover:border-brand-yellow hover:text-brand-ink"
             aria-label="Facebook"
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
@@ -48,7 +52,7 @@ export default function Footer() {
           </button>
           <button
             type="button"
-            className="grid h-8 w-8 place-items-center rounded-sm border border-brand-line text-brand-muted transition hover:border-brand-yellow hover:text-brand-ink"
+            className="grid h-10 w-10 place-items-center rounded-sm border border-brand-line text-brand-muted transition hover:border-brand-yellow hover:text-brand-ink"
             aria-label="TikTok"
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">

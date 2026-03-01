@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
 {
@@ -73,13 +74,13 @@ class AuthController extends Controller
             'password' => ['required'],
         ]);
 
-        if (!Auth::attempt($request->only('email','password'))) {
+        if (!Auth::guard('web')->attempt($request->only('email','password'))) {
             throw ValidationException::withMessages([
                 'email' => ['Invalid credentials.'],
             ]);
         }
 
-        $user = $request->user();
+        $user = Auth::guard('web')->user();
 
         if (!$user->is_active) {
             Auth::logout();
@@ -88,15 +89,12 @@ class AuthController extends Controller
             ]);
         }
 
-        // optional: revoke old tokens
-        $user->tokens()->delete();
+        // Regenerate session ID to prevent session fixation.
+        if ($request->hasSession()) {
+            $request->session()->regenerate();
+        }
 
-        $token = $user->createToken('madvapers-web')->plainTextToken;
-
-        return response()->json(array_merge(
-            ['token' => $token],
-            $this->authPayload($user)
-        ));
+        return response()->json($this->authPayload($user));
     }
 
     public function me(Request $request)
@@ -110,7 +108,18 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        $request->user()->currentAccessToken()->delete();
+        $token = $request->user()?->currentAccessToken();
+        if ($token instanceof PersonalAccessToken) {
+            $token->delete();
+        }
+
+        Auth::guard('web')->logout();
+
+        if ($request->hasSession()) {
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
+
         return response()->json(['status' => 'ok']);
     }
 }

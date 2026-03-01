@@ -36,29 +36,38 @@ export default function AgeGateModal() {
 
   return (
     <div className="fixed inset-0 z-[90] grid place-items-center bg-black/75 p-4 backdrop-blur-[2px]">
-      <div className="sticker-panel corner-cut w-full max-w-lg p-6" role="dialog" aria-modal="true" aria-labelledby="age-gate-title">
+      <div
+        className="sticker-panel corner-cut w-full max-w-lg border-brand-yellow/40 bg-brand-surface p-5 sm:p-6"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="age-gate-title"
+      >
         {status === "open" ? (
           <>
-            <p className="jp-label">年齢確認</p>
+            <p className="jp-label">age check</p>
             <h2 id="age-gate-title" className="display-h2 text-brand-ink">
               Age Verification
             </h2>
-            <p className="mt-3 max-w-md font-body text-base text-brand-muted">
+            <p className="mt-3 max-w-md font-body text-sm text-brand-muted sm:text-base">
               This website is intended for adults of legal smoking age only. By entering, you confirm that you are 21+ in your region.
             </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <StickerButton onClick={confirmAge}>Enter</StickerButton>
-              <StickerButton onClick={declineAge} variant="secondary">
+            <div className="mt-6 grid gap-2 sm:flex sm:flex-wrap sm:gap-3">
+              <StickerButton onClick={confirmAge} className="w-full sm:w-auto">
+                Enter
+              </StickerButton>
+              <StickerButton onClick={declineAge} variant="secondary" className="w-full sm:w-auto">
                 Exit
               </StickerButton>
             </div>
-            <p className="mt-4 text-sm text-brand-muted">No medical or cessation claims are made on this site.</p>
+            <p className="mt-4 text-xs uppercase tracking-[0.1em] text-brand-muted sm:text-sm">
+              No medical or cessation claims are made on this site.
+            </p>
           </>
         ) : (
           <>
-            <p className="jp-label">アクセス制限</p>
+            <p className="jp-label">access restricted</p>
             <h2 className="display-h2 text-brand-ink">Access Restricted</h2>
-            <p className="mt-3 max-w-md font-body text-base text-brand-muted">
+            <p className="mt-3 max-w-md font-body text-sm text-brand-muted sm:text-base">
               You must be of legal smoking age to access this website.
             </p>
           </>

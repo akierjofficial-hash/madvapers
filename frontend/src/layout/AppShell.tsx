@@ -49,7 +49,7 @@ export function AppShell() {
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('lg'));
   const location = useLocation();
-  const { user, logout, can } = useAuth();
+  const { user, logout, can, isLoggingOut } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const navItems: NavItem[] = [
@@ -183,8 +183,14 @@ export function AppShell() {
             <Tooltip title={user?.name ?? ''}>
               <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main', fontSize: 13 }}>{initials}</Avatar>
             </Tooltip>
-            <Button color="inherit" variant="outlined" onClick={logout} size="small">
-              Logout
+            <Button
+              color="inherit"
+              variant="outlined"
+              onClick={() => void logout()}
+              size="small"
+              disabled={isLoggingOut}
+            >
+              {isLoggingOut ? 'Logging out...' : 'Logout'}
             </Button>
           </Stack>
         </Toolbar>

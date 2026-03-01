@@ -12,6 +12,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // Enable Sanctum first-party SPA cookie authentication on API routes.
+        $middleware->statefulApi();
+
         $middleware->alias([
             'perm' => \App\Http\Middleware\RequirePermission::class,
         ]);

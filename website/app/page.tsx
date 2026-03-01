@@ -44,32 +44,34 @@ export default async function HomePage() {
   const featuredProducts = products.slice(0, 4);
 
   return (
-    <div className="page-wrap space-y-12">
-      <section className="corner-cut grunge-smudge relative overflow-hidden border border-brand-line bg-brand-surface p-6 sm:p-8">
+    <div className="page-wrap space-y-10 sm:space-y-12">
+      <section className="corner-cut grunge-smudge relative overflow-hidden border border-brand-line bg-brand-surface p-4 sm:p-8">
         <div className="pointer-events-none absolute -right-20 top-16 h-[2px] w-72 rotate-[-22deg] bg-brand-yellow/80" aria-hidden="true" />
-        <div className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
-          <div className="space-y-5">
+        <div className="grid gap-7 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+          <div className="order-2 space-y-4 lg:order-1 lg:space-y-5">
             <p className="jp-label text-brand-muted">Premium Vape</p>
             <h1 className="display-h1 text-brand-ink">
               Puff and
               <br />
               Chill
             </h1>
-            <p className="max-w-xl font-body text-lg text-brand-muted">
+            <p className="max-w-xl font-body text-base text-brand-muted sm:text-lg">
               Clean flavor-forward lineup built for adult customers who want consistent quality and clear product specs.
             </p>
             <p className="jp-label text-brand-muted">urban minimal design</p>
-            <div className="flex flex-wrap gap-3">
-              <StickerButton href="/products">Shop Products</StickerButton>
-              <StickerButton href="/store-locator" variant="secondary">
+            <div className="grid gap-2 sm:flex sm:flex-wrap sm:gap-3">
+              <StickerButton href="/products" className="w-full sm:w-auto">
+                Shop Products
+              </StickerButton>
+              <StickerButton href="/store-locator" variant="secondary" className="w-full sm:w-auto">
                 Find a Store
               </StickerButton>
             </div>
           </div>
 
-          <div className="relative">
-            <div className="visual-placeholder corner-cut relative min-h-[340px] p-5 sm:min-h-[430px]">
-              <div className="absolute inset-5 overflow-hidden rounded-sm border border-brand-line bg-[#0f1114]">
+          <div className="relative order-1 lg:order-2">
+            <div className="mobile-surface corner-cut relative min-h-[260px] p-3 sm:min-h-[430px] sm:p-5">
+              <div className="absolute inset-3 overflow-hidden rounded-sm border border-brand-line bg-[#0f1114] sm:inset-5">
                 <Image
                   src="/website.jpg"
                   alt="MDVPRS product visual"
@@ -85,11 +87,11 @@ export default async function HomePage() {
       </section>
 
       <section className="corner-cut border border-brand-line bg-brand-surface2 px-4 py-3">
-        <ul className="grid gap-3 sm:grid-cols-3">
+        <ul className="grid gap-2 sm:grid-cols-3 sm:gap-3">
           {trustItems.map((item, idx) => (
             <li
               key={item.label}
-              className="relative flex items-center justify-center gap-2 py-1 text-center font-body text-sm font-semibold uppercase tracking-[0.08em] text-brand-ink"
+              className="touch-row relative flex items-center justify-start gap-2 border border-brand-line/60 bg-brand-surface px-3 text-left font-body text-sm font-semibold uppercase tracking-[0.08em] text-brand-ink sm:justify-center sm:border-0 sm:bg-transparent sm:px-0 sm:text-center"
             >
               {idx < trustItems.length - 1 ? <span className="pointer-events-none absolute right-0 top-1/2 hidden h-6 w-px -translate-y-1/2 bg-brand-line sm:block" /> : null}
               <span className="text-brand-muted">{item.icon}</span>
@@ -102,7 +104,7 @@ export default async function HomePage() {
 
       <section id="featured-flavors" className="space-y-5">
         <SectionHeader title="Featured Flavors" subtitleJa="featured lineup" description="Top picks from the live product catalog." />
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
           {featuredProducts.map((product) => (
             <ProductCard key={product.id} product={product} />
           ))}

@@ -3,12 +3,8 @@ import { Box, CircularProgress } from '@mui/material';
 import { useAuth } from './AuthProvider';
 
 export function ProtectedRoute() {
-  const { token, user, isLoadingUser } = useAuth();
+  const { isAuthenticated, user, isLoadingUser } = useAuth();
   const loc = useLocation();
-
-  if (!token) {
-    return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
-  }
 
   if (isLoadingUser) {
     return (
@@ -16,6 +12,10 @@ export function ProtectedRoute() {
         <CircularProgress />
       </Box>
     );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
   }
 
   if (!user) {

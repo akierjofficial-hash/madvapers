@@ -14,18 +14,23 @@ class DatabaseSeeder extends Seeder
      * Seed the application's database.
      */
     public function run(): void
-{
-    $this->call([
-        BranchSeeder::class,
-        RolePermissionSeeder::class,
-        AdminSeeder::class,
-        CategorySeeder::class,
-        UserSeeder::class,
-        DemoCatalogSeeder::class,
+    {
+        $this->call([
+            BranchSeeder::class,
+            RolePermissionSeeder::class,
+            CategorySeeder::class,
+        ]);
 
-]);
+        $seedDemoData = app()->environment(['local', 'testing'])
+            || (bool) env('SEED_DEMO_DATA', false);
 
-
-}
+        if ($seedDemoData) {
+            $this->call([
+                AdminSeeder::class,
+                UserSeeder::class,
+                DemoCatalogSeeder::class,
+            ]);
+        }
+    }
 
 }

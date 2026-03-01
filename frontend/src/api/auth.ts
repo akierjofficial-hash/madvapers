@@ -1,4 +1,4 @@
-import { api } from '../lib/http';
+import { api, ensureCsrfCookie } from '../lib/http';
 import type { User } from '../types/models';
 
 export type LoginInput = {
@@ -7,7 +7,6 @@ export type LoginInput = {
 };
 
 export type LoginResponse = {
-  token: string;
   user: User;
   permissions: string[];
 };
@@ -18,6 +17,7 @@ export type MeResponse = {
 };
 
 export async function login(payload: LoginInput): Promise<LoginResponse> {
+  await ensureCsrfCookie();
   const { data } = await api.post<LoginResponse>('/auth/login', payload);
   return data;
 }
@@ -28,6 +28,7 @@ export async function me(): Promise<MeResponse> {
 }
 
 export async function logout(): Promise<{ status: string }> {
+  await ensureCsrfCookie();
   const { data } = await api.post<{ status: string }>('/auth/logout');
   return data;
 }

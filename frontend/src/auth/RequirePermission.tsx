@@ -8,10 +8,12 @@ export function RequirePermission(props: {
   children: ReactNode;
   mode?: 'redirect' | 'message';
 }) {
-  const { token, isLoadingUser, can } = useAuth();
+  const { isAuthenticated, isLoadingUser, can } = useAuth();
   const location = useLocation();
 
-  if (!token) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (!isAuthenticated && !isLoadingUser) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
   if (isLoadingUser) return <Alert severity="info">Loading…</Alert>;
 
   if (!can(props.perm)) {
