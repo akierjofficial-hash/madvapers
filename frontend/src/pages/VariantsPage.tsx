@@ -37,6 +37,13 @@ import {
 } from '../api/queries';
 import { useAuth } from '../auth/AuthProvider';
 import { authStorage } from '../auth/authStorage';
+import {
+  requestDialogActionsSx,
+  requestDialogContentSx,
+  requestDialogSx,
+  requestDialogTitleSx,
+  requestSectionSx,
+} from '../components/requestDialogStyles';
 
 function slugSkuPart(input: string) {
   return input
@@ -172,7 +179,6 @@ export function VariantsPage() {
       defaultCost: v.default_cost,
       price: v.default_price,
       brand: v.product?.brand?.name ?? '-',
-      category: v.product?.category?.name ?? '-',
       active: v.is_active ?? true,
     }));
   }, [rows]);
@@ -222,8 +228,13 @@ export function VariantsPage() {
       setSnack({ open: true, message: 'Variant name is required.', severity: 'error' });
       return;
     }
-    if (defaultPrice.trim() && (!Number.isFinite(Number(defaultPrice)) || Number(defaultPrice) < 0)) {
-      setSnack({ open: true, message: 'Price must be a valid number >= 0.', severity: 'error' });
+    if (!defaultPrice.trim()) {
+      setSnack({ open: true, message: 'Price is required.', severity: 'error' });
+      return;
+    }
+    const parsedDefaultPrice = Number(defaultPrice);
+    if (!Number.isFinite(parsedDefaultPrice) || parsedDefaultPrice <= 0) {
+      setSnack({ open: true, message: 'Price must be a valid number > 0.', severity: 'error' });
       return;
     }
 
@@ -232,7 +243,7 @@ export function VariantsPage() {
         product_id: productId,
         sku: sku.trim(),
         variant_name: variantName.trim(),
-        default_price: defaultPrice.trim() === '' ? null : Number(defaultPrice),
+        default_price: parsedDefaultPrice,
       });
       setSnack({ open: true, message: 'Variant created.', severity: 'success' });
       setOpenCreate(false);
@@ -290,8 +301,13 @@ export function VariantsPage() {
       setSnack({ open: true, message: 'Variant name is required.', severity: 'error' });
       return;
     }
-    if (editDefaultPrice.trim() && (!Number.isFinite(Number(editDefaultPrice)) || Number(editDefaultPrice) < 0)) {
-      setSnack({ open: true, message: 'Price must be a valid number >= 0.', severity: 'error' });
+    if (!editDefaultPrice.trim()) {
+      setSnack({ open: true, message: 'Price is required.', severity: 'error' });
+      return;
+    }
+    const parsedEditDefaultPrice = Number(editDefaultPrice);
+    if (!Number.isFinite(parsedEditDefaultPrice) || parsedEditDefaultPrice <= 0) {
+      setSnack({ open: true, message: 'Price must be a valid number > 0.', severity: 'error' });
       return;
     }
 
@@ -301,7 +317,7 @@ export function VariantsPage() {
         input: {
           sku: editSku.trim(),
           variant_name: editVariantName.trim(),
-          default_price: editDefaultPrice.trim() === '' ? null : Number(editDefaultPrice),
+          default_price: parsedEditDefaultPrice,
         },
       });
       setSnack({ open: true, message: 'Variant updated.', severity: 'success' });
@@ -557,7 +573,6 @@ export function VariantsPage() {
                 <TableCell>Variant</TableCell>
                 <TableCell align="right" width={120}>Price</TableCell>
                 <TableCell>Brand</TableCell>
-                <TableCell>Category</TableCell>
                 {(canUpdate || canDisable || canDelete || canQuickAdjustStock) && (
                   <TableCell align="right">Actions</TableCell>
                 )}
@@ -573,7 +588,6 @@ export function VariantsPage() {
                   <TableCell>{row.variant}</TableCell>
                   <TableCell align="right">{formatMoney(row.price)}</TableCell>
                   <TableCell>{row.brand}</TableCell>
-                  <TableCell>{row.category}</TableCell>
                   {(canUpdate || canDisable || canDelete || canQuickAdjustStock) && (
                     <TableCell align="right">
                       <Stack direction="row" spacing={1} justifyContent="flex-end">
@@ -660,69 +674,82 @@ export function VariantsPage() {
         </Box>
       )}
 
-      <Dialog open={openCreate} onClose={() => setOpenCreate(false)} fullWidth maxWidth="sm">
-        <DialogTitle>New Variant</DialogTitle>
-        <DialogContent sx={{ pt: 2 }}>
-          <Stack spacing={2}>
-            <TextField
-              select
-              label="Product *"
-              value={productId}
-              onChange={(e) => {
-                const nextProductId = e.target.value === '' ? '' : Number(e.target.value);
-                setProductId(nextProductId);
-                if (typeof nextProductId !== 'number') {
-                  setDefaultPrice('');
-                  return;
-                }
-                const selected = products.find((p) => p.id === nextProductId);
-                setDefaultPrice(selected?.base_price == null ? '' : String(selected.base_price));
-              }}
-              disabled={productsQuery.isLoading || !canCreate}
-            >
-              <MenuItem value="">Select product</MenuItem>
-              {products.map((product) => (
-                <MenuItem key={product.id} value={product.id}>
-                  {product.name} {product.product_type ? `(${String(product.product_type).replace(/_/g, ' ')})` : ''}
-                </MenuItem>
-              ))}
-            </TextField>
+      <Dialog open={openCreate} onClose={() => setOpenCreate(false)} fullWidth maxWidth="sm" sx={requestDialogSx}>
+        <DialogTitle sx={requestDialogTitleSx}>
+          <Stack spacing={0.35}>
+            <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.01em' }}>
+              New Variant
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Create the exact sellable option linked to a product family.
+            </Typography>
+          </Stack>
+        </DialogTitle>
+        <DialogContent sx={requestDialogContentSx}>
+          <Stack spacing={1.5}>
+            <Paper variant="outlined" sx={requestSectionSx}>
+              <Stack spacing={1.5}>
+                <TextField
+                  select
+                  label="Product *"
+                  value={productId}
+                  onChange={(e) => {
+                    const nextProductId = e.target.value === '' ? '' : Number(e.target.value);
+                    setProductId(nextProductId);
+                    if (typeof nextProductId !== 'number') {
+                      setDefaultPrice('');
+                      return;
+                    }
+                    const selected = products.find((p) => p.id === nextProductId);
+                    setDefaultPrice(selected?.base_price == null ? '' : String(selected.base_price));
+                  }}
+                  disabled={productsQuery.isLoading || !canCreate}
+                >
+                  <MenuItem value="">Select product</MenuItem>
+                  {products.map((product) => (
+                    <MenuItem key={product.id} value={product.id}>
+                      {product.name} {product.product_type ? `(${String(product.product_type).replace(/_/g, ' ')})` : ''}
+                    </MenuItem>
+                  ))}
+                </TextField>
 
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
-              <TextField
-                fullWidth
-                label="SKU *"
-                value={sku}
-                onChange={(e) => setSku(e.target.value)}
-                helperText="You can type this, or generate one."
-                disabled={!canCreate}
-              />
-              <Button variant="outlined" onClick={generateSku} sx={{ whiteSpace: 'nowrap' }} disabled={!canCreate}>
-                Generate SKU
-              </Button>
-            </Stack>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
+                  <TextField
+                    fullWidth
+                    label="SKU *"
+                    value={sku}
+                    onChange={(e) => setSku(e.target.value)}
+                    helperText="You can type this, or generate one."
+                    disabled={!canCreate}
+                  />
+                  <Button variant="outlined" onClick={generateSku} sx={{ whiteSpace: 'nowrap' }} disabled={!canCreate}>
+                    Generate SKU
+                  </Button>
+                </Stack>
 
-            <TextField
-              label="Variant Name *"
-              value={variantName}
-              onChange={(e) => setVariantName(e.target.value)}
-              disabled={!canCreate}
-            />
+                <TextField
+                  label="Variant Name *"
+                  value={variantName}
+                  onChange={(e) => setVariantName(e.target.value)}
+                  disabled={!canCreate}
+                />
 
-            <TextField
-              label="Price (optional)"
-              type="number"
-              value={defaultPrice}
-              onChange={(e) => setDefaultPrice(e.target.value)}
-              inputProps={{ step: '0.01', min: '0' }}
-              helperText="Auto-filled from Product Base Price. You can override before creating."
-              disabled={!canCreate}
-            />
+                <TextField
+                  label="Price *"
+                  type="number"
+                  value={defaultPrice}
+                  onChange={(e) => setDefaultPrice(e.target.value)}
+                  inputProps={{ step: '0.01', min: '0.01' }}
+                  helperText="Auto-filled from Product Base Price. Required for variant creation."
+                  disabled={!canCreate}
+                />
+              </Stack>
+            </Paper>
 
             {createVariant.isPending && <Alert severity="info">Saving...</Alert>}
           </Stack>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={requestDialogActionsSx}>
           <Button onClick={() => setOpenCreate(false)} disabled={createVariant.isPending}>
             Cancel
           </Button>
@@ -734,7 +761,8 @@ export function VariantsPage() {
               !canCreate ||
               typeof productId !== 'number' ||
               !sku.trim() ||
-              !variantName.trim()
+              !variantName.trim() ||
+              !defaultPrice.trim()
             }
           >
             Create
@@ -761,11 +789,11 @@ export function VariantsPage() {
             />
 
             <TextField
-              label="Price (optional)"
+              label="Price *"
               type="number"
               value={editDefaultPrice}
               onChange={(e) => setEditDefaultPrice(e.target.value)}
-              inputProps={{ step: '0.01', min: '0' }}
+              inputProps={{ step: '0.01', min: '0.01' }}
               disabled={!canUpdate || updateVariant.isPending}
             />
 
@@ -779,7 +807,13 @@ export function VariantsPage() {
           <Button
             variant="contained"
             onClick={submitEdit}
-            disabled={!canUpdate || updateVariant.isPending || !editSku.trim() || !editVariantName.trim()}
+            disabled={
+              !canUpdate ||
+              updateVariant.isPending ||
+              !editSku.trim() ||
+              !editVariantName.trim() ||
+              !editDefaultPrice.trim()
+            }
           >
             Save
           </Button>

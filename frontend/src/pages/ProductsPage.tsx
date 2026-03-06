@@ -29,9 +29,7 @@ import type { ProductType } from '../api/products';
 import { PRODUCT_TYPES } from '../api/products';
 import {
   useBrandsQuery,
-  useCategoriesQuery,
   useCreateBrandMutation,
-  useCreateCategoryMutation,
   useCreateProductMutation,
   useDisableProductMutation,
   useEnableProductMutation,
@@ -40,13 +38,19 @@ import {
   useUpdateProductMutation,
 } from '../api/queries';
 import { useAuth } from '../auth/AuthProvider';
+import {
+  requestDialogActionsSx,
+  requestDialogContentSx,
+  requestDialogSx,
+  requestDialogTitleSx,
+  requestSectionSx,
+} from '../components/requestDialogStyles';
 import type { Product } from '../types/models';
 
 type FormState = {
   name: string;
   product_type: ProductType;
   brand_id: number | '';
-  category_id: number | '';
   base_price: string;
   description: string;
   is_active: boolean;
@@ -64,13 +68,12 @@ const DEFAULT_FORM: FormState = {
   name: '',
   product_type: 'DEVICE',
   brand_id: '',
-  category_id: '',
   base_price: '',
   description: '',
   is_active: true,
 };
 
-const TYPE_LABELS: Record<ProductType, string> = {
+const TYPE_LABELS: Record<string, string> = {
   DEVICE: 'Device',
   DISPOSABLE: 'Disposable',
   POD_CARTRIDGE: 'Pod Cartridge',
@@ -79,8 +82,28 @@ const TYPE_LABELS: Record<ProductType, string> = {
   COIL_ACCESSORY: 'Coil/Accessory',
 };
 
+function normalizeProductTypeCode(value: string): string {
+  return String(value ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
 function toProductType(value: string): ProductType {
-  return (PRODUCT_TYPES as readonly string[]).includes(value) ? (value as ProductType) : 'DEVICE';
+  const normalized = normalizeProductTypeCode(value);
+  return normalized || 'DEVICE';
+}
+
+function formatProductTypeLabel(value: string | null | undefined): string {
+  const code = normalizeProductTypeCode(String(value ?? ''));
+  if (!code) return '-';
+  if (TYPE_LABELS[code]) return TYPE_LABELS[code];
+  return code
+    .split('_')
+    .map((part) => (part ? part[0] + part.slice(1).toLowerCase() : ''))
+    .join(' ');
 }
 
 function formatMoney(value: string | number | null | undefined) {
@@ -101,16 +124,15 @@ export function ProductsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<ProductType | ''>('');
+  const [typeFilter, setTypeFilter] = useState<string | ''>('');
   const [brandFilter, setBrandFilter] = useState<number | ''>('');
-  const [categoryFilter, setCategoryFilter] = useState<number | ''>('');
   const [includeInactive, setIncludeInactive] = useState(false);
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
+  const [newProductType, setNewProductType] = useState('');
   const [newBrandName, setNewBrandName] = useState('');
-  const [newCategoryName, setNewCategoryName] = useState('');
   const [disableConfirmTarget, setDisableConfirmTarget] = useState<Product | null>(null);
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<Product | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ id: number; name: string } | null>(null);
@@ -140,16 +162,13 @@ export function ProductsPage() {
       search: debouncedSearch || undefined,
       product_type: typeFilter || undefined,
       brand_id: typeof brandFilter === 'number' ? brandFilter : undefined,
-      category_id: typeof categoryFilter === 'number' ? categoryFilter : undefined,
       include_inactive: includeInactive ? true : undefined,
     },
     canView
   );
   const brandsQuery = useBrandsQuery({ page: 1 }, canView);
-  const categoriesQuery = useCategoriesQuery({ page: 1 }, canView);
   const createMut = useCreateProductMutation();
   const createBrandMut = useCreateBrandMutation();
-  const createCategoryMut = useCreateCategoryMutation();
   const updateMut = useUpdateProductMutation();
   const disableMut = useDisableProductMutation();
   const enableMut = useEnableProductMutation();
@@ -158,12 +177,10 @@ export function ProductsPage() {
   const rows = productsQuery.data?.data ?? [];
   const totalPages = productsQuery.data?.last_page ?? 1;
   const brandOptions = brandsQuery.data?.data ?? [];
-  const categoryOptions = categoriesQuery.data?.data ?? [];
 
   const busy =
     createMut.isPending ||
     createBrandMut.isPending ||
-    createCategoryMut.isPending ||
     updateMut.isPending ||
     disableMut.isPending ||
     enableMut.isPending ||
@@ -175,6 +192,23 @@ export function ProductsPage() {
     [rows]
   );
 
+  const productTypeOptions = useMemo(() => {
+    const set = new Set<string>(PRODUCT_TYPES as readonly string[]);
+
+    rows.forEach((row) => {
+      const normalized = normalizeProductTypeCode(String(row.product_type ?? ''));
+      if (normalized) set.add(normalized);
+    });
+
+    const formType = normalizeProductTypeCode(form.product_type);
+    if (formType) set.add(formType);
+
+    const filterType = normalizeProductTypeCode(typeFilter || '');
+    if (filterType) set.add(filterType);
+
+    return Array.from(set).sort();
+  }, [rows, form.product_type, typeFilter]);
+
   const openCreate = () => {
     if (!canCreate) {
       setSnack({ open: true, message: 'Not authorized: PRODUCT_CREATE', severity: 'error' });
@@ -182,8 +216,8 @@ export function ProductsPage() {
     }
     setEditing(null);
     setForm(DEFAULT_FORM);
+    setNewProductType('');
     setNewBrandName('');
-    setNewCategoryName('');
     setOpen(true);
   };
 
@@ -197,13 +231,12 @@ export function ProductsPage() {
       name: product.name ?? '',
       product_type: toProductType(product.product_type ?? 'DEVICE'),
       brand_id: product.brand?.id ?? '',
-      category_id: product.category?.id ?? '',
       base_price: product.base_price == null ? '' : String(product.base_price),
       description: product.description ?? '',
       is_active: product.is_active ?? true,
     });
+    setNewProductType('');
     setNewBrandName('');
-    setNewCategoryName('');
     setOpen(true);
   };
 
@@ -215,6 +248,15 @@ export function ProductsPage() {
     }
     if (typeof form.brand_id !== 'number') {
       setSnack({ open: true, message: 'Brand is required.', severity: 'error' });
+      return;
+    }
+    const productType = normalizeProductTypeCode(form.product_type);
+    if (!productType) {
+      setSnack({ open: true, message: 'Product type is required.', severity: 'error' });
+      return;
+    }
+    if (productType.length > 40) {
+      setSnack({ open: true, message: 'Product type is too long (max 40 characters).', severity: 'error' });
       return;
     }
     const basePrice = form.base_price.trim();
@@ -229,9 +271,8 @@ export function ProductsPage() {
 
     const basePayload = {
       name,
-      product_type: form.product_type,
+      product_type: productType,
       brand_id: form.brand_id,
-      category_id: typeof form.category_id === 'number' ? form.category_id : null,
       base_price: basePrice === '' ? null : Number(basePrice),
       description: form.description.trim() || null,
     };
@@ -386,6 +427,27 @@ export function ProductsPage() {
     });
   };
 
+  const createProductTypeInline = () => {
+    if (!canCreate && !canUpdate) {
+      setSnack({ open: true, message: 'Not authorized to manage product type.', severity: 'error' });
+      return;
+    }
+
+    const normalized = normalizeProductTypeCode(newProductType);
+    if (!normalized) {
+      setSnack({ open: true, message: 'Product type is required.', severity: 'error' });
+      return;
+    }
+    if (normalized.length > 40) {
+      setSnack({ open: true, message: 'Product type is too long (max 40 characters).', severity: 'error' });
+      return;
+    }
+
+    setForm((prev) => ({ ...prev, product_type: normalized }));
+    setNewProductType('');
+    setSnack({ open: true, message: `Product type "${normalized}" selected.`, severity: 'success' });
+  };
+
   const createBrandInline = async () => {
     if (!canCreate) {
       setSnack({ open: true, message: 'Not authorized: PRODUCT_CREATE', severity: 'error' });
@@ -403,27 +465,6 @@ export function ProductsPage() {
       setNewBrandName('');
     } catch (e: any) {
       const msg = e?.response?.data?.message || 'Failed to create brand.';
-      setSnack({ open: true, message: msg, severity: 'error' });
-    }
-  };
-
-  const createCategoryInline = async () => {
-    if (!canCreate) {
-      setSnack({ open: true, message: 'Not authorized: PRODUCT_CREATE', severity: 'error' });
-      return;
-    }
-    const name = newCategoryName.trim();
-    if (!name) {
-      setSnack({ open: true, message: 'Category name is required.', severity: 'error' });
-      return;
-    }
-
-    try {
-      const category = await createCategoryMut.mutateAsync({ name, is_active: true });
-      setForm((prev) => ({ ...prev, category_id: category.id }));
-      setNewCategoryName('');
-    } catch (e: any) {
-      const msg = e?.response?.data?.message || 'Failed to create category.';
       setSnack({ open: true, message: msg, severity: 'error' });
     }
   };
@@ -469,9 +510,9 @@ export function ProductsPage() {
           sx={{ width: 210 }}
         >
           <MenuItem value="">All Types</MenuItem>
-          {PRODUCT_TYPES.map((type) => (
+          {productTypeOptions.map((type) => (
             <MenuItem key={type} value={type}>
-              {TYPE_LABELS[type]}
+              {formatProductTypeLabel(type)}
             </MenuItem>
           ))}
         </TextField>
@@ -492,26 +533,6 @@ export function ProductsPage() {
           {brandOptions.map((brand) => (
             <MenuItem key={brand.id} value={brand.id}>
               {brand.name}
-            </MenuItem>
-          ))}
-        </TextField>
-
-        <TextField
-          select
-          size="small"
-          label="Category"
-          value={categoryFilter}
-          onChange={(e) => {
-            setCategoryFilter(e.target.value === '' ? '' : Number(e.target.value));
-            setPage(1);
-          }}
-          sx={{ width: 220 }}
-          disabled={categoriesQuery.isLoading}
-        >
-          <MenuItem value="">All Categories</MenuItem>
-          {categoryOptions.map((category) => (
-            <MenuItem key={category.id} value={category.id}>
-              {category.name}
             </MenuItem>
           ))}
         </TextField>
@@ -545,7 +566,6 @@ export function ProductsPage() {
                 <TableCell>Name</TableCell>
                 <TableCell width={180}>Type</TableCell>
                 <TableCell>Brand</TableCell>
-                <TableCell>Category</TableCell>
                 <TableCell align="right" width={120}>Base Price</TableCell>
                 <TableCell align="right" width={100}>
                   Variants
@@ -565,9 +585,8 @@ export function ProductsPage() {
                   <TableRow key={row.id} hover sx={{ opacity: active ? 1 : 0.55 }}>
                     <TableCell sx={{ fontFamily: 'monospace' }}>{row.id}</TableCell>
                     <TableCell>{row.name}</TableCell>
-                    <TableCell>{TYPE_LABELS[toProductType(row.product_type ?? 'DEVICE')]}</TableCell>
+                    <TableCell>{formatProductTypeLabel(row.product_type ?? 'DEVICE')}</TableCell>
                     <TableCell>{row.brand?.name ?? '-'}</TableCell>
-                    <TableCell>{row.category?.name ?? '-'}</TableCell>
                     <TableCell align="right">{formatMoney(row.base_price)}</TableCell>
                     <TableCell align="right">{row.variants_count ?? 0}</TableCell>
                     <TableCell>{active ? 'Active' : 'Inactive'}</TableCell>
@@ -629,150 +648,150 @@ export function ProductsPage() {
         </Box>
       )}
 
-      <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>{editing ? 'Edit Product' : 'New Product'}</DialogTitle>
-        <DialogContent sx={{ pt: 2 }}>
-          <Stack spacing={2}>
-            <TextField
-              label="Product Name *"
-              value={form.name}
-              onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-              fullWidth
-              disabled={busy}
-            />
-
-            <TextField
-              select
-              label="Product Type *"
-              value={form.product_type}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  product_type: toProductType(e.target.value),
-                }))
-              }
-              fullWidth
-              disabled={busy}
-              helperText="Type controls how variants are structured in day-to-day catalog use."
-            >
-              {PRODUCT_TYPES.map((type) => (
-                <MenuItem key={type} value={type}>
-                  {TYPE_LABELS[type]}
-                </MenuItem>
-              ))}
-            </TextField>
-
-            <TextField
-              select
-              label="Brand *"
-              value={form.brand_id}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  brand_id: e.target.value === '' ? '' : Number(e.target.value),
-                }))
-              }
-              fullWidth
-              disabled={busy || brandsQuery.isLoading}
-            >
-              <MenuItem value="">Select brand</MenuItem>
-              {brandOptions.map((brand) => (
-                <MenuItem key={brand.id} value={brand.id}>
-                  {brand.name}
-                </MenuItem>
-              ))}
-            </TextField>
-
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
-              <TextField
-                fullWidth
-                label="New Brand"
-                value={newBrandName}
-                onChange={(e) => setNewBrandName(e.target.value)}
-                disabled={busy || !canCreate}
-                helperText="If the brand you need is missing, add it here and it will be selected automatically."
-              />
-              <Button
-                variant="outlined"
-                onClick={createBrandInline}
-                disabled={busy || !canCreate || !newBrandName.trim()}
-                sx={{ whiteSpace: 'nowrap' }}
-              >
-                Add Brand
-              </Button>
-            </Stack>
-
-            <TextField
-              select
-              label="Category (optional)"
-              value={form.category_id}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  category_id: e.target.value === '' ? '' : Number(e.target.value),
-                }))
-              }
-              fullWidth
-              disabled={busy || categoriesQuery.isLoading}
-            >
-              <MenuItem value="">No Category</MenuItem>
-              {categoryOptions.map((category) => (
-                <MenuItem key={category.id} value={category.id}>
-                  {category.name}
-                </MenuItem>
-              ))}
-            </TextField>
-
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
-              <TextField
-                fullWidth
-                label="New Category (optional)"
-                value={newCategoryName}
-                onChange={(e) => setNewCategoryName(e.target.value)}
-                disabled={busy || !canCreate}
-                helperText="If category dropdown is empty, add category here then select automatically."
-              />
-              <Button
-                variant="outlined"
-                onClick={createCategoryInline}
-                disabled={busy || !canCreate || !newCategoryName.trim()}
-                sx={{ whiteSpace: 'nowrap' }}
-              >
-                Add Category
-              </Button>
-            </Stack>
-
-            <TextField
-              label="Description (optional)"
-              value={form.description}
-              onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-              multiline
-              minRows={2}
-              fullWidth
-              disabled={busy}
-            />
-
-            <TextField
-              label="Base Price (optional)"
-              type="number"
-              value={form.base_price}
-              onChange={(e) => setForm((prev) => ({ ...prev, base_price: e.target.value }))}
-              inputProps={{ step: '0.01', min: '0' }}
-              fullWidth
-              disabled={busy}
-              helperText="Template price used to prefill new variants for this product."
-            />
-
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={form.is_active}
-                  onChange={(e) => setForm((prev) => ({ ...prev, is_active: e.target.checked }))}
-                  disabled={busy || !!editing}
+      <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm" sx={requestDialogSx}>
+        <DialogTitle sx={requestDialogTitleSx}>
+          <Stack spacing={0.35}>
+            <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.01em' }}>
+              {editing ? 'Edit Product' : 'New Product'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Define the catalog item baseline before adding sellable variants.
+            </Typography>
+          </Stack>
+        </DialogTitle>
+        <DialogContent sx={requestDialogContentSx}>
+          <Stack spacing={1.5}>
+            <Paper variant="outlined" sx={requestSectionSx}>
+              <Stack spacing={1.5}>
+                <TextField
+                  label="Product Name *"
+                  value={form.name}
+                  onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                  fullWidth
+                  disabled={busy}
                 />
-              }
-              label={editing ? 'Active (use Disable/Enable action from table)' : 'Active'}
-            />
+
+                <TextField
+                  select
+                  label="Product Type *"
+                  value={form.product_type}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      product_type: toProductType(e.target.value),
+                    }))
+                  }
+                  fullWidth
+                  disabled={busy}
+                  helperText="Type controls how variants are structured in day-to-day catalog use."
+                >
+                  {productTypeOptions.map((type) => (
+                    <MenuItem key={type} value={type}>
+                      {formatProductTypeLabel(type)}
+                    </MenuItem>
+                  ))}
+                </TextField>
+
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
+                  <TextField
+                    fullWidth
+                    label="New Product Type"
+                    value={newProductType}
+                    onChange={(e) => setNewProductType(e.target.value)}
+                    disabled={busy || (!canCreate && !canUpdate)}
+                    helperText="Example: MOD_KIT or POD_REFILL. It will be normalized to uppercase snake_case."
+                  />
+                  <Button
+                    variant="outlined"
+                    onClick={createProductTypeInline}
+                    disabled={busy || !newProductType.trim() || (!canCreate && !canUpdate)}
+                    sx={{ whiteSpace: 'nowrap' }}
+                  >
+                    Add Type
+                  </Button>
+                </Stack>
+              </Stack>
+            </Paper>
+
+            <Paper variant="outlined" sx={requestSectionSx}>
+              <Stack spacing={1.5}>
+                <TextField
+                  select
+                  label="Brand *"
+                  value={form.brand_id}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      brand_id: e.target.value === '' ? '' : Number(e.target.value),
+                    }))
+                  }
+                  fullWidth
+                  disabled={busy || brandsQuery.isLoading}
+                >
+                  <MenuItem value="">Select brand</MenuItem>
+                  {brandOptions.map((brand) => (
+                    <MenuItem key={brand.id} value={brand.id}>
+                      {brand.name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
+                  <TextField
+                    fullWidth
+                    label="New Brand"
+                    value={newBrandName}
+                    onChange={(e) => setNewBrandName(e.target.value)}
+                    disabled={busy || !canCreate}
+                    helperText="If the brand you need is missing, add it here and it will be selected automatically."
+                  />
+                  <Button
+                    variant="outlined"
+                    onClick={createBrandInline}
+                    disabled={busy || !canCreate || !newBrandName.trim()}
+                    sx={{ whiteSpace: 'nowrap' }}
+                  >
+                    Add Brand
+                  </Button>
+                </Stack>
+              </Stack>
+            </Paper>
+
+            <Paper variant="outlined" sx={requestSectionSx}>
+              <Stack spacing={1.5}>
+                <TextField
+                  label="Description (optional)"
+                  value={form.description}
+                  onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+                  multiline
+                  minRows={2}
+                  fullWidth
+                  disabled={busy}
+                />
+
+                <TextField
+                  label="Base Price (optional)"
+                  type="number"
+                  value={form.base_price}
+                  onChange={(e) => setForm((prev) => ({ ...prev, base_price: e.target.value }))}
+                  inputProps={{ step: '0.01', min: '0' }}
+                  fullWidth
+                  disabled={busy}
+                  helperText="Template price used to prefill new variants for this product."
+                />
+
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={form.is_active}
+                      onChange={(e) => setForm((prev) => ({ ...prev, is_active: e.target.checked }))}
+                      disabled={busy || !!editing}
+                    />
+                  }
+                  label={editing ? 'Active (use Disable/Enable action from table)' : 'Active'}
+                />
+              </Stack>
+            </Paper>
 
             {(createMut.isError || updateMut.isError || disableMut.isError || purgeMut.isError) && (
               <Alert severity="error">
@@ -787,7 +806,7 @@ export function ProductsPage() {
             )}
           </Stack>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={requestDialogActionsSx}>
           <Button onClick={() => setOpen(false)} disabled={busy}>
             Cancel
           </Button>

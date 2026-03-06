@@ -11,13 +11,12 @@ export const PRODUCT_TYPES = [
   'COIL_ACCESSORY',
 ] as const;
 
-export type ProductType = (typeof PRODUCT_TYPES)[number];
+export type ProductType = string;
 
 export type ProductsQuery = {
   page?: number;
   search?: string;
   brand_id?: number;
-  category_id?: number;
   product_type?: ProductType;
   include_inactive?: boolean;
 };
@@ -26,7 +25,6 @@ export type CreateProductInput = {
   name: string;
   product_type: ProductType;
   brand_id: number;
-  category_id?: number | null;
   description?: string | null;
   base_price?: number | null;
   is_active?: boolean;
@@ -36,7 +34,6 @@ export type UpdateProductInput = {
   name?: string;
   product_type?: ProductType;
   brand_id?: number;
-  category_id?: number | null;
   description?: string | null;
   base_price?: number | null;
 };

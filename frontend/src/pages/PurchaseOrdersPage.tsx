@@ -25,6 +25,13 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { BranchSelect } from '../components/BranchSelect';
+import {
+  requestDialogActionsSx,
+  requestDialogContentSx,
+  requestDialogSx,
+  requestDialogTitleSx,
+  requestSectionSx,
+} from '../components/requestDialogStyles';
 import { authStorage } from '../auth/authStorage';
 import { useAuth } from '../auth/AuthProvider';
 import {
@@ -106,11 +113,17 @@ function getVariantLabel(v: any): string {
   return composed || 'Standard';
 }
 
+function getVariantOnHand(v: any): number | null {
+  const n = Number(v?.qty_on_hand);
+  return Number.isFinite(n) ? n : null;
+}
+
 type DraftItem = {
   product_variant_id: number;
   sku?: string | null;
   productName?: string | null;
   variantName?: string | null;
+  onHand?: number | null;
   qty_ordered: number;
   unit_cost: number; // required by backend (0 ok)
 };
@@ -118,6 +131,7 @@ type DraftItem = {
 type PrettyRow = {
   id: number;
   status: string;
+  isNew: boolean;
   branch: string;
   supplier: string;
   itemsCount: number;
@@ -149,6 +163,9 @@ export function PurchaseOrdersPage() {
 
   const [status, setStatus] = useState<string>(() => searchParams.get('status') ?? '');
   const [page, setPage] = useState<number>(() => toInt(searchParams.get('page')) ?? 1);
+  const [seenSubmittedPoId, setSeenSubmittedPoId] = useState<number>(() =>
+    authStorage.getSeenPending(user?.id).purchaseOrders
+  );
 
   // Drawer
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -176,7 +193,11 @@ export function PurchaseOrdersPage() {
   const [variantSearchDebounced, setVariantSearchDebounced] = useState('');
 
   const variantLookup = useVariantsQuery(
-    { page: 1, search: variantSearchDebounced || undefined },
+    {
+      page: 1,
+      search: variantSearchDebounced || undefined,
+      branch_id: typeof createBranch === 'number' ? createBranch : undefined,
+    },
     openCreate && canPOCreate && variantSearchDebounced.length >= 2
   );
   const variantOptions: any[] = variantLookup.data?.data ?? [];
@@ -198,6 +219,10 @@ export function PurchaseOrdersPage() {
   const showSnack = (message: string, severity: 'success' | 'error' | 'info' = 'error') => {
     setSnack({ open: true, message, severity });
   };
+
+  useEffect(() => {
+    setSeenSubmittedPoId(authStorage.getSeenPending(user?.id).purchaseOrders);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!openCreate) return;
@@ -241,10 +266,14 @@ export function PurchaseOrdersPage() {
     return rows.map((po: any) => {
       const itemsCount = Number(po.items_count ?? po.items?.length ?? 0);
       const totalQty = Number(po.total_qty_ordered ?? po.total_qty ?? 0);
+      const id = Number(po.id);
+      const statusText = String(po.status ?? '-');
+      const isNew = statusText === 'SUBMITTED' && id > seenSubmittedPoId;
 
       return {
-        id: Number(po.id),
-        status: String(po.status ?? '-'),
+        id,
+        status: statusText,
+        isNew,
         branch: String(po.branch?.name ?? po.branch_name ?? po.branch_id ?? '-'),
         supplier: String(po.supplier?.name ?? po.supplier_name ?? po.supplier_id ?? '-'),
         itemsCount: Number.isFinite(itemsCount) ? itemsCount : 0,
@@ -252,7 +281,15 @@ export function PurchaseOrdersPage() {
         notes: String(po.notes ?? ''),
       };
     });
-  }, [rows]);
+  }, [rows, seenSubmittedPoId]);
+
+  const openPurchaseOrderRow = (row: PrettyRow) => {
+    if (row.status === 'SUBMITTED') {
+      const next = authStorage.markSeenPending(user?.id, 'purchaseOrders', row.id);
+      setSeenSubmittedPoId(next.purchaseOrders);
+    }
+    setSelectedId(row.id);
+  };
 
   const openNew = () => {
     if (!canPOCreate) {
@@ -302,6 +339,7 @@ export function PurchaseOrdersPage() {
     const sku = pickedVariant?.sku ?? null;
     const productName = pickedVariant?.product?.name ?? null;
     const variantName = getVariantLabel(pickedVariant);
+    const onHand = getVariantOnHand(pickedVariant);
 
     setDraftItems((prev) => {
       const idx = prev.findIndex((x) => x.product_variant_id === id);
@@ -312,12 +350,24 @@ export function PurchaseOrdersPage() {
           sku,
           productName,
           variantName,
+          onHand,
           qty_ordered: next[idx].qty_ordered + q,
           unit_cost: cost,
         };
         return next;
       }
-      return [...prev, { product_variant_id: id, sku, productName, variantName, qty_ordered: q, unit_cost: cost }];
+      return [
+        ...prev,
+        {
+          product_variant_id: id,
+          sku,
+          productName,
+          variantName,
+          onHand,
+          qty_ordered: q,
+          unit_cost: cost,
+        },
+      ];
     });
 
     setItemQty('1');
@@ -581,12 +631,32 @@ export function PurchaseOrdersPage() {
                 <TableRow
                   key={r.id}
                   hover
-                  sx={{ cursor: 'pointer' }}
-                  onClick={() => setSelectedId(r.id)}
+                  sx={{
+                    cursor: 'pointer',
+                    bgcolor: r.isNew ? 'rgba(211, 47, 47, 0.06)' : undefined,
+                  }}
+                  onClick={() => openPurchaseOrderRow(r)}
                 >
                   <TableCell sx={{ fontFamily: 'monospace' }}>#{r.id}</TableCell>
                   <TableCell>
-                    <Chip size="small" color={statusChipColor(r.status)} label={formatStatus(r.status)} />
+                    <Stack direction="row" spacing={0.75} alignItems="center">
+                      <Chip size="small" color={statusChipColor(r.status)} label={formatStatus(r.status)} />
+                      {r.isNew && (
+                        <>
+                          <Box
+                            component="span"
+                            sx={{
+                              width: 7,
+                              height: 7,
+                              borderRadius: '50%',
+                              bgcolor: 'error.main',
+                              display: 'inline-block',
+                            }}
+                          />
+                          <Chip size="small" color="error" label="NEW" sx={{ height: 20, fontSize: 10 }} />
+                        </>
+                      )}
+                    </Stack>
                   </TableCell>
                   <TableCell>{r.supplier}</TableCell>
                   <TableCell>{r.branch}</TableCell>
@@ -623,11 +693,21 @@ export function PurchaseOrdersPage() {
         maxWidth="md"
         fullWidth
         disableScrollLock
+        sx={requestDialogSx}
       >
-        <DialogTitle>New Purchase Order</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            <Box>
+        <DialogTitle sx={requestDialogTitleSx}>
+          <Stack spacing={0.35}>
+            <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.01em' }}>
+              New Purchase Order
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Prepare supplier replenishment with clean variant-level quantities and costs.
+            </Typography>
+          </Stack>
+        </DialogTitle>
+        <DialogContent sx={requestDialogContentSx}>
+          <Stack spacing={1.5}>
+            <Paper variant="outlined" sx={requestSectionSx}>
               <Typography variant="caption" sx={{ opacity: 0.7 }}>
                 Branch
               </Typography>
@@ -640,24 +720,27 @@ export function PurchaseOrdersPage() {
               ) : (
                 <TextField size="small" label="Branch" value={createBranchLabel} disabled fullWidth />
               )}
-            </Box>
+            </Paper>
 
-            <TextField
-              select
-              size="small"
-              label="Supplier"
-              value={createSupplierId}
-              onChange={(e) => setCreateSupplierId(e.target.value === '' ? '' : Number(e.target.value))}
-              helperText={suppliersQuery.isError ? 'Failed to load suppliers.' : 'Required'}
-              disabled={!canPOCreate}
-            >
-              <MenuItem value="">Select supplier</MenuItem>
-              {(suppliersQuery.data ?? []).map((s) => (
-                <MenuItem key={s.id} value={s.id}>
-                  {s.name}
-                </MenuItem>
-              ))}
-            </TextField>
+            <Paper variant="outlined" sx={requestSectionSx}>
+              <TextField
+                select
+                size="small"
+                label="Supplier"
+                value={createSupplierId}
+                onChange={(e) => setCreateSupplierId(e.target.value === '' ? '' : Number(e.target.value))}
+                helperText={suppliersQuery.isError ? 'Failed to load suppliers.' : 'Required'}
+                disabled={!canPOCreate}
+                fullWidth
+              >
+                <MenuItem value="">Select supplier</MenuItem>
+                {(suppliersQuery.data ?? []).map((s) => (
+                  <MenuItem key={s.id} value={s.id}>
+                    {s.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Paper>
 
             <TextField
               size="small"
@@ -671,7 +754,7 @@ export function PurchaseOrdersPage() {
                   if (first) pickVariant(first);
                 }
               }}
-              helperText="Tip: press Enter to auto-pick the first match. Product is the item family; Variant is the exact sellable option."
+              helperText="Tip: press Enter to auto-pick the first match. Product is the item family; Variant is the exact sellable option. On hand uses the selected branch."
               disabled={!canPOCreate}
             />
 
@@ -680,7 +763,7 @@ export function PurchaseOrdersPage() {
             )}
 
             {variantSearchDebounced.length >= 2 && !variantLookup.isLoading && variantOptions.length > 0 && (
-              <Paper variant="outlined" sx={{ maxHeight: 220, overflow: 'auto' }}>
+              <Paper variant="outlined" sx={[requestSectionSx, { maxHeight: 220, overflow: 'auto', p: 0 }]}>
                 <Box sx={{ px: 1.5, pt: 1 }}>
                   <Typography variant="caption" sx={{ opacity: 0.75 }}>
                     Search Results - pick the exact variant
@@ -693,18 +776,21 @@ export function PurchaseOrdersPage() {
                       <TableCell>SKU</TableCell>
                       <TableCell>Product</TableCell>
                       <TableCell>Variant</TableCell>
+                      <TableCell align="right" width={120}>On hand</TableCell>
                       <TableCell width={90} />
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {variantOptions.slice(0, 10).map((v: any) => {
                       const id = Number(v?.id);
+                      const onHand = getVariantOnHand(v);
                       return (
                         <TableRow key={id} hover>
                           <TableCell sx={{ fontFamily: 'monospace' }}>{id}</TableCell>
                           <TableCell>{v?.sku ?? '-'}</TableCell>
                           <TableCell>{v?.product?.name ?? '-'}</TableCell>
                           <TableCell>{getVariantLabel(v)}</TableCell>
+                          <TableCell align="right">{onHand === null ? '-' : qtyFmt(onHand)}</TableCell>
                           <TableCell>
                             <Button size="small" onClick={() => pickVariant(v)} sx={{ textTransform: 'none' }}>
                               Pick
@@ -724,7 +810,7 @@ export function PurchaseOrdersPage() {
               </Alert>
             )}
 
-            <Paper variant="outlined" sx={{ p: 1 }}>
+            <Paper variant="outlined" sx={requestSectionSx}>
               <Stack spacing={1}>
                 <Typography variant="caption" sx={{ opacity: 0.8 }}>
                   Selected Item (for this PO line)
@@ -758,6 +844,13 @@ export function PurchaseOrdersPage() {
                   />
                   <TextField
                     size="small"
+                    label="On hand"
+                    value={pickedVariant ? (getVariantOnHand(pickedVariant) === null ? '-' : qtyFmt(getVariantOnHand(pickedVariant) as number)) : ''}
+                    disabled
+                    sx={{ width: { xs: '100%', sm: 130 } }}
+                  />
+                  <TextField
+                    size="small"
                     label="Qty to order"
                     value={itemQty}
                     onChange={(e) => setItemQty(e.target.value)}
@@ -784,7 +877,7 @@ export function PurchaseOrdersPage() {
               </Stack>
             </Paper>
 
-            <Paper variant="outlined" sx={{ p: 1 }}>
+            <Paper variant="outlined" sx={requestSectionSx}>
               <Stack direction="row" justifyContent="space-between" alignItems="center">
                 <Typography variant="body2">
                   Draft: <b>{draftItems.length}</b> item(s), total qty <b>{qtyFmt(draftTotalQty)}</b>
@@ -806,6 +899,7 @@ export function PurchaseOrdersPage() {
                       <TableCell>SKU</TableCell>
                       <TableCell>Product</TableCell>
                       <TableCell>Variant</TableCell>
+                      <TableCell align="right" width={120}>On hand</TableCell>
                       <TableCell align="right" width={120}>
                         Qty
                       </TableCell>
@@ -824,6 +918,7 @@ export function PurchaseOrdersPage() {
                         <TableCell>{it.sku ?? '-'}</TableCell>
                         <TableCell>{it.productName ?? '-'}</TableCell>
                         <TableCell>{it.variantName ?? '-'}</TableCell>
+                        <TableCell align="right">{it.onHand === null || it.onHand === undefined ? '-' : qtyFmt(it.onHand)}</TableCell>
                         <TableCell align="right">{qtyFmt(it.qty_ordered)}</TableCell>
                         <TableCell align="right">{qtyFmt(it.unit_cost)}</TableCell>
                         <TableCell align="right">
@@ -857,7 +952,7 @@ export function PurchaseOrdersPage() {
             {createMut.isError && <Alert severity="error">Failed to create PO.</Alert>}
           </Stack>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={requestDialogActionsSx}>
           <Button onClick={() => setOpenCreate(false)}>Cancel</Button>
           <Button variant="contained" onClick={submitCreate} disabled={!canCreate}>
             Create

@@ -16,6 +16,7 @@ export function HomeRedirect() {
   }
 
   // Default priority by capability
+  if (can('USER_VIEW')) return <Navigate to="/dashboard" replace />;
   if (can('INVENTORY_VIEW')) return <Navigate to="/inventory" replace />;
   if (can('LEDGER_VIEW')) return <Navigate to="/ledger" replace />;
   if (can('PO_VIEW')) return <Navigate to="/purchase-orders" replace />;

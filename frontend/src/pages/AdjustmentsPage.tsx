@@ -2,6 +2,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -27,6 +28,13 @@ import { useAuth } from '../auth/AuthProvider';
 import { authStorage } from '../auth/authStorage';
 import { BranchSelect } from '../components/BranchSelect';
 import {
+  requestDialogActionsSx,
+  requestDialogContentSx,
+  requestDialogSx,
+  requestDialogTitleSx,
+  requestSectionSx,
+} from '../components/requestDialogStyles';
+import {
   useBranchesQuery,
   useAdjustmentsQuery,
   useCreateAdjustmentMutation,
@@ -46,6 +54,11 @@ function qty(n: number) {
 function toInt(v: string | null): number | null {
   if (v === null || v === '') return null;
   const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function getVariantOnHand(v: any): number | null {
+  const n = Number(v?.qty_on_hand);
   return Number.isFinite(n) ? n : null;
 }
 
@@ -74,6 +87,9 @@ export function AdjustmentsPage() {
 
   const [status, setStatus] = useState<string>(() => searchParams.get('status') ?? '');
   const [page, setPage] = useState<number>(() => toInt(searchParams.get('page')) ?? 1);
+  const [seenSubmittedAdjustmentId, setSeenSubmittedAdjustmentId] = useState<number>(() =>
+    authStorage.getSeenPending(user?.id).adjustments
+  );
 
   const [selected, setSelected] = useState<StockAdjustment | null>(null);
   const [openCreate, setOpenCreate] = useState(false);
@@ -93,6 +109,7 @@ export function AdjustmentsPage() {
       product_variant_id: number;
       sku?: string | null;
       productName?: string | null;
+      onHand?: number | null;
       qty_delta: number;
       unit_cost: number | null;
       notes: string | null;
@@ -104,6 +121,10 @@ export function AdjustmentsPage() {
     message: '',
     severity: 'success',
   });
+
+  useEffect(() => {
+    setSeenSubmittedAdjustmentId(authStorage.getSeenPending(user?.id).adjustments);
+  }, [user?.id]);
 
   // Hydrate state when URL changes
   useEffect(() => {
@@ -173,7 +194,11 @@ export function AdjustmentsPage() {
   }, [variantSearch, openCreate]);
 
   const variantLookup = useVariantsQuery(
-    { page: 1, search: variantSearchDebounced || undefined },
+    {
+      page: 1,
+      search: variantSearchDebounced || undefined,
+      branch_id: typeof createBranchId === 'number' ? createBranchId : undefined,
+    },
     openCreate && canCreatePerm && variantSearchDebounced.length >= 2
   );
   const variantOptions: any[] = variantLookup.data?.data ?? [];
@@ -188,12 +213,16 @@ export function AdjustmentsPage() {
       const totalDelta = items.reduce((sum, it) => sum + Number(it.qty_delta ?? 0), 0);
       const createdByUser = a.createdBy ?? a.created_by ?? null;
       const refNo = a.reference_no?.trim() ? a.reference_no : `ADJ-${a.id}`;
+      const statusText = String(a.status ?? '-');
+      const adjustmentId = Number(a.id ?? 0);
+      const isNew = statusText === 'SUBMITTED' && adjustmentId > seenSubmittedAdjustmentId;
 
       return {
         raw: a,
-        id: a.id,
+        id: adjustmentId,
         createdAt: a.created_at ? new Date(a.created_at).toLocaleString() : '-',
-        status: a.status ?? '-',
+        status: statusText,
+        isNew,
         reason: a.reason_code ?? '-',
         ref: refNo,
         itemsCount,
@@ -201,7 +230,15 @@ export function AdjustmentsPage() {
         createdBy: createdByUser?.name ?? '-',
       };
     });
-  }, [rows]);
+  }, [rows, seenSubmittedAdjustmentId]);
+
+  const openAdjustmentRow = (row: { raw: StockAdjustment; id: number; status: string }) => {
+    if (row.status === 'SUBMITTED') {
+      const next = authStorage.markSeenPending(user?.id, 'adjustments', row.id);
+      setSeenSubmittedAdjustmentId(next.adjustments);
+    }
+    setSelected(row.raw);
+  };
 
   const closeDrawer = () => setSelected(null);
 
@@ -299,6 +336,7 @@ export function AdjustmentsPage() {
     const notes = itemNotes.trim() ? itemNotes.trim() : null;
     const sku = pickedVariant?.sku ?? null;
     const productName = pickedVariant?.product?.name ?? null;
+    const onHand = getVariantOnHand(pickedVariant);
 
     setDraftItems((prev) => {
       const idx = prev.findIndex((x) => x.product_variant_id === variantId);
@@ -311,6 +349,7 @@ export function AdjustmentsPage() {
           notes,
           sku: sku ?? next[idx].sku,
           productName: productName ?? next[idx].productName,
+          onHand: onHand ?? next[idx].onHand ?? null,
         };
         return next;
       }
@@ -321,6 +360,7 @@ export function AdjustmentsPage() {
           product_variant_id: variantId,
           sku,
           productName,
+          onHand,
           qty_delta: qtyDelta,
           unit_cost: unitCost,
           notes,
@@ -517,10 +557,37 @@ export function AdjustmentsPage() {
             </TableHead>
             <TableBody>
               {pretty.map((r) => (
-                <TableRow key={r.id} hover sx={{ cursor: 'pointer' }} onClick={() => setSelected(r.raw)}>
+                <TableRow
+                  key={r.id}
+                  hover
+                  sx={{
+                    cursor: 'pointer',
+                    bgcolor: r.isNew ? 'rgba(211, 47, 47, 0.06)' : undefined,
+                  }}
+                  onClick={() => openAdjustmentRow(r)}
+                >
                   <TableCell>{r.id}</TableCell>
                   <TableCell>{r.createdAt}</TableCell>
-                  <TableCell>{r.status}</TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={0.75} alignItems="center">
+                      <Typography variant="body2">{r.status}</Typography>
+                      {r.isNew && (
+                        <>
+                          <Box
+                            component="span"
+                            sx={{
+                              width: 7,
+                              height: 7,
+                              borderRadius: '50%',
+                              bgcolor: 'error.main',
+                              display: 'inline-block',
+                            }}
+                          />
+                          <Chip size="small" color="error" label="NEW" sx={{ height: 20, fontSize: 10 }} />
+                        </>
+                      )}
+                    </Stack>
+                  </TableCell>
                   <TableCell>{r.reason}</TableCell>
                   <TableCell>{r.ref}</TableCell>
                   <TableCell align="right">{r.itemsCount}</TableCell>
@@ -539,12 +606,21 @@ export function AdjustmentsPage() {
         </Box>
       )}
 
-      <Dialog open={openCreate} onClose={closeCreateDialog} maxWidth="md" fullWidth>
-        <DialogTitle>New Adjustment Draft</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ pt: 1 }}>
+      <Dialog open={openCreate} onClose={closeCreateDialog} maxWidth="md" fullWidth sx={requestDialogSx}>
+        <DialogTitle sx={requestDialogTitleSx}>
+          <Stack spacing={0.35}>
+            <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.01em' }}>
+              New Adjustment Draft
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Stage stock corrections first, then submit and post when validated.
+            </Typography>
+          </Stack>
+        </DialogTitle>
+        <DialogContent sx={requestDialogContentSx}>
+          <Stack spacing={1.5}>
             {canBranchView ? (
-              <Box>
+              <Paper variant="outlined" sx={requestSectionSx}>
                 <Typography variant="caption" sx={{ opacity: 0.7 }}>
                   Branch
                 </Typography>
@@ -554,7 +630,7 @@ export function AdjustmentsPage() {
                   onChange={(id) => setCreateBranchId(id)}
                   disabled={!canCreatePerm}
                 />
-              </Box>
+              </Paper>
             ) : (
               <TextField size="small" label="Branch" value={createBranchLabel} disabled fullWidth />
             )}
@@ -590,7 +666,7 @@ export function AdjustmentsPage() {
               label="Scan/search SKU or barcode"
               value={variantSearch}
               onChange={(e) => setVariantSearch(e.target.value)}
-              helperText="Type at least 2 characters to search variants."
+              helperText="Type at least 2 characters to search variants. On hand is based on the selected branch."
               disabled={!canCreatePerm}
             />
 
@@ -599,24 +675,27 @@ export function AdjustmentsPage() {
             )}
 
             {variantSearchDebounced.length >= 2 && !variantLookup.isLoading && variantOptions.length > 0 && (
-              <Paper variant="outlined" sx={{ maxHeight: 220, overflow: 'auto' }}>
+              <Paper variant="outlined" sx={[requestSectionSx, { maxHeight: 220, overflow: 'auto', p: 0 }]}>
                 <Table size="small" stickyHeader>
                   <TableHead>
                     <TableRow>
                       <TableCell width={110}>ID</TableCell>
                       <TableCell>SKU</TableCell>
                       <TableCell>Product</TableCell>
+                      <TableCell align="right" width={120}>On hand</TableCell>
                       <TableCell width={100} />
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {variantOptions.slice(0, 10).map((v: any) => {
                       const id = Number(v?.id);
+                      const onHand = getVariantOnHand(v);
                       return (
                         <TableRow key={id} hover>
                           <TableCell sx={{ fontFamily: 'monospace' }}>{id}</TableCell>
                           <TableCell>{v?.sku ?? '-'}</TableCell>
                           <TableCell>{v?.product?.name ?? '-'}</TableCell>
+                          <TableCell align="right">{onHand === null ? '-' : qty(onHand)}</TableCell>
                           <TableCell>
                             <Button size="small" onClick={() => pickVariant(v)} disabled={!canCreatePerm}>
                               Pick
@@ -630,7 +709,7 @@ export function AdjustmentsPage() {
               </Paper>
             )}
 
-            <Paper variant="outlined" sx={{ p: 1 }}>
+            <Paper variant="outlined" sx={requestSectionSx}>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
                 <TextField
                   size="small"
@@ -639,6 +718,13 @@ export function AdjustmentsPage() {
                   placeholder="Pick a variant above"
                   disabled
                   sx={{ flex: 1 }}
+                />
+                <TextField
+                  size="small"
+                  label="On hand"
+                  value={pickedVariant ? (getVariantOnHand(pickedVariant) === null ? '-' : qty(getVariantOnHand(pickedVariant) as number)) : ''}
+                  disabled
+                  sx={{ width: 130 }}
                 />
                 <TextField
                   size="small"
@@ -672,7 +758,7 @@ export function AdjustmentsPage() {
               />
             </Paper>
 
-            <Paper variant="outlined" sx={{ p: 1 }}>
+            <Paper variant="outlined" sx={requestSectionSx}>
               <Stack direction="row" justifyContent="space-between" alignItems="center">
                 <Typography variant="body2">
                   Draft items: <b>{draftItems.length}</b>, total qty delta{' '}
@@ -694,6 +780,7 @@ export function AdjustmentsPage() {
                       <TableCell width={130}>Variant ID</TableCell>
                       <TableCell>SKU</TableCell>
                       <TableCell>Product</TableCell>
+                      <TableCell align="right" width={120}>On hand</TableCell>
                       <TableCell align="right" width={120}>Qty delta</TableCell>
                       <TableCell align="right" width={120}>Unit cost</TableCell>
                       <TableCell align="right" width={100}>Remove</TableCell>
@@ -705,6 +792,7 @@ export function AdjustmentsPage() {
                         <TableCell sx={{ fontFamily: 'monospace' }}>{it.product_variant_id}</TableCell>
                         <TableCell>{it.sku ?? '-'}</TableCell>
                         <TableCell>{it.productName ?? '-'}</TableCell>
+                        <TableCell align="right">{it.onHand === null || it.onHand === undefined ? '-' : qty(it.onHand)}</TableCell>
                         <TableCell align="right">{qty(it.qty_delta)}</TableCell>
                         <TableCell align="right">
                           {it.unit_cost === null ? '-' : Number(it.unit_cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -734,7 +822,7 @@ export function AdjustmentsPage() {
             {createMut.isPending && <Alert severity="info">Creating draft...</Alert>}
           </Stack>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={requestDialogActionsSx}>
           <Button onClick={closeCreateDialog} disabled={createMut.isPending}>
             Cancel
           </Button>

@@ -3,7 +3,6 @@ import type { LaravelPaginator } from '../types/api';
 import type {
   Branch,
   Brand,
-  Category,
   InventoryBalance,
   Product,
   ProductVariant,
@@ -22,12 +21,9 @@ import {
 } from './branches';
 import {
   getBrands,
-  getCategories,
   createBrand,
-  createCategory,
   type CatalogQuery,
   type CreateBrandInput,
-  type CreateCategoryInput,
 } from './catalog';
 import { getInventory, type InventoryQuery } from './inventory';
 import { getLedger, type LedgerQuery } from './ledger';
@@ -121,6 +117,14 @@ import {
   type StockAdjustment,
   type CreateAdjustmentInput,
 } from './adjustments';
+import {
+  getDashboardSummary,
+  getDashboardKpiDetails,
+  type DashboardKpiDetailRow,
+  type DashboardKpiDetailsQuery,
+  type DashboardSummaryQuery,
+  type DashboardSummaryResponse,
+} from './dashboard';
 
 function parsePollMs(value: string | undefined, fallbackMs: number): number {
   const n = Number(value);
@@ -145,9 +149,10 @@ function realtimeInterval(enabled: boolean, ms: number): number | false {
 
 export const qk = {
   me: ['me'] as const,
+  dashboardSummary: (params: DashboardSummaryQuery) => ['dashboardSummary', params] as const,
+  dashboardKpiDetails: (params: DashboardKpiDetailsQuery) => ['dashboardKpiDetails', params] as const,
   branches: ['branches'] as const,
   brands: (params: CatalogQuery) => ['brands', params] as const,
-  categories: (params: CatalogQuery) => ['categories', params] as const,
   roles: ['roles'] as const,
   users: (params: UsersQuery) => ['users', params] as const,
   suppliers: ['suppliers'] as const,
@@ -178,6 +183,29 @@ export function useMeQuery(enabled?: boolean) {
     queryFn: me,
     enabled: enabled ?? true,
     staleTime: 60_000,
+  });
+}
+
+export function useDashboardSummaryQuery(params: DashboardSummaryQuery, enabled = true) {
+  return useQuery<DashboardSummaryResponse>({
+    queryKey: qk.dashboardSummary(params),
+    queryFn: () => getDashboardSummary(params),
+    enabled,
+    placeholderData: keepPreviousData,
+    refetchInterval: realtimeInterval(enabled, 10_000),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useDashboardKpiDetailsQuery(params: DashboardKpiDetailsQuery, enabled = true) {
+  return useQuery<LaravelPaginator<DashboardKpiDetailRow>>({
+    queryKey: qk.dashboardKpiDetails(params),
+    queryFn: () => getDashboardKpiDetails(params),
+    enabled,
+    placeholderData: keepPreviousData,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -264,32 +292,12 @@ export function useBrandsQuery(params: CatalogQuery = {}, enabled = true) {
   });
 }
 
-export function useCategoriesQuery(params: CatalogQuery = {}, enabled = true) {
-  return useQuery<LaravelPaginator<Category>>({
-    queryKey: qk.categories(params),
-    queryFn: () => getCategories(params),
-    enabled,
-    placeholderData: keepPreviousData,
-  });
-}
-
 export function useCreateBrandMutation() {
   const qc = useQueryClient();
   return useMutation<Brand, unknown, CreateBrandInput>({
     mutationFn: createBrand,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['brands'] });
-      qc.invalidateQueries({ queryKey: ['products'] });
-    },
-  });
-}
-
-export function useCreateCategoryMutation() {
-  const qc = useQueryClient();
-  return useMutation<Category, unknown, CreateCategoryInput>({
-    mutationFn: createCategory,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['categories'] });
       qc.invalidateQueries({ queryKey: ['products'] });
     },
   });

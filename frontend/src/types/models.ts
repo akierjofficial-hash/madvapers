@@ -41,11 +41,6 @@ export type Brand = {
   name: string;
 };
 
-export type Category = {
-  id: number;
-  name: string;
-};
-
 export type Product = {
   id: number;
   name: string;
@@ -55,7 +50,6 @@ export type Product = {
   is_active?: boolean;
   variants_count?: number;
   brand?: Brand | null;
-  category?: Category | null;
 };
 
 export type ProductVariant = {
@@ -67,6 +61,7 @@ export type ProductVariant = {
   default_price?: string | number | null;
   product?: Product | null;
   is_active?: boolean;
+  qty_on_hand?: string | number | null;
 };
 
 

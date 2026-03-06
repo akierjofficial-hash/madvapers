@@ -9,14 +9,15 @@ use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
-    private const PRODUCT_TYPES = [
-        'DEVICE',
-        'DISPOSABLE',
-        'POD_CARTRIDGE',
-        'JUICE_FREEBASE',
-        'JUICE_SALT',
-        'COIL_ACCESSORY',
-    ];
+    private function normalizeProductType(string $value): string
+    {
+        $normalized = strtoupper(trim($value));
+        $normalized = preg_replace('/[^A-Z0-9]+/', '_', $normalized) ?? '';
+        $normalized = preg_replace('/_+/', '_', $normalized) ?? '';
+        $normalized = trim($normalized, '_');
+
+        return $normalized !== '' ? $normalized : 'DEVICE';
+    }
 
     public function index(Request $request)
     {
@@ -49,7 +50,7 @@ class ProductController extends Controller
         }
 
         if ($request->filled('product_type')) {
-            $q->where('product_type', strtoupper((string) $request->input('product_type')));
+            $q->where('product_type', $this->normalizeProductType((string) $request->input('product_type')));
         }
 
         return $q->paginate(20);
@@ -61,13 +62,13 @@ class ProductController extends Controller
             'brand_id' => ['required', 'exists:brands,id'],
             'category_id' => ['nullable', 'exists:categories,id'],
             'name' => ['required', 'string', 'max:180'],
-            'product_type' => ['required', 'string', 'in:' . implode(',', self::PRODUCT_TYPES)],
+            'product_type' => ['required', 'string', 'max:40', 'regex:/^[A-Za-z][A-Za-z0-9 _-]*$/'],
             'description' => ['nullable', 'string'],
             'base_price' => ['nullable', 'numeric', 'min:0'],
             'is_active' => ['boolean'],
         ]);
 
-        $data['product_type'] = strtoupper((string) $data['product_type']);
+        $data['product_type'] = $this->normalizeProductType((string) $data['product_type']);
         $product = Product::create($data);
 
         return response()->json($product->load(['brand', 'category']), 201);
@@ -84,13 +85,13 @@ class ProductController extends Controller
             'brand_id' => ['sometimes', 'required', 'exists:brands,id'],
             'category_id' => ['sometimes', 'nullable', 'exists:categories,id'],
             'name' => ['sometimes', 'string', 'max:180'],
-            'product_type' => ['sometimes', 'string', 'in:' . implode(',', self::PRODUCT_TYPES)],
+            'product_type' => ['sometimes', 'string', 'max:40', 'regex:/^[A-Za-z][A-Za-z0-9 _-]*$/'],
             'description' => ['nullable', 'string'],
             'base_price' => ['sometimes', 'nullable', 'numeric', 'min:0'],
         ]);
 
         if (array_key_exists('product_type', $data)) {
-            $data['product_type'] = strtoupper((string) $data['product_type']);
+            $data['product_type'] = $this->normalizeProductType((string) $data['product_type']);
         }
 
         $product->update($data);

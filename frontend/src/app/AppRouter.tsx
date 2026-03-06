@@ -14,6 +14,7 @@ import { SuppliersPage } from '../pages/SuppliersPage';
 import { AccountsPage } from '../pages/AccountsPage';
 import { ProductsPage } from '../pages/ProductsPage';
 import { BranchesPage } from '../pages/BranchesPage';
+import { DashboardPage } from '../pages/DashboardPage';
 
 export function AppRouter() {
   return (
@@ -24,6 +25,15 @@ export function AppRouter() {
         <Route element={<AppShell />}>
           {/* ✅ role-aware landing */}
           <Route index element={<HomeRedirect />} />
+
+          <Route
+            path="/dashboard"
+            element={
+              <RequirePermission perm="USER_VIEW">
+                <DashboardPage />
+              </RequirePermission>
+            }
+          />
 
           <Route
             path="/inventory"

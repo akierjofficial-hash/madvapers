@@ -156,6 +156,15 @@ class StockAdjustmentController extends Controller
             $locked->load('items');
 
             foreach ($locked->items as $item) {
+                $qtyDelta = (float) $item->qty_delta;
+                $unitCost = $item->unit_cost === null ? null : (float) $item->unit_cost;
+
+                $inv->applyInboundWeightedCost(
+                    (int) $item->product_variant_id,
+                    $qtyDelta,
+                    $unitCost
+                );
+
                 $inv->postMovement([
                     'branch_id' => $locked->branch_id,
                     'product_variant_id' => $item->product_variant_id,

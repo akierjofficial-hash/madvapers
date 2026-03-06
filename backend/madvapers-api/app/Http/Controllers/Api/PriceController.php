@@ -13,7 +13,7 @@ class PriceController extends Controller
     public function setVariantPrice(Request $request, ProductVariant $variant)
     {
         $data = $request->validate([
-            'price' => ['required', 'numeric', 'min:0'],
+            'price' => ['required', 'numeric', 'gt:0'],
             'effective_at' => ['nullable', 'date'],
             'reason' => ['nullable', 'string', 'max:255'],
         ]);

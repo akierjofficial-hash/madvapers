@@ -1,6 +1,7 @@
 import {
   AppBar,
   Avatar,
+  Badge,
   BottomNavigation,
   BottomNavigationAction,
   Box,
@@ -23,7 +24,7 @@ import { alpha, useTheme } from '@mui/material/styles';
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import StorefrontOutlinedIcon from '@mui/icons-material/StorefrontOutlined';
-import CategoryOutlinedIcon from '@mui/icons-material/CategoryOutlined';
+import WidgetsOutlinedIcon from '@mui/icons-material/WidgetsOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined';
@@ -31,16 +32,20 @@ import ApartmentOutlinedIcon from '@mui/icons-material/ApartmentOutlined';
 import GroupOutlinedIcon from '@mui/icons-material/GroupOutlined';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import FmdGoodOutlinedIcon from '@mui/icons-material/FmdGoodOutlined';
-import { useMemo, useState } from 'react';
+import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
+import { authStorage } from '../auth/authStorage';
+import { useDashboardSummaryQuery } from '../api/queries';
 
 type NavItem = {
   to: string;
   label: string;
   perm: string;
   icon: ReactNode;
+  notificationCount?: number;
 };
 
 const drawerWidth = 248;
@@ -51,14 +56,95 @@ export function AppShell() {
   const location = useLocation();
   const { user, logout, can, isLoggingOut } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [seenPending, setSeenPending] = useState<{
+    adjustments: number;
+    transfers: number;
+    purchaseOrders: number;
+  }>({ adjustments: 0, transfers: 0, purchaseOrders: 0 });
+
+  const canDashboardView = can('USER_VIEW');
+  const dashboardSummaryQuery = useDashboardSummaryQuery({}, canDashboardView);
+
+  useEffect(() => {
+    const userId = user?.id;
+    if (!userId) {
+      setSeenPending({ adjustments: 0, transfers: 0, purchaseOrders: 0 });
+      return;
+    }
+    const refreshSeen = () => {
+      setSeenPending(authStorage.getSeenPending(userId));
+    };
+
+    refreshSeen();
+
+    const onSeenUpdated = (event: Event) => {
+      const custom = event as CustomEvent<{ userId?: number }>;
+      const eventUserId = Number(custom.detail?.userId ?? 0);
+      if (eventUserId && eventUserId !== userId) return;
+      refreshSeen();
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || !event.key.startsWith('mv_seen_pending_v1:')) return;
+      refreshSeen();
+    };
+
+    window.addEventListener('mv_seen_pending_updated', onSeenUpdated as EventListener);
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      window.removeEventListener('mv_seen_pending_updated', onSeenUpdated as EventListener);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [user?.id]);
+
+  const newPendingCounts = useMemo(
+    () => ({
+      adjustments: can('ADJUSTMENT_VIEW')
+        ? (dashboardSummaryQuery.data?.approval_queue.adjustments ?? []).filter(
+            (row) => Number(row.id ?? 0) > seenPending.adjustments
+          ).length
+        : 0,
+      transfers: can('TRANSFER_VIEW')
+        ? (dashboardSummaryQuery.data?.approval_queue.transfers ?? []).filter(
+            (row) => Number(row.id ?? 0) > seenPending.transfers
+          ).length
+        : 0,
+      purchaseOrders: can('PO_VIEW')
+        ? (dashboardSummaryQuery.data?.approval_queue.purchase_orders ?? []).filter(
+            (row) => Number(row.id ?? 0) > seenPending.purchaseOrders
+          ).length
+        : 0,
+    }),
+    [can, dashboardSummaryQuery.data, seenPending.adjustments, seenPending.purchaseOrders, seenPending.transfers]
+  );
 
   const navItems: NavItem[] = [
+    { to: '/dashboard', label: 'Dashboard', perm: 'USER_VIEW', icon: <DashboardOutlinedIcon /> },
     { to: '/inventory', label: 'Inventory', perm: 'INVENTORY_VIEW', icon: <Inventory2OutlinedIcon /> },
     { to: '/products', label: 'Products', perm: 'PRODUCT_VIEW', icon: <StorefrontOutlinedIcon /> },
-    { to: '/variants', label: 'Variants', perm: 'PRODUCT_VIEW', icon: <CategoryOutlinedIcon /> },
-    { to: '/adjustments', label: 'Adjustments', perm: 'ADJUSTMENT_VIEW', icon: <ReceiptLongOutlinedIcon /> },
-    { to: '/transfers', label: 'Transfers', perm: 'TRANSFER_VIEW', icon: <SwapHorizOutlinedIcon /> },
-    { to: '/purchase-orders', label: 'Purchase Orders', perm: 'PO_VIEW', icon: <LocalShippingOutlinedIcon /> },
+    { to: '/variants', label: 'Variants', perm: 'PRODUCT_VIEW', icon: <WidgetsOutlinedIcon /> },
+    {
+      to: '/adjustments',
+      label: 'Adjustments',
+      perm: 'ADJUSTMENT_VIEW',
+      icon: <ReceiptLongOutlinedIcon />,
+      notificationCount: newPendingCounts.adjustments,
+    },
+    {
+      to: '/transfers',
+      label: 'Transfers',
+      perm: 'TRANSFER_VIEW',
+      icon: <SwapHorizOutlinedIcon />,
+      notificationCount: newPendingCounts.transfers,
+    },
+    {
+      to: '/purchase-orders',
+      label: 'Purchase Orders',
+      perm: 'PO_VIEW',
+      icon: <LocalShippingOutlinedIcon />,
+      notificationCount: newPendingCounts.purchaseOrders,
+    },
     { to: '/suppliers', label: 'Suppliers', perm: 'SUPPLIER_VIEW', icon: <ApartmentOutlinedIcon /> },
     { to: '/branches', label: 'Branches', perm: 'BRANCH_MANAGE', icon: <FmdGoodOutlinedIcon /> },
     { to: '/accounts', label: 'Accounts', perm: 'USER_VIEW', icon: <GroupOutlinedIcon /> },
@@ -127,7 +213,17 @@ export function AppShell() {
               },
             }}
           >
-            <ListItemIcon>{item.icon}</ListItemIcon>
+            <ListItemIcon>
+              {(item.notificationCount ?? 0) > 0 ? (
+                <Badge color="error" badgeContent={item.notificationCount} max={99} overlap="circular">
+                  <Box component="span" sx={{ display: 'inline-flex' }}>
+                    {item.icon}
+                  </Box>
+                </Badge>
+              ) : (
+                item.icon
+              )}
+            </ListItemIcon>
             <ListItemText primary={item.label} />
           </ListItemButton>
         ))}
@@ -255,7 +351,17 @@ export function AppShell() {
                   key={item.to}
                   value={item.to}
                   label={item.label}
-                  icon={item.icon}
+                  icon={
+                    (item.notificationCount ?? 0) > 0 ? (
+                      <Badge color="error" badgeContent={item.notificationCount} max={99} overlap="circular">
+                        <Box component="span" sx={{ display: 'inline-flex' }}>
+                          {item.icon}
+                        </Box>
+                      </Badge>
+                    ) : (
+                      item.icon
+                    )
+                  }
                   component={NavLink}
                   to={item.to}
                 />

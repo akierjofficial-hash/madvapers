@@ -247,6 +247,12 @@ class PurchaseOrderController extends Controller
                 $item->qty_received = (float) ($item->qty_received ?? 0) + $receiveQty;
                 $item->save();
 
+                $svc->applyInboundWeightedCost(
+                    $variantId,
+                    $receiveQty,
+                    $item->unit_cost === null ? null : (float) $item->unit_cost
+                );
+
                 $svc->postMovement([
                     'branch_id' => $locked->branch_id,
                     'product_variant_id' => $variantId,

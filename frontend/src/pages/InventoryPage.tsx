@@ -41,7 +41,6 @@ type SelectedItem = {
   product: string;
   variant: string;
   brand: string;
-  category: string;
   qty: number;
 };
 
@@ -162,7 +161,6 @@ export function InventoryPage() {
       const variant = r.variant;
       const product = variant?.product;
       const brand = product?.brand?.name ?? '-';
-      const category = product?.category?.name ?? '-';
       return {
         inventory_id: r.id,
         branch_id: (branchId === '' ? 0 : branchId) as number,
@@ -172,7 +170,6 @@ export function InventoryPage() {
         product: product?.name ?? '-',
         variant: variant?.variant_name ?? '-',
         brand,
-        category,
         qty: Number(r.qty_on_hand ?? 0),
       } as SelectedItem;
     });
@@ -451,7 +448,6 @@ export function InventoryPage() {
                 <TableCell>Product</TableCell>
                 <TableCell>Variant</TableCell>
                 <TableCell>Brand</TableCell>
-                <TableCell>Category</TableCell>
                 <TableCell align="right">Qty on hand</TableCell>
               </TableRow>
             </TableHead>
@@ -470,7 +466,6 @@ export function InventoryPage() {
                   <TableCell>{r.product}</TableCell>
                   <TableCell>{r.variant}</TableCell>
                   <TableCell>{r.brand}</TableCell>
-                  <TableCell>{r.category}</TableCell>
                   <TableCell align="right">{Number(r.qty).toLocaleString(undefined, { maximumFractionDigits: 3 })}</TableCell>
                 </TableRow>
               ))}
@@ -506,9 +501,6 @@ export function InventoryPage() {
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>
                 Brand: {selected.brand}
-              </Typography>
-              <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                Category: {selected.category}
               </Typography>
 
               <Box sx={{ py: 1 }}>

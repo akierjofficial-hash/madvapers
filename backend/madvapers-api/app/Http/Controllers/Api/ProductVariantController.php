@@ -21,9 +21,24 @@ class ProductVariantController extends Controller
     public function index(Request $request)
     {
         $like = DB::getDriverName() === 'pgsql' ? 'ilike' : 'like';
+        $request->validate([
+            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+        ]);
+
+        $branchId = $request->filled('branch_id') ? (int) $request->input('branch_id') : null;
 
         $q = ProductVariant::query()
             ->with(['product.brand', 'product.category'])
+            ->withSum(
+                [
+                    'inventoryBalances as qty_on_hand' => static function ($sub) use ($branchId) {
+                        if ($branchId !== null) {
+                            $sub->where('branch_id', $branchId);
+                        }
+                    },
+                ],
+                'qty_on_hand'
+            )
             ->orderBy('id', 'desc');
 
         if ($request->filled('search')) {
@@ -63,7 +78,7 @@ class ProductVariantController extends Controller
             'is_consumable' => ['boolean'],
 
             'default_cost' => ['numeric', 'min:0'],
-            'default_price' => ['numeric', 'min:0'],
+            'default_price' => ['required', 'numeric', 'gt:0'],
             'is_active' => ['boolean'],
         ]);
 
@@ -73,7 +88,6 @@ class ProductVariantController extends Controller
         $data['is_battery'] = $data['is_battery'] ?? false;
         $data['is_consumable'] = $data['is_consumable'] ?? true;
         $data['default_cost'] = $data['default_cost'] ?? 0;
-        $data['default_price'] = $data['default_price'] ?? 0;
         $data['is_active'] = $data['is_active'] ?? true;
 
         $variant = ProductVariant::create($data);
@@ -118,8 +132,8 @@ class ProductVariantController extends Controller
             'is_battery' => ['boolean'],
             'is_consumable' => ['boolean'],
 
-            'default_cost' => ['numeric', 'min:0'],
-            'default_price' => ['numeric', 'min:0'],
+            'default_cost' => ['sometimes', 'numeric', 'min:0'],
+            'default_price' => ['sometimes', 'required', 'numeric', 'gt:0'],
         ]);
 
         $variant->update($data);

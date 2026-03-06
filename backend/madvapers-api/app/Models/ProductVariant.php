@@ -37,4 +37,9 @@ class ProductVariant extends Model
     {
         return $this->hasMany(PriceHistory::class);
     }
+
+    public function inventoryBalances()
+    {
+        return $this->hasMany(InventoryBalance::class, 'product_variant_id');
+    }
 }

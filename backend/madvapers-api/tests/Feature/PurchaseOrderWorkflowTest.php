@@ -3,7 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\Branch;
+use App\Models\Brand;
 use App\Models\InventoryBalance;
+use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\StockLedger;
 use App\Models\Supplier;
 use App\Models\User;
@@ -28,13 +31,48 @@ class PurchaseOrderWorkflowTest extends TestCase
         return $user;
     }
 
+    private function ensureSeedVariantId(): int
+    {
+        $existing = ProductVariant::query()->value('id');
+        if ($existing) {
+            return (int) $existing;
+        }
+
+        $brand = Brand::query()->firstOrCreate(['name' => 'Feature Test Brand']);
+        $product = Product::query()->create([
+            'brand_id' => $brand->id,
+            'name' => 'Feature Test Product ' . now()->timestamp,
+            'product_type' => 'DEVICE',
+            'is_active' => true,
+        ]);
+
+        $variant = ProductVariant::query()->create([
+            'product_id' => $product->id,
+            'sku' => 'FT-' . strtoupper(uniqid()),
+            'variant_name' => 'Standard',
+            'default_cost' => 0,
+            'default_price' => 100,
+            'is_active' => true,
+        ]);
+
+        return (int) $variant->id;
+    }
+
     public function test_manager_can_create_submit_approve_and_receive_po(): void
     {
         $branch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();
         $balance = InventoryBalance::query()
             ->where('branch_id', $branch->id)
             ->orderBy('id')
-            ->firstOrFail();
+            ->first();
+        if (!$balance) {
+            $seedVariantId = $this->ensureSeedVariantId();
+            $balance = InventoryBalance::query()->create([
+                'branch_id' => $branch->id,
+                'product_variant_id' => $seedVariantId,
+                'qty_on_hand' => 0,
+            ]);
+        }
         $variantId = (int) $balance->product_variant_id;
 
         $supplier = Supplier::query()->create([
@@ -44,6 +82,13 @@ class PurchaseOrderWorkflowTest extends TestCase
 
         $beforeQty = (float) $balance->qty_on_hand;
         $qtyOrdered = 2.0;
+        $unitCost = 25.0;
+
+        $variant = ProductVariant::query()->findOrFail($variantId);
+        $variant->update(['default_cost' => 10]);
+        $beforeGlobalQty = (float) InventoryBalance::query()
+            ->where('product_variant_id', $variantId)
+            ->sum('qty_on_hand');
 
         $this->actingAsUser('manager@madvapers.local');
 
@@ -55,7 +100,7 @@ class PurchaseOrderWorkflowTest extends TestCase
                 [
                     'product_variant_id' => $variantId,
                     'qty_ordered' => $qtyOrdered,
-                    'unit_cost' => 25,
+                    'unit_cost' => $unitCost,
                 ],
             ],
         ])->assertCreated()->json();
@@ -80,6 +125,10 @@ class PurchaseOrderWorkflowTest extends TestCase
 
         $this->assertSame($beforeQty + $qtyOrdered, $afterQty);
 
+        $expectedDefaultCost = round((($beforeGlobalQty * 10.0) + ($qtyOrdered * $unitCost)) / ($beforeGlobalQty + $qtyOrdered), 2);
+        $actualDefaultCost = (float) ProductVariant::query()->findOrFail($variantId)->default_cost;
+        $this->assertSame($expectedDefaultCost, $actualDefaultCost);
+
         $this->assertTrue(
             StockLedger::query()
                 ->where('branch_id', $branch->id)
@@ -97,7 +146,15 @@ class PurchaseOrderWorkflowTest extends TestCase
         $balance = InventoryBalance::query()
             ->where('branch_id', $branch->id)
             ->orderBy('id')
-            ->firstOrFail();
+            ->first();
+        if (!$balance) {
+            $seedVariantId = $this->ensureSeedVariantId();
+            $balance = InventoryBalance::query()->create([
+                'branch_id' => $branch->id,
+                'product_variant_id' => $seedVariantId,
+                'qty_on_hand' => 0,
+            ]);
+        }
         $variantId = (int) $balance->product_variant_id;
 
         $supplier = Supplier::query()->create([

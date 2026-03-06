@@ -6,6 +6,7 @@ export type VariantsQuery = {
   page?: number;
   search?: string;
   product_id?: number;
+  branch_id?: number;
 };
 
 export type CreateVariantInput = {
@@ -13,14 +14,14 @@ export type CreateVariantInput = {
   sku: string;
   barcode?: string | null;
   variant_name: string;
-  default_price?: number | null;
+  default_price: number;
 };
 
 export type UpdateVariantInput = {
   sku?: string;
   barcode?: string | null;
   variant_name?: string;
-  default_price?: number | null;
+  default_price?: number;
   default_cost?: number | null;
 };
 

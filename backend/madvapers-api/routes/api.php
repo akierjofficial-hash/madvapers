@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\PublicCatalogController;
 use App\Http\Controllers\Api\PublicBranchController;
+use App\Http\Controllers\Api\DashboardController;
 
 // Health
 Route::get('/health', fn () => response()->json(['where' => 'api.php', 'status' => 'ok']));
@@ -38,6 +39,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // Auth
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+
+    // Dashboard
+    Route::get('/dashboard/summary', [DashboardController::class, 'summary'])->middleware('perm:USER_VIEW');
+    Route::get('/dashboard/kpi-details', [DashboardController::class, 'kpiDetails'])->middleware('perm:USER_VIEW');
 
     // Inventory
     Route::get('/inventory', [InventoryController::class, 'index'])->middleware('perm:INVENTORY_VIEW');

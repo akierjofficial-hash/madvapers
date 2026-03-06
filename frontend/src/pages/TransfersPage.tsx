@@ -2,6 +2,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -28,6 +29,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { authStorage } from '../auth/authStorage';
 import { BranchSelect } from '../components/BranchSelect';
+import {
+  requestDialogActionsSx,
+  requestDialogContentSx,
+  requestDialogSx,
+  requestDialogTitleSx,
+  requestSectionSx,
+} from '../components/requestDialogStyles';
 import {
   useApproveTransferMutation,
   useBranchesQuery,
@@ -57,11 +65,36 @@ function qtyFmt(v: string | number | null | undefined) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 3 });
 }
 
+function getVariantLabel(v: any): string {
+  const byName = String(v?.variant_name ?? '').trim();
+  if (byName) return byName;
+
+  const composed = [
+    v?.flavor,
+    v?.nicotine_strength,
+    v?.capacity,
+    v?.resistance,
+    v?.color,
+  ]
+    .map((x) => String(x ?? '').trim())
+    .filter(Boolean)
+    .join(' / ');
+
+  return composed || 'Standard';
+}
+
+function getVariantOnHand(v: any): number | null {
+  const n = Number(v?.qty_on_hand);
+  return Number.isFinite(n) ? n : null;
+}
+
 type DraftItem = {
   product_variant_id: number;
   qty: number;
   sku?: string | null;
   productName?: string | null;
+  variantName?: string | null;
+  onHand?: number | null;
 };
 
 export function TransfersPage() {
@@ -102,6 +135,9 @@ export function TransfersPage() {
 
   const [status, setStatus] = useState<string>(() => searchParams.get('status') ?? '');
   const [page, setPage] = useState<number>(() => toInt(searchParams.get('page')) ?? 1);
+  const [seenRequestedTransferId, setSeenRequestedTransferId] = useState<number>(() =>
+    authStorage.getSeenPending(user?.id).transfers
+  );
 
   // Drawer state
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -124,6 +160,8 @@ export function TransfersPage() {
     id: number;
     sku?: string | null;
     productName?: string | null;
+    variantName?: string | null;
+    onHand?: number | null;
   } | null>(null);
 
   // Draft items (multi-item support)
@@ -143,13 +181,21 @@ export function TransfersPage() {
   };
 
   useEffect(() => {
+    setSeenRequestedTransferId(authStorage.getSeenPending(user?.id).transfers);
+  }, [user?.id]);
+
+  useEffect(() => {
     if (!openCreate) return;
     const t = setTimeout(() => setVariantSearchDebounced(variantSearch.trim()), 250);
     return () => clearTimeout(t);
   }, [variantSearch, openCreate]);
 
   const variantLookupQuery = useVariantsQuery(
-    { page: 1, search: variantSearchDebounced || undefined },
+    {
+      page: 1,
+      search: variantSearchDebounced || undefined,
+      branch_id: typeof createFrom === 'number' ? createFrom : undefined,
+    },
     openCreate && canTransferCreate && variantSearchDebounced.length >= 2
   );
   const variantOptions: any[] = variantLookupQuery.data?.data ?? [];
@@ -160,8 +206,10 @@ export function TransfersPage() {
 
     const sku = v?.sku ?? null;
     const productName = v?.product?.name ?? null;
+    const variantName = getVariantLabel(v);
+    const onHand = getVariantOnHand(v);
 
-    setPickedVariant({ id, sku, productName });
+    setPickedVariant({ id, sku, productName, variantName, onHand });
     setCreateVariantId(String(id));
     setVariantSearch(sku ?? String(id));
   };
@@ -191,16 +239,26 @@ export function TransfersPage() {
 
     const fromPicked =
       pickedVariant?.id === variantId
-        ? { sku: pickedVariant.sku ?? null, productName: pickedVariant.productName ?? null }
+        ? {
+            sku: pickedVariant.sku ?? null,
+            productName: pickedVariant.productName ?? null,
+            variantName: pickedVariant.variantName ?? null,
+            onHand: pickedVariant.onHand ?? null,
+          }
         : null;
 
     const fromLookup = (() => {
       const found = variantOptions.find((x) => Number(x?.id) === variantId);
       if (!found) return null;
-      return { sku: found?.sku ?? null, productName: found?.product?.name ?? null };
+      return {
+        sku: found?.sku ?? null,
+        productName: found?.product?.name ?? null,
+        variantName: getVariantLabel(found),
+        onHand: getVariantOnHand(found),
+      };
     })();
 
-    const meta = fromPicked ?? fromLookup ?? { sku: null, productName: null };
+    const meta = fromPicked ?? fromLookup ?? { sku: null, productName: null, variantName: null, onHand: null };
 
     setDraftItems((prev) => {
       const idx = prev.findIndex((x) => x.product_variant_id === variantId);
@@ -209,7 +267,17 @@ export function TransfersPage() {
         next[idx] = { ...next[idx], qty: next[idx].qty + qty };
         return next;
       }
-      return [...prev, { product_variant_id: variantId, qty, sku: meta.sku, productName: meta.productName }];
+      return [
+        ...prev,
+        {
+          product_variant_id: variantId,
+          qty,
+          sku: meta.sku,
+          productName: meta.productName,
+          variantName: meta.variantName,
+          onHand: meta.onHand,
+        },
+      ];
     });
 
     setCreateQty('1');
@@ -306,10 +374,14 @@ export function TransfersPage() {
       const items = (t as any).items ?? [];
       const itemsCount = items.length;
       const totalQty = items.reduce((sum: number, it: any) => sum + Number(it.qty ?? 0), 0);
+      const statusText = String((t as any).status ?? '-');
+      const transferId = Number(t.id ?? 0);
+      const isNew = statusText === 'REQUESTED' && transferId > seenRequestedTransferId;
 
       return {
-        id: t.id,
-        status: (t as any).status ?? '-',
+        id: transferId,
+        status: statusText,
+        isNew,
         from: (t as any).fromBranch?.name ?? (t as any).from_branch_id,
         to: (t as any).toBranch?.name ?? (t as any).to_branch_id,
         itemsCount,
@@ -317,7 +389,33 @@ export function TransfersPage() {
         notes: (t as any).notes ?? '',
       };
     });
-  }, [rows]);
+  }, [rows, seenRequestedTransferId]);
+
+  const openTransferRow = (row: { id: number; status: string }) => {
+    if (row.status === 'REQUESTED') {
+      const next = authStorage.markSeenPending(user?.id, 'transfers', row.id);
+      setSeenRequestedTransferId(next.transfers);
+    }
+    setSelectedId(row.id);
+  };
+
+  const createFromBranchOptions = useMemo(() => {
+    const all = branchesQuery.data ?? [];
+    if (typeof createTo !== 'number') return all;
+    return all.filter((b) => b.id !== createTo);
+  }, [branchesQuery.data, createTo]);
+
+  const createToBranchOptions = useMemo(() => {
+    const all = branchesQuery.data ?? [];
+    if (typeof createFrom !== 'number') return all;
+    return all.filter((b) => b.id !== createFrom);
+  }, [branchesQuery.data, createFrom]);
+
+  useEffect(() => {
+    if (typeof createFrom === 'number' && createTo === createFrom) {
+      setCreateTo('');
+    }
+  }, [createFrom, createTo]);
 
   const openNewTransfer = () => {
     if (!canTransferCreate) {
@@ -589,9 +687,36 @@ export function TransfersPage() {
             </TableHead>
             <TableBody>
               {pretty.map((r) => (
-                <TableRow key={r.id} hover sx={{ cursor: 'pointer' }} onClick={() => setSelectedId(r.id)}>
+                <TableRow
+                  key={r.id}
+                  hover
+                  sx={{
+                    cursor: 'pointer',
+                    bgcolor: r.isNew ? 'rgba(211, 47, 47, 0.06)' : undefined,
+                  }}
+                  onClick={() => openTransferRow(r)}
+                >
                   <TableCell>{r.id}</TableCell>
-                  <TableCell>{r.status}</TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={0.75} alignItems="center">
+                      <Typography variant="body2">{r.status}</Typography>
+                      {r.isNew && (
+                        <>
+                          <Box
+                            component="span"
+                            sx={{
+                              width: 7,
+                              height: 7,
+                              borderRadius: '50%',
+                              bgcolor: 'error.main',
+                              display: 'inline-block',
+                            }}
+                          />
+                          <Chip size="small" color="error" label="NEW" sx={{ height: 20, fontSize: 10 }} />
+                        </>
+                      )}
+                    </Stack>
+                  </TableCell>
                   <TableCell>{r.from}</TableCell>
                   <TableCell>{r.to}</TableCell>
                   <TableCell align="right">{r.itemsCount}</TableCell>
@@ -611,18 +736,27 @@ export function TransfersPage() {
       )}
 
       {/* Create dialog */}
-      <Dialog open={openCreate} onClose={() => setOpenCreate(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>New Transfer</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ pt: 1 }}>
+      <Dialog open={openCreate} onClose={() => setOpenCreate(false)} maxWidth="sm" fullWidth sx={requestDialogSx}>
+        <DialogTitle sx={requestDialogTitleSx}>
+          <Stack spacing={0.35}>
+            <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.01em' }}>
+              New Transfer
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Build a branch-to-branch request with exact variants and quantities.
+            </Typography>
+          </Stack>
+        </DialogTitle>
+        <DialogContent sx={requestDialogContentSx}>
+          <Stack spacing={1.5}>
             {!canTransferCreate && <Alert severity="error">Not authorized: TRANSFER_CREATE.</Alert>}
-            <Box>
+            <Paper variant="outlined" sx={requestSectionSx}>
               <Typography variant="caption" sx={{ opacity: 0.7 }}>
                 From branch
               </Typography>
               {canBranchView ? (
                 <BranchSelect
-                  branches={branchesQuery.data ?? []}
+                  branches={createFromBranchOptions}
                   value={createFrom}
                   onChange={(id) => setCreateFrom(id)}
                   disabled={!canTransferCreate}
@@ -630,15 +764,15 @@ export function TransfersPage() {
               ) : (
                 <TextField size="small" label="From branch" value={createFromBranchLabel} disabled fullWidth />
               )}
-            </Box>
+            </Paper>
 
-            <Box>
+            <Paper variant="outlined" sx={requestSectionSx}>
               <Typography variant="caption" sx={{ opacity: 0.7 }}>
                 To branch
               </Typography>
               {canBranchView ? (
                 <BranchSelect
-                  branches={branchesQuery.data ?? []}
+                  branches={createToBranchOptions}
                   value={createTo}
                   onChange={(id) => setCreateTo(id)}
                   disabled={!canTransferCreate}
@@ -646,7 +780,7 @@ export function TransfersPage() {
               ) : (
                 <TextField size="small" label="To branch" value={createToBranchLabel} disabled fullWidth />
               )}
-            </Box>
+            </Paper>
 
             <TextField
               size="small"
@@ -670,7 +804,7 @@ export function TransfersPage() {
             )}
 
             {pickedVariant && (
-              <Paper variant="outlined" sx={{ p: 1 }}>
+              <Paper variant="outlined" sx={requestSectionSx}>
                 <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
                   <Box>
                     <Typography variant="body2">
@@ -694,13 +828,15 @@ export function TransfersPage() {
             )}
 
             {variantSearchDebounced.length >= 2 && !variantLookupQuery.isLoading && variantOptions.length > 0 && (
-              <Paper variant="outlined" sx={{ maxHeight: 220, overflow: 'auto' }}>
+              <Paper variant="outlined" sx={[requestSectionSx, { maxHeight: 220, overflow: 'auto', p: 0 }]}>
                 <Table size="small" stickyHeader>
                   <TableHead>
                     <TableRow>
                       <TableCell width={110}>ID</TableCell>
                       <TableCell>SKU</TableCell>
                       <TableCell>Product</TableCell>
+                      <TableCell>Variant</TableCell>
+                      <TableCell align="right" width={120}>On hand</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -708,6 +844,8 @@ export function TransfersPage() {
                       const id = Number(v?.id);
                       const sku = v?.sku ?? '-';
                       const prod = v?.product?.name ?? '-';
+                      const variant = getVariantLabel(v);
+                      const onHand = getVariantOnHand(v);
                       const isPicked = pickedVariant?.id === id;
 
                       return (
@@ -720,6 +858,8 @@ export function TransfersPage() {
                           <TableCell sx={{ fontFamily: 'monospace' }}>{id}</TableCell>
                           <TableCell>{sku}</TableCell>
                           <TableCell>{prod}</TableCell>
+                          <TableCell>{variant}</TableCell>
+                          <TableCell align="right">{onHand === null ? '-' : qtyFmt(onHand)}</TableCell>
                         </TableRow>
                       );
                     })}
@@ -757,7 +897,7 @@ export function TransfersPage() {
               </Button>
             </Stack>
 
-            <Paper variant="outlined" sx={{ p: 1 }}>
+            <Paper variant="outlined" sx={requestSectionSx}>
               <Stack direction="row" alignItems="center" justifyContent="space-between">
                 <Typography variant="body2">
                   <b>Draft:</b> {draftTotals.itemsCount} item(s), total qty {qtyFmt(draftTotals.totalQty)}
@@ -774,13 +914,15 @@ export function TransfersPage() {
             </Paper>
 
             {draftItems.length > 0 && (
-              <Paper variant="outlined">
+              <Paper variant="outlined" sx={[requestSectionSx, { p: 0 }]}>
                 <Table size="small">
                   <TableHead>
                     <TableRow>
                       <TableCell width={130}>Variant ID</TableCell>
                       <TableCell>SKU</TableCell>
                       <TableCell>Product</TableCell>
+                      <TableCell>Variant</TableCell>
+                      <TableCell align="right" width={120}>On hand</TableCell>
                       <TableCell align="right" width={120}>Qty</TableCell>
                       <TableCell align="right" width={90}>Remove</TableCell>
                     </TableRow>
@@ -791,6 +933,8 @@ export function TransfersPage() {
                         <TableCell sx={{ fontFamily: 'monospace' }}>{it.product_variant_id}</TableCell>
                         <TableCell>{it.sku ?? '-'}</TableCell>
                         <TableCell>{it.productName ?? '-'}</TableCell>
+                        <TableCell>{it.variantName ?? '-'}</TableCell>
+                        <TableCell align="right">{it.onHand === null || it.onHand === undefined ? '-' : qtyFmt(it.onHand)}</TableCell>
                         <TableCell align="right">{qtyFmt(it.qty)}</TableCell>
                         <TableCell align="right">
                           <IconButton size="small" onClick={() => removeDraftItem(it.product_variant_id)} disabled={!canTransferCreate}>
@@ -817,7 +961,7 @@ export function TransfersPage() {
             {createMut.isError && <Alert severity="error">Failed to create transfer.</Alert>}
           </Stack>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={requestDialogActionsSx}>
           <Button onClick={() => setOpenCreate(false)}>Cancel</Button>
           <Button
             variant="contained"
