@@ -3,6 +3,7 @@ import { Product, ProductTag, products as fallbackProducts } from "@/lib/product
 type PublicCatalogVariant = {
   id: number;
   sku: string;
+  qty_on_hand: number | string | null;
   variant_name: string | null;
   flavor: string | null;
   nicotine_strength: string | null;
@@ -247,12 +248,21 @@ function mapVariantToProduct(variant: PublicCatalogVariant): Product | null {
 
   return {
     id: variant.id,
+    productId: variant.product.id,
+    stockOnHand: parseNumeric(variant.qty_on_hand) ?? 0,
     name,
+    productName,
     slug,
     jpName: `${(variant.product.product_type ?? "PRODUCT").replaceAll("_", " ")}`,
     category: mapCategory(variant.product.product_type),
     flavorCategory: mapFlavorCategory(variant.product.product_type, variant.flavor, name),
     deviceType,
+    productType: variant.product.product_type,
+    brandName: brand ?? null,
+    categoryName: categoryName ?? null,
+    variantName: variant.variant_name ?? null,
+    flavor: variant.flavor ?? null,
+    sku: variant.sku,
     strength: parseStrength(variant.nicotine_strength),
     notes,
     tags: mapTags(variant),

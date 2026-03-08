@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful;
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
@@ -19,6 +20,7 @@ use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\PublicCatalogController;
 use App\Http\Controllers\Api\PublicBranchController;
+use App\Http\Controllers\Api\PublicReviewController;
 use App\Http\Controllers\Api\DashboardController;
 
 // Health
@@ -31,6 +33,10 @@ Route::middleware(['throttle:public-api'])->group(function () {
     Route::get('/public/products', [PublicCatalogController::class, 'index']);
     Route::get('/public/products/{variant}', [PublicCatalogController::class, 'show']);
     Route::get('/public/branches', [PublicBranchController::class, 'index']);
+    Route::get('/public/reviews', [PublicReviewController::class, 'index']);
+    Route::post('/public/reviews', [PublicReviewController::class, 'store'])
+        ->middleware('throttle:review-submit')
+        ->withoutMiddleware([EnsureFrontendRequestsAreStateful::class]);
 });
 
 // Protected routes

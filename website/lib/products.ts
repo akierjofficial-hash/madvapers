@@ -2,12 +2,21 @@ export type ProductTag = "NEW" | "ICE" | "BEST" | "LIMITED";
 
 export type Product = {
   id: number;
+  productId?: number;
+  stockOnHand?: number | null;
   name: string;
+  productName?: string;
   slug: string;
   jpName: string;
   category: "Disposable" | "Pod System" | "Pod Cartridge" | "E-Liquid" | "Accessories";
   flavorCategory: "Fruit" | "Dessert" | "Menthol" | "Tobacco" | "Mix";
   deviceType: "Disposable" | "Pod System" | "Pod Cartridge" | "Salt Nic" | "Freebase" | "Accessory";
+  productType?: string | null;
+  brandName?: string | null;
+  categoryName?: string | null;
+  variantName?: string | null;
+  flavor?: string | null;
+  sku?: string;
   strength: string;
   notes: string;
   tags: ProductTag[];

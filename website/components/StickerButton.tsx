@@ -10,9 +10,11 @@ type StickerButtonProps = {
 } & ButtonHTMLAttributes<HTMLButtonElement>;
 
 const variantStyles: Record<NonNullable<StickerButtonProps["variant"]>, string> = {
-  primary: "border-brand-yellow bg-brand-yellow text-black hover:bg-[#ffcf2a]",
-  secondary: "border-brand-line bg-transparent text-brand-ink hover:border-brand-yellow hover:text-brand-yellow",
-  ink: "border-brand-line bg-brand-surface text-brand-ink hover:border-brand-yellow",
+  primary:
+    "border-brand-yellow bg-brand-yellow text-black shadow-[0_14px_30px_-18px_rgba(255,195,0,0.82)] hover:bg-[#ffcf2a] hover:shadow-[0_18px_36px_-18px_rgba(255,195,0,0.9)]",
+  secondary:
+    "border-brand-line/90 bg-brand-surface/60 text-brand-ink backdrop-blur-sm hover:border-brand-yellow hover:bg-brand-surface2/80 hover:text-brand-yellow",
+  ink: "border-brand-line/90 bg-brand-surface/75 text-brand-ink backdrop-blur-sm hover:border-brand-yellow",
 };
 
 const baseStyles =

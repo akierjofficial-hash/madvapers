@@ -1,73 +1,73 @@
-import Link from "next/link";
+﻿import Image from "next/image";
 
-const footerLinks = [
-  { href: "/products", label: "Products" },
-  { href: "/store-locator", label: "Branches" },
-  { href: "/support", label: "Support" },
+const shopLinks = ["All Devices", "Disposable Vapes", "Flavor Bundles", "Limited Editions", "Accessories"];
+const brandLinks = ["Our Story", "The Culture", "Flavor Lab", "MDVPRS Media", "Wholesale"];
+const supportLinks = ["Age Verification", "Shipping Policy", "Returns", "Contact Us", "FAQ"];
+const socialLinks = [
+  { id: "x", label: "X" },
+  { id: "yt", label: "YT" },
+  { id: "ig", label: "IG" },
+  { id: "tt", label: "TT" },
 ];
+
+function FooterColumn({ title, links }: { title: string; links: string[] }) {
+  return (
+    <div>
+      <h4 className="mb-5 font-heading text-[13px] font-bold uppercase tracking-[0.3em] text-white">{title}</h4>
+      <ul className="space-y-2.5">
+        {links.map((link) => (
+          <li key={link}>
+            <a href="#" className="text-sm text-[#8890A4] transition-colors duration-300 hover:text-brand-blue">
+              {link}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 export default function Footer() {
   return (
-    <footer className="soft-divider bg-brand-bg">
-      <div className="mx-auto grid w-full max-w-7xl gap-7 px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
-        <div className="mobile-surface corner-cut flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+    <footer className="border-t border-white/10 bg-dark2 px-5 pb-10 pt-16 sm:px-8 lg:px-14">
+      <div className="mx-auto max-w-[1400px]">
+        <div className="grid grid-cols-1 gap-10 md:grid-cols-2 lg:grid-cols-4 lg:gap-14">
           <div>
-            <p className="font-heading text-[34px] leading-none text-brand-ink sm:text-[40px]">MDVPRS</p>
-            <p className="mt-1 font-body text-xs uppercase tracking-[0.12em] text-brand-muted">Premium Adult Product Catalog</p>
+            <Image
+              src="/logo.png"
+              alt="MDVPRS"
+              width={190}
+              height={56}
+              className="h-14 w-auto object-contain drop-shadow-[0_0_10px_rgba(0,153,255,0.4)]"
+            />
+            <p className="mt-4 max-w-xs text-sm leading-7 text-[#8890A4]">
+              Born from the streets, refined for the connoisseur. MDVPRS is more than a vape brand - it's a movement.
+            </p>
+            <div className="mt-5 flex gap-3">
+              {socialLinks.map((social) => (
+                <a
+                  key={social.id}
+                  href="#"
+                  className="btn-clip flex h-9 w-9 items-center justify-center border border-brand-blue/20 text-sm text-[#8890A4] transition-all duration-300 hover:border-brand-blue hover:bg-brand-blue/10 hover:text-brand-blue"
+                >
+                  {social.label}
+                </a>
+              ))}
+            </div>
           </div>
 
-          <nav aria-label="Footer links" className="grid grid-cols-2 gap-x-5 gap-y-2 sm:flex sm:flex-wrap sm:items-center sm:gap-5">
-            {footerLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="font-body text-sm font-semibold uppercase tracking-[0.08em] text-brand-muted transition hover:text-brand-ink"
-              >
-                {link.label}
-              </Link>
-            ))}
-          </nav>
+          <FooterColumn title="Shop" links={shopLinks} />
+          <FooterColumn title="Brand" links={brandLinks} />
+          <FooterColumn title="Support" links={supportLinks} />
         </div>
 
-        <div className="flex items-center gap-3" aria-label="Social links">
-          <button
-            type="button"
-            className="grid h-10 w-10 place-items-center rounded-sm border border-brand-line text-brand-muted transition hover:border-brand-yellow hover:text-brand-ink"
-            aria-label="Instagram"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4 stroke-current" fill="none" strokeWidth="2">
-              <rect x="4" y="4" width="16" height="16" rx="4" />
-              <circle cx="12" cy="12" r="3.5" />
-              <circle cx="17" cy="7" r="1" fill="currentColor" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className="grid h-10 w-10 place-items-center rounded-sm border border-brand-line text-brand-muted transition hover:border-brand-yellow hover:text-brand-ink"
-            aria-label="Facebook"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-              <path d="M13.5 8h2V5h-2.3C11 5 10 6.4 10 8.4V10H8v3h2v6h3v-6h2.1l.4-3H13V8.6c0-.5.2-.6.5-.6z" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className="grid h-10 w-10 place-items-center rounded-sm border border-brand-line text-brand-muted transition hover:border-brand-yellow hover:text-brand-ink"
-            aria-label="TikTok"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-              <path d="M16 4c.2 1.4 1.1 2.7 2.5 3.4.8.4 1.7.6 2.5.6v3a8 8 0 0 1-4-1.1V15a6 6 0 1 1-6-6h.3v3H11a3 3 0 1 0 3 3V4h2z" />
-            </svg>
-          </button>
+        <div className="mt-12 flex flex-col items-center justify-between gap-3 border-t border-white/10 pt-6 text-center sm:flex-row sm:text-left">
+          <p className="text-xs tracking-[0.08em] text-[#8890A4]">© 2026 MDVPRS · All rights reserved · Must be 21+ to purchase</p>
+          <p className="font-display text-2xl tracking-[0.3em] text-brand-blue/30">MDVPRS</p>
+          <p className="text-xs font-heading tracking-[0.08em] text-brand-yellow/60">Nicotine is addictive</p>
         </div>
-
-        <p className="font-body text-sm text-brand-muted">
-          Warning: This product contains nicotine. Nicotine is an addictive chemical. For adults of legal smoking age only.
-        </p>
-        <p className="font-body text-sm text-brand-muted">
-          {new Date().getFullYear()} MDVPRS. All rights reserved.
-        </p>
       </div>
     </footer>
   );
 }
+

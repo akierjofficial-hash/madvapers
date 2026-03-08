@@ -44,5 +44,10 @@ class AppServiceProvider extends ServiceProvider
             $maxRequests = max(1, (int) env('PUBLIC_API_RATE_LIMIT_PER_MINUTE', 120));
             return [Limit::perMinute($maxRequests)->by($request->ip())];
         });
+
+        RateLimiter::for('review-submit', function (Request $request) {
+            $maxSubmissions = max(1, (int) env('REVIEW_SUBMIT_RATE_LIMIT_PER_HOUR', 8));
+            return [Limit::perHour($maxSubmissions)->by($request->ip())];
+        });
     }
 }

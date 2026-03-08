@@ -17,6 +17,7 @@ class PublicCatalogController extends Controller
 
         $q = ProductVariant::query()
             ->with(['product.brand', 'product.category'])
+            ->withSum('inventoryBalances as qty_on_hand', 'qty_on_hand')
             ->where('is_active', true)
             ->whereHas('product', fn ($p) => $p->where('is_active', true))
             ->orderByDesc('id');
@@ -60,7 +61,9 @@ class PublicCatalogController extends Controller
 
     public function show(ProductVariant $variant)
     {
-        $variant->load(['product.brand', 'product.category']);
+        $variant
+            ->load(['product.brand', 'product.category'])
+            ->loadSum('inventoryBalances as qty_on_hand', 'qty_on_hand');
 
         if (!$variant->is_active || !$variant->product || !$variant->product->is_active) {
             return response()->json(['message' => 'Product not found.'], 404);
@@ -78,6 +81,7 @@ class PublicCatalogController extends Controller
         return [
             'id' => $variant->id,
             'sku' => $variant->sku,
+            'qty_on_hand' => (float) ($variant->qty_on_hand ?? 0),
             'variant_name' => $variant->variant_name,
             'flavor' => $variant->flavor,
             'nicotine_strength' => $variant->nicotine_strength,
@@ -104,4 +108,3 @@ class PublicCatalogController extends Controller
         ];
     }
 }
-

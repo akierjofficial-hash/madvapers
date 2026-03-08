@@ -42,4 +42,9 @@ class ProductVariant extends Model
     {
         return $this->hasMany(InventoryBalance::class, 'product_variant_id');
     }
+
+    public function reviews()
+    {
+        return $this->hasMany(Review::class, 'product_variant_id');
+    }
 }
