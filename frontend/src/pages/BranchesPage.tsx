@@ -18,7 +18,9 @@ import {
   TableRow,
   TextField,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useMemo, useState } from 'react';
 import {
   useBranchesQueryWithParams,
@@ -47,6 +49,8 @@ function parseError(error: any, fallback: string) {
 }
 
 export function BranchesPage() {
+  const theme = useTheme();
+  const isCompact = useMediaQuery(theme.breakpoints.down('md'));
   const { can } = useAuth();
   const canView = can('BRANCH_VIEW');
   const canManage = can('BRANCH_MANAGE');
@@ -177,9 +181,19 @@ export function BranchesPage() {
 
   return (
     <Stack spacing={2}>
-      <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between" spacing={1}>
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        alignItems={{ xs: 'stretch', sm: 'center' }}
+        justifyContent="space-between"
+        spacing={1}
+      >
         <Typography variant="h5">Branches</Typography>
-        <Button variant="contained" onClick={openNew} disabled={!canManage || actionsBusy}>
+        <Button
+          variant="contained"
+          onClick={openNew}
+          disabled={!canManage || actionsBusy}
+          sx={{ alignSelf: { xs: 'stretch', sm: 'auto' } }}
+        >
           New Branch
         </Button>
       </Stack>
@@ -192,6 +206,78 @@ export function BranchesPage() {
         <Alert severity="error">Failed to load branches.</Alert>
       ) : rows.length === 0 ? (
         <Alert severity="warning">No branches found.</Alert>
+      ) : isCompact ? (
+        <Stack spacing={1.1}>
+          {rows.map((row) => (
+            <Paper
+              key={row.id}
+              variant="outlined"
+              sx={{ p: 1.2, opacity: row.is_active ? 1 : 0.72, borderRadius: 2 }}
+            >
+              <Stack spacing={0.8}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
+                  <Typography sx={{ fontWeight: 700, minWidth: 0 }}>{row.name}</Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      px: 1,
+                      py: 0.2,
+                      borderRadius: 999,
+                      border: '1px solid',
+                      borderColor: row.is_active ? 'success.light' : 'warning.light',
+                      color: row.is_active ? 'success.dark' : 'warning.dark',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {row.is_active ? 'Active' : 'Inactive'}
+                  </Typography>
+                </Stack>
+
+                <Typography variant="body2" color="text.secondary">
+                  {row.code} • ID {row.id}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {row.address || 'No address'}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Locator: {row.locator || '-'} • Cellphone: {row.cellphone_no || '-'}
+                </Typography>
+
+                <Stack direction="row" spacing={1} sx={{ pt: 0.3 }} useFlexGap flexWrap="wrap">
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => openEdit(row)}
+                    disabled={!canManage || actionsBusy}
+                  >
+                    Edit
+                  </Button>
+                  {row.is_active ? (
+                    <Button
+                      size="small"
+                      color="warning"
+                      variant="outlined"
+                      onClick={() => toggleActive(row, false)}
+                      disabled={!canManage || actionsBusy}
+                    >
+                      Deactivate
+                    </Button>
+                  ) : (
+                    <Button
+                      size="small"
+                      color="success"
+                      variant="outlined"
+                      onClick={() => toggleActive(row, true)}
+                      disabled={!canManage || actionsBusy}
+                    >
+                      Activate
+                    </Button>
+                  )}
+                </Stack>
+              </Stack>
+            </Paper>
+          ))}
+        </Stack>
       ) : (
         <Paper variant="outlined">
           <Table size="small">
@@ -331,4 +417,3 @@ export function BranchesPage() {
     </Stack>
   );
 }
-

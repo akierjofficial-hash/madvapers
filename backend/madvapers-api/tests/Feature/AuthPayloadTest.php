@@ -48,9 +48,15 @@ class AuthPayloadTest extends TestCase
             ->assertJsonPath('user.role.code', 'CASHIER');
 
         $perms = $res->json('permissions', []);
-        $this->assertContains('INVENTORY_VIEW', $perms);
+        $this->assertContains('PRODUCT_VIEW', $perms);
+        $this->assertContains('SALES_VIEW', $perms);
+        $this->assertContains('SALES_CREATE', $perms);
+        $this->assertContains('SALES_VOID_REQUEST', $perms);
+        $this->assertNotContains('SALES_VOID', $perms);
         $this->assertNotContains('ADJUSTMENT_POST', $perms);
         $this->assertNotContains('PO_APPROVE', $perms);
+        $this->assertNotContains('INVENTORY_VIEW', $perms);
+        $this->assertNotContains('EXPENSE_VIEW', $perms);
     }
 
     public function test_logout_does_not_crash_for_cookie_or_transient_auth(): void

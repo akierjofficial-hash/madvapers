@@ -19,7 +19,9 @@ import {
   TableRow,
   TextField,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
@@ -85,6 +87,8 @@ type SnackState = {
 const DELETE_UNDO_MS = 5000;
 
 export function VariantsPage() {
+  const theme = useTheme();
+  const isCompact = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
   const { user, can } = useAuth();
   const canCreate = can('PRODUCT_CREATE');
@@ -516,14 +520,19 @@ export function VariantsPage() {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between">
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        alignItems={{ xs: 'stretch', sm: 'center' }}
+        justifyContent="space-between"
+        spacing={1}
+      >
         <Stack>
           <Typography variant="h5">Variants</Typography>
           <Typography variant="body2" sx={{ opacity: 0.75 }}>
             SKU-level records only. Manage product definitions in Products.
           </Typography>
         </Stack>
-        <Stack direction="row" spacing={1}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
           <Button variant="outlined" onClick={() => navigate('/products')}>
             Products
           </Button>
@@ -552,7 +561,7 @@ export function VariantsPage() {
           setSearch(e.target.value);
           setPage(1);
         }}
-        sx={{ maxWidth: 520 }}
+        sx={{ maxWidth: { md: 520 } }}
       />
 
       {variantsQuery.isLoading ? (
@@ -561,6 +570,111 @@ export function VariantsPage() {
         <Alert severity="error">Failed to load variants.</Alert>
       ) : tableRows.length === 0 ? (
         <Alert severity="warning">No variants found.</Alert>
+      ) : isCompact ? (
+        <Stack spacing={1.1}>
+          {tableRows.map((row) => (
+            <Paper key={row.id} variant="outlined" sx={{ p: 1.2, borderRadius: 2, opacity: row.active ? 1 : 0.72 }}>
+              <Stack spacing={0.65}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+                  <Typography sx={{ fontWeight: 700, minWidth: 0 }}>{row.sku}</Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      px: 1,
+                      py: 0.2,
+                      borderRadius: 999,
+                      border: '1px solid',
+                      borderColor: row.active ? 'success.light' : 'warning.light',
+                      color: row.active ? 'success.dark' : 'warning.dark',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {row.active ? 'Active' : 'Inactive'}
+                  </Typography>
+                </Stack>
+                <Typography variant="body2" color="text.secondary">
+                  {row.product} • {row.variant}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {row.productType} • {row.brand}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Price: {formatMoney(row.price)}
+                </Typography>
+                {(canUpdate || canDisable || canDelete || canQuickAdjustStock) && (
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ pt: 0.3 }}>
+                    {canUpdate && (
+                      <Button size="small" variant="outlined" disabled={busy} onClick={() => openEditDialog(row.id)}>
+                        Edit
+                      </Button>
+                    )}
+                    {row.active && canQuickAdjustStock && (
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        disabled={busy}
+                        onClick={() => openStock(row.id, row.sku, row.defaultCost, row.price)}
+                      >
+                        Add Stock
+                      </Button>
+                    )}
+                    {row.active ? (
+                      <>
+                        {canDisable && (
+                          <Button
+                            size="small"
+                            color="warning"
+                            variant="outlined"
+                            disabled={busy}
+                            onClick={() => requestDisable(row.id, row.sku)}
+                          >
+                            Disable
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button
+                            size="small"
+                            color="error"
+                            variant="outlined"
+                            disabled={busy}
+                            onClick={() => requestDelete(row.id, row.sku)}
+                          >
+                            Delete
+                          </Button>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {canDisable && (
+                          <Button
+                            size="small"
+                            color="success"
+                            variant="outlined"
+                            disabled={busy}
+                            onClick={() => enable(row.id)}
+                          >
+                            Enable
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button
+                            size="small"
+                            color="error"
+                            variant="outlined"
+                            disabled={busy}
+                            onClick={() => requestDelete(row.id, row.sku)}
+                          >
+                            Delete
+                          </Button>
+                        )}
+                      </>
+                    )}
+                  </Stack>
+                )}
+              </Stack>
+            </Paper>
+          ))}
+        </Stack>
       ) : (
         <Paper variant="outlined">
           <Table size="small" stickyHeader>

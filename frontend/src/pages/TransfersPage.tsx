@@ -23,7 +23,9 @@ import {
   TextField,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
@@ -98,6 +100,8 @@ type DraftItem = {
 };
 
 export function TransfersPage() {
+  const theme = useTheme();
+  const isCompactList = useMediaQuery(theme.breakpoints.down('md'));
   const { user, can } = useAuth();
   const canBranchView = can('BRANCH_VIEW');
   const canTransferView = can('TRANSFER_VIEW');
@@ -651,7 +655,7 @@ export function TransfersPage() {
             setStatus(e.target.value);
             setPage(1);
           }}
-          sx={{ width: 220 }}
+          sx={{ width: { xs: '100%', md: 220 } }}
         >
           {STATUSES.map((s) => (
             <MenuItem key={s || 'ALL'} value={s}>
@@ -671,6 +675,48 @@ export function TransfersPage() {
         <Alert severity="error">Failed to load transfers.</Alert>
       ) : pretty.length === 0 ? (
         <Alert severity="warning">No transfers found.</Alert>
+      ) : isCompactList ? (
+        <Stack spacing={1}>
+          {pretty.map((r) => (
+            <Paper
+              key={r.id}
+              variant="outlined"
+              role="button"
+              tabIndex={0}
+              onClick={() => openTransferRow(r)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  openTransferRow(r);
+                }
+              }}
+              sx={{
+                p: 1.2,
+                cursor: 'pointer',
+                bgcolor: r.isNew ? 'rgba(211, 47, 47, 0.06)' : undefined,
+              }}
+            >
+              <Stack spacing={0.75}>
+                <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
+                  <Typography variant="subtitle2" sx={{ fontFamily: 'monospace' }}>
+                    TR #{r.id}
+                  </Typography>
+                  <Stack direction="row" spacing={0.6} alignItems="center">
+                    <Chip size="small" label={r.status} />
+                    {r.isNew && <Chip size="small" color="error" label="NEW" sx={{ height: 20, fontSize: 10 }} />}
+                  </Stack>
+                </Stack>
+                <Typography variant="body2">{`${r.from} -> ${r.to}`}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Items: {r.itemsCount} | Qty: {qtyFmt(r.totalQty)}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Notes: {r.notes?.trim() ? r.notes : '-'}
+                </Typography>
+              </Stack>
+            </Paper>
+          ))}
+        </Stack>
       ) : (
         <Paper variant="outlined">
           <Table size="small" stickyHeader>

@@ -19,7 +19,9 @@ import {
   TableRow,
   TextField,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -79,6 +81,8 @@ function playBeep(kind: 'ok' | 'error') {
 }
 
 export function InventoryPage() {
+  const theme = useTheme();
+  const isCompact = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
   const { user, can } = useAuth();
   const canBranchView = can('BRANCH_VIEW');
@@ -372,7 +376,7 @@ export function InventoryPage() {
       {canBranchView && branchesQuery.isError && <Alert severity="error">Failed to load branches.</Alert>}
 
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
-        <Box sx={{ flex: 1, minWidth: 260 }}>
+        <Box sx={{ flex: 1, minWidth: { md: 260 } }}>
           {canBranchView ? (
             <BranchSelect
               branches={branchesQuery.data ?? []}
@@ -400,7 +404,7 @@ export function InventoryPage() {
             setPage(1);
           }}
           onKeyDown={handleSearchKeyDown}
-          sx={{ flex: 2, minWidth: 260 }}
+          sx={{ flex: 2, minWidth: { md: 260 } }}
         />
       </Stack>
 
@@ -439,6 +443,47 @@ export function InventoryPage() {
         <Alert severity="error">Failed to load inventory.</Alert>
       ) : rows.length === 0 ? (
         <Alert severity="warning">No inventory found for this branch.</Alert>
+      ) : isCompact ? (
+        <Stack spacing={1.1}>
+          {prettyRows.map((r) => {
+            const selectedItem = selected?.inventory_id === r.inventory_id;
+            return (
+              <Paper
+                key={r.inventory_id}
+                variant="outlined"
+                onClick={() => openDetails(r, 'click')}
+                sx={{
+                  p: 1.2,
+                  borderRadius: 2,
+                  cursor: 'pointer',
+                  borderColor: selectedItem ? 'primary.main' : undefined,
+                  bgcolor: selectedItem ? 'action.hover' : undefined,
+                }}
+              >
+                <Stack spacing={0.65}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+                    <Typography sx={{ fontWeight: 700, minWidth: 0 }}>{r.product}</Typography>
+                    <Typography sx={{ fontWeight: 700, color: r.qty <= 0 ? 'error.main' : 'text.primary' }}>
+                      {Number(r.qty).toLocaleString(undefined, { maximumFractionDigits: 3 })}
+                    </Typography>
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary">
+                    {r.variant}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
+                    SKU: {r.sku}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
+                    Barcode: {r.barcode}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Brand: {r.brand}
+                  </Typography>
+                </Stack>
+              </Paper>
+            );
+          })}
+        </Stack>
       ) : (
         <Paper variant="outlined">
           <Table size="small" stickyHeader>

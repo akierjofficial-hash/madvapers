@@ -7,6 +7,10 @@ export type DashboardSummaryQuery = {
   date_to?: string;
 };
 
+export type DashboardApprovalQueueQuery = {
+  branch_id?: number;
+};
+
 export type DashboardKpiDetailType =
   | 'low_stock'
   | 'out_of_stock'
@@ -29,8 +33,10 @@ export type DashboardKpis = {
   pending_adjustments: number;
   pending_po_approvals: number;
   pending_transfers: number;
+  pending_void_requests: number;
   inventory_value: number;
   missing_cost_count: number;
+  tracked_variant_count: number;
 };
 
 export type DashboardInventoryKpiItem = {
@@ -95,6 +101,22 @@ export type DashboardPurchaseOrderQueueItem = {
   total_qty_ordered: number;
 };
 
+export type DashboardSaleVoidRequestQueueItem = {
+  id: number;
+  sale_number?: string | null;
+  status: string;
+  void_request_status: string;
+  payment_status: string;
+  branch_id: number;
+  branch_name?: string | null;
+  void_requested_at?: string | null;
+  requested_by?: string | null;
+  cashier_name?: string | null;
+  grand_total: number;
+  paid_total: number;
+  void_request_notes?: string | null;
+};
+
 export type DashboardBranchHealth = {
   branch_id: number;
   branch_code: string;
@@ -146,6 +168,41 @@ export type DashboardTrendPoint = {
   po_received: number;
 };
 
+export type DashboardFinance = {
+  revenue: number;
+  cash_in: number;
+  cogs: number;
+  gross_profit: number;
+  restock_spend: number;
+  net_cashflow: number;
+  expense_total: number;
+  net_income: number;
+  voided_sales_count: number;
+  voided_sales_amount: number;
+  voided_paid_amount: number;
+};
+
+export type DashboardTopSellingProduct = {
+  product_variant_id: number;
+  sku?: string | null;
+  product_name?: string | null;
+  variant_name?: string | null;
+  qty_sold: number;
+  sales_amount: number;
+  cogs: number;
+  gross_profit: number;
+  sales_count: number;
+};
+
+export type DashboardVoidedSalesBranch = {
+  branch_id: number;
+  branch_code?: string | null;
+  branch_name?: string | null;
+  voided_sales_count: number;
+  voided_sales_amount: number;
+  voided_paid_amount: number;
+};
+
 export type DashboardSummaryResponse = {
   filters: {
     branch_id?: number | null;
@@ -160,16 +217,36 @@ export type DashboardSummaryResponse = {
     inventory_value: DashboardInventoryKpiItem[];
     missing_cost: DashboardInventoryKpiItem[];
   };
+  finance: DashboardFinance;
+  voided_sales_by_branch: DashboardVoidedSalesBranch[];
+  top_selling_products: DashboardTopSellingProduct[];
   approval_queue: {
     adjustments: DashboardAdjustmentQueueItem[];
     transfers: DashboardTransferQueueItem[];
     purchase_orders: DashboardPurchaseOrderQueueItem[];
+    void_requests: DashboardSaleVoidRequestQueueItem[];
   };
   alerts: DashboardAlert[];
   branch_health: DashboardBranchHealth[];
   activity_feed: DashboardActivityItem[];
   trends: DashboardTrendPoint[];
   quick_actions: Array<{ label: string; path: string }>;
+};
+
+export type DashboardApprovalQueueResponse = {
+  filters: {
+    branch_id?: number | null;
+    applied_branch_ids?: number[] | null;
+  };
+  counts: {
+    adjustments: number;
+    transfers: number;
+    purchase_orders: number;
+    void_requests: number;
+    total: number;
+  };
+  approval_queue: DashboardSummaryResponse['approval_queue'];
+  generated_at: string;
 };
 
 export type DashboardKpiDetailRow =
@@ -180,6 +257,11 @@ export type DashboardKpiDetailRow =
 
 export async function getDashboardSummary(params: DashboardSummaryQuery) {
   const res = await api.get<DashboardSummaryResponse>('/dashboard/summary', { params });
+  return res.data;
+}
+
+export async function getDashboardApprovalQueue(params: DashboardApprovalQueueQuery) {
+  const res = await api.get<DashboardApprovalQueueResponse>('/dashboard/approval-queue', { params });
   return res.data;
 }
 

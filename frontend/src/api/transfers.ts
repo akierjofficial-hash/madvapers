@@ -26,6 +26,19 @@ export type Transfer = {
   toBranch?: { id: number; code: string; name: string } | null;
 };
 
+type TransferActionResponse = {
+  status: string;
+  transfer: Transfer;
+};
+
+function unwrapTransfer(payload: Transfer | TransferActionResponse): Transfer {
+  if (payload && typeof payload === 'object' && 'transfer' in payload) {
+    return payload.transfer;
+  }
+
+  return payload;
+}
+
 export type TransfersQuery = {
   page?: number;
   from_branch_id?: number;
@@ -61,26 +74,26 @@ export async function createTransfer(input: CreateTransferInput) {
 }
 
 export async function requestTransfer(id: number) {
-  const res = await api.post<Transfer>(`/transfers/${id}/request`);
-  return res.data;
+  const res = await api.post<Transfer | TransferActionResponse>(`/transfers/${id}/request`);
+  return unwrapTransfer(res.data);
 }
 
 export async function approveTransfer(id: number) {
-  const res = await api.post<Transfer>(`/transfers/${id}/approve`);
-  return res.data;
+  const res = await api.post<Transfer | TransferActionResponse>(`/transfers/${id}/approve`);
+  return unwrapTransfer(res.data);
 }
 
 export async function dispatchTransfer(id: number) {
-  const res = await api.post<Transfer>(`/transfers/${id}/dispatch`);
-  return res.data;
+  const res = await api.post<Transfer | TransferActionResponse>(`/transfers/${id}/dispatch`);
+  return unwrapTransfer(res.data);
 }
 
 export async function receiveTransfer(id: number) {
-  const res = await api.post<Transfer>(`/transfers/${id}/receive`);
-  return res.data;
+  const res = await api.post<Transfer | TransferActionResponse>(`/transfers/${id}/receive`);
+  return unwrapTransfer(res.data);
 }
 
 export async function cancelTransfer(id: number) {
-  const res = await api.post<Transfer>(`/transfers/${id}/cancel`);
-  return res.data;
+  const res = await api.post<Transfer | TransferActionResponse>(`/transfers/${id}/cancel`);
+  return unwrapTransfer(res.data);
 }

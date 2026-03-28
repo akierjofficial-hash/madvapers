@@ -1,7 +1,36 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
-export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api';
+function isLocalLikeHost(host: string): boolean {
+  const value = String(host ?? '').trim().toLowerCase();
+  if (!value) return false;
+  if (value === 'localhost' || value === '127.0.0.1' || value === '::1') return true;
+  return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(value);
+}
+
+function normalizeApiBaseUrlForLocalCookieAuth(rawBaseUrl: string): string {
+  try {
+    const browserHost = typeof window !== 'undefined' ? window.location.hostname : '';
+    const resolved = new URL(rawBaseUrl, typeof window !== 'undefined' ? window.location.origin : undefined);
+
+    // Sanctum cookie auth needs API and SPA on the same local host family
+    // (localhost vs LAN IP mismatch commonly causes CSRF token mismatch).
+    if (browserHost && isLocalLikeHost(browserHost) && isLocalLikeHost(resolved.hostname) && browserHost !== resolved.hostname) {
+      resolved.hostname = browserHost;
+    }
+
+    if (!resolved.pathname || resolved.pathname === '/') {
+      resolved.pathname = '/api';
+    }
+
+    return resolved.toString().replace(/\/$/, '');
+  } catch {
+    return rawBaseUrl;
+  }
+}
+
+const RAW_API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api';
+
+export const API_BASE_URL = normalizeApiBaseUrlForLocalCookieAuth(RAW_API_BASE_URL);
 
 function deriveApiOrigin(baseUrl: string): string {
   try {

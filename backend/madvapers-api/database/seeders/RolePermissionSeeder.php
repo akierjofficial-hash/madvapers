@@ -46,6 +46,20 @@ class RolePermissionSeeder extends Seeder
             ['code' => 'SUPPLIER_VIEW', 'name' => 'View suppliers'],
             ['code' => 'SUPPLIER_MANAGE', 'name' => 'Create/update/deactivate suppliers'],
 
+            // Sales / Cashier
+            ['code' => 'SALES_VIEW', 'name' => 'View sales'],
+            ['code' => 'SALES_CREATE', 'name' => 'Create sales'],
+            ['code' => 'SALES_POST', 'name' => 'Post sales'],
+            ['code' => 'SALES_VOID_REQUEST', 'name' => 'Request sale void'],
+            ['code' => 'SALES_VOID', 'name' => 'Void sales'],
+            ['code' => 'SALES_PAYMENT', 'name' => 'Receive sale payments'],
+
+            // Expenses
+            ['code' => 'EXPENSE_VIEW', 'name' => 'View expenses'],
+            ['code' => 'EXPENSE_CREATE', 'name' => 'Create expenses'],
+            ['code' => 'EXPENSE_UPDATE', 'name' => 'Update expenses'],
+            ['code' => 'EXPENSE_VOID', 'name' => 'Void expenses'],
+
             // Transfers
             ['code' => 'TRANSFER_VIEW', 'name' => 'View transfers'],
             ['code' => 'TRANSFER_CREATE', 'name' => 'Create transfer requests'],
@@ -105,6 +119,8 @@ class RolePermissionSeeder extends Seeder
             'PRODUCT_VIEW', 'PRICE_VIEW',
             'INVENTORY_VIEW', 'LEDGER_VIEW',
             'PO_VIEW', 'PO_CREATE', 'PO_APPROVE', 'PO_RECEIVE',
+            'SALES_VIEW', 'SALES_CREATE', 'SALES_POST', 'SALES_VOID_REQUEST', 'SALES_VOID', 'SALES_PAYMENT',
+            'EXPENSE_VIEW', 'EXPENSE_CREATE', 'EXPENSE_UPDATE', 'EXPENSE_VOID',
             'SUPPLIER_VIEW', 'SUPPLIER_MANAGE',
             'TRANSFER_VIEW', 'TRANSFER_CREATE', 'TRANSFER_APPROVE', 'TRANSFER_DISPATCH', 'TRANSFER_RECEIVE',
             'ADJUSTMENT_VIEW', 'ADJUSTMENT_CREATE', 'ADJUSTMENT_SUBMIT', 'ADJUSTMENT_APPROVE', 'ADJUSTMENT_POST',
@@ -118,6 +134,8 @@ class RolePermissionSeeder extends Seeder
             'PRODUCT_VIEW', 'PRICE_VIEW',
             'INVENTORY_VIEW', 'LEDGER_VIEW',
             'PO_VIEW', 'PO_CREATE', 'PO_RECEIVE',
+            'SALES_VIEW', 'SALES_CREATE', 'SALES_POST', 'SALES_VOID_REQUEST', 'SALES_PAYMENT',
+            'EXPENSE_VIEW', 'EXPENSE_CREATE', 'EXPENSE_UPDATE',
             'SUPPLIER_VIEW', 'SUPPLIER_MANAGE',
             'TRANSFER_VIEW', 'TRANSFER_CREATE', 'TRANSFER_DISPATCH', 'TRANSFER_RECEIVE',
             'ADJUSTMENT_VIEW', 'ADJUSTMENT_CREATE', 'ADJUSTMENT_SUBMIT',
@@ -127,8 +145,8 @@ class RolePermissionSeeder extends Seeder
 
         // CASHIER
         $attach('CASHIER', [
-            'PRODUCT_VIEW', 'PRICE_VIEW',
-            'INVENTORY_VIEW',
+            'PRODUCT_VIEW',
+            'SALES_VIEW', 'SALES_CREATE', 'SALES_POST', 'SALES_VOID_REQUEST', 'SALES_PAYMENT',
         ]);
 
         // AUDITOR (read-only)
@@ -138,6 +156,8 @@ class RolePermissionSeeder extends Seeder
             'PRODUCT_VIEW', 'PRICE_VIEW',
             'INVENTORY_VIEW', 'LEDGER_VIEW',
             'PO_VIEW',
+            'SALES_VIEW',
+            'EXPENSE_VIEW',
             'SUPPLIER_VIEW',
             'TRANSFER_VIEW',
             'ADJUSTMENT_VIEW',

@@ -79,6 +79,32 @@ import {
   type CreatePurchaseOrderInput,
   type ReceivePurchaseOrderPayload,
 } from './purchaseOrders';
+import {
+  addSalePayment,
+  approveSaleVoidRequest,
+  createSale,
+  getSale,
+  getSales,
+  postSale,
+  rejectSaleVoidRequest,
+  requestSaleVoid,
+  voidSale,
+  type AddSalePaymentInput,
+  type CreateSaleInput,
+  type Sale,
+  type SalesQuery,
+} from './sales';
+import {
+  createExpense,
+  getExpense,
+  getExpenses,
+  updateExpense,
+  voidExpense,
+  type CreateExpenseInput,
+  type Expense,
+  type ExpensesQuery,
+  type UpdateExpenseInput,
+} from './expenses';
 
 // Products + Variants
 import {
@@ -118,6 +144,9 @@ import {
   type CreateAdjustmentInput,
 } from './adjustments';
 import {
+  getDashboardApprovalQueue,
+  type DashboardApprovalQueueQuery,
+  type DashboardApprovalQueueResponse,
   getDashboardSummary,
   getDashboardKpiDetails,
   type DashboardKpiDetailRow,
@@ -135,11 +164,14 @@ function parsePollMs(value: string | undefined, fallbackMs: number): number {
 const REALTIME_POLLING_ENABLED = String(import.meta.env.VITE_REALTIME_POLLING ?? 'true').toLowerCase() !== 'false';
 
 const POLL_MS = {
+  approvalQueue: parsePollMs(import.meta.env.VITE_REALTIME_APPROVAL_QUEUE_MS, 1000),
   inventory: parsePollMs(import.meta.env.VITE_REALTIME_INVENTORY_MS, 5000),
   ledger: parsePollMs(import.meta.env.VITE_REALTIME_LEDGER_MS, 5000),
   adjustments: parsePollMs(import.meta.env.VITE_REALTIME_ADJUSTMENTS_MS, 5000),
   transfers: parsePollMs(import.meta.env.VITE_REALTIME_TRANSFERS_MS, 6000),
   purchaseOrders: parsePollMs(import.meta.env.VITE_REALTIME_PURCHASE_ORDERS_MS, 6000),
+  sales: parsePollMs(import.meta.env.VITE_REALTIME_SALES_MS, 5000),
+  expenses: parsePollMs(import.meta.env.VITE_REALTIME_EXPENSES_MS, 7000),
 } as const;
 
 function realtimeInterval(enabled: boolean, ms: number): number | false {
@@ -149,6 +181,7 @@ function realtimeInterval(enabled: boolean, ms: number): number | false {
 
 export const qk = {
   me: ['me'] as const,
+  dashboardApprovalQueue: (params: DashboardApprovalQueueQuery) => ['dashboardApprovalQueue', params] as const,
   dashboardSummary: (params: DashboardSummaryQuery) => ['dashboardSummary', params] as const,
   dashboardKpiDetails: (params: DashboardKpiDetailsQuery) => ['dashboardKpiDetails', params] as const,
   branches: ['branches'] as const,
@@ -165,6 +198,10 @@ export const qk = {
 
   purchaseOrders: (params: PurchaseOrdersQuery) => ['purchaseOrders', params] as const,
   purchaseOrder: (id: number) => ['purchaseOrder', id] as const,
+  sales: (params: SalesQuery) => ['sales', params] as const,
+  sale: (id: number) => ['sale', id] as const,
+  expenses: (params: ExpensesQuery) => ['expenses', params] as const,
+  expense: (id: number) => ['expense', id] as const,
 
   products: (params: ProductsQuery) => ['products', params] as const,
   variants: (params: VariantsQuery) => ['variants', params] as const,
@@ -194,6 +231,20 @@ export function useDashboardSummaryQuery(params: DashboardSummaryQuery, enabled 
     placeholderData: keepPreviousData,
     refetchInterval: realtimeInterval(enabled, 10_000),
     refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useDashboardApprovalQueueQuery(params: DashboardApprovalQueueQuery, enabled = true) {
+  return useQuery<DashboardApprovalQueueResponse>({
+    queryKey: qk.dashboardApprovalQueue(params),
+    queryFn: () => getDashboardApprovalQueue(params),
+    enabled,
+    placeholderData: keepPreviousData,
+    // Keep approval notifications polling even if global realtime toggles are disabled.
+    refetchInterval: enabled ? POLL_MS.approvalQueue : false,
+    refetchIntervalInBackground: true,
+    refetchOnMount: 'always',
     refetchOnWindowFocus: true,
   });
 }
@@ -435,6 +486,11 @@ export function useLedgerQuery(params: LedgerQuery, enabled = true) {
   });
 }
 
+function invalidateDashboardData(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: ['dashboardSummary'] });
+  qc.invalidateQueries({ queryKey: ['dashboardApprovalQueue'] });
+}
+
 /* =========================
    TRANSFERS
    ========================= */
@@ -467,6 +523,7 @@ function invalidateTransfers(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['transfer'] });
   qc.invalidateQueries({ queryKey: ['ledger'] });
   qc.invalidateQueries({ queryKey: ['inventory'] });
+  invalidateDashboardData(qc);
 }
 
 export function useCreateTransferMutation() {
@@ -549,6 +606,7 @@ function invalidatePurchaseOrders(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['purchaseOrder'] });
   qc.invalidateQueries({ queryKey: ['inventory'] });
   qc.invalidateQueries({ queryKey: ['ledger'] });
+  invalidateDashboardData(qc);
 }
 
 export function useCreatePurchaseOrderMutation() {
@@ -584,6 +642,156 @@ export function useReceivePurchaseOrderMutation() {
   >({
     mutationFn: (args) => receivePurchaseOrder(args.id, args.payload),
     onSuccess: () => invalidatePurchaseOrders(qc),
+  });
+}
+
+/* =========================
+   SALES
+   ========================= */
+
+export function useSalesQuery(params: SalesQuery, enabled = true) {
+  return useQuery<LaravelPaginator<Sale>>({
+    queryKey: qk.sales(params),
+    queryFn: () => getSales(params),
+    enabled,
+    placeholderData: keepPreviousData,
+    refetchInterval: realtimeInterval(enabled, POLL_MS.sales),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useSaleQuery(id: number, enabled = true) {
+  return useQuery<Sale>({
+    queryKey: qk.sale(id),
+    queryFn: () => getSale(id),
+    enabled,
+    refetchInterval: realtimeInterval(enabled, POLL_MS.sales),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
+}
+
+function invalidateSales(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: ['sales'] });
+  qc.invalidateQueries({ queryKey: ['sale'] });
+  qc.invalidateQueries({ queryKey: ['inventory'] });
+  qc.invalidateQueries({ queryKey: ['variants'] });
+  qc.invalidateQueries({ queryKey: ['products'] });
+  qc.invalidateQueries({ queryKey: ['ledger'] });
+  invalidateDashboardData(qc);
+}
+
+export function useCreateSaleMutation() {
+  const qc = useQueryClient();
+  return useMutation<Sale, unknown, CreateSaleInput>({
+    mutationFn: (input) => createSale(input),
+    onSuccess: () => invalidateSales(qc),
+  });
+}
+
+export function usePostSaleMutation() {
+  const qc = useQueryClient();
+  return useMutation<{ status: string; sale: Sale }, unknown, { id: number; notes?: string | null }>({
+    mutationFn: (args) => postSale(args.id, args.notes ? { notes: args.notes } : undefined),
+    onSuccess: () => invalidateSales(qc),
+  });
+}
+
+export function useAddSalePaymentMutation() {
+  const qc = useQueryClient();
+  return useMutation<{ status: string; sale: Sale }, unknown, { id: number; input: AddSalePaymentInput }>({
+    mutationFn: (args) => addSalePayment(args.id, args.input),
+    onSuccess: () => invalidateSales(qc),
+  });
+}
+
+export function useVoidSaleMutation() {
+  const qc = useQueryClient();
+  return useMutation<{ status: string; sale: Sale }, unknown, { id: number; notes?: string | null }>({
+    mutationFn: (args) => voidSale(args.id, args.notes ? { notes: args.notes } : undefined),
+    onSuccess: () => invalidateSales(qc),
+  });
+}
+
+export function useRequestSaleVoidMutation() {
+  const qc = useQueryClient();
+  return useMutation<{ status: string; sale: Sale }, unknown, { id: number; notes?: string | null }>({
+    mutationFn: (args) => requestSaleVoid(args.id, args.notes ? { notes: args.notes } : undefined),
+    onSuccess: () => invalidateSales(qc),
+  });
+}
+
+export function useApproveSaleVoidRequestMutation() {
+  const qc = useQueryClient();
+  return useMutation<{ status: string; sale: Sale }, unknown, { id: number; notes?: string | null }>({
+    mutationFn: (args) => approveSaleVoidRequest(args.id, args.notes ? { notes: args.notes } : undefined),
+    onSuccess: () => invalidateSales(qc),
+  });
+}
+
+export function useRejectSaleVoidRequestMutation() {
+  const qc = useQueryClient();
+  return useMutation<{ status: string; sale: Sale }, unknown, { id: number; notes?: string | null }>({
+    mutationFn: (args) => rejectSaleVoidRequest(args.id, args.notes ? { notes: args.notes } : undefined),
+    onSuccess: () => invalidateSales(qc),
+  });
+}
+
+/* =========================
+   EXPENSES
+   ========================= */
+
+export function useExpensesQuery(params: ExpensesQuery, enabled = true) {
+  return useQuery<LaravelPaginator<Expense>>({
+    queryKey: qk.expenses(params),
+    queryFn: () => getExpenses(params),
+    enabled,
+    placeholderData: keepPreviousData,
+    refetchInterval: realtimeInterval(enabled, POLL_MS.expenses),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useExpenseQuery(id: number, enabled = true) {
+  return useQuery<Expense>({
+    queryKey: qk.expense(id),
+    queryFn: () => getExpense(id),
+    enabled,
+    refetchInterval: realtimeInterval(enabled, POLL_MS.expenses),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
+}
+
+function invalidateExpenses(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: ['expenses'] });
+  qc.invalidateQueries({ queryKey: ['expense'] });
+  invalidateDashboardData(qc);
+}
+
+export function useCreateExpenseMutation() {
+  const qc = useQueryClient();
+  return useMutation<Expense, unknown, CreateExpenseInput>({
+    mutationFn: (input) => createExpense(input),
+    onSuccess: () => invalidateExpenses(qc),
+  });
+}
+
+export function useUpdateExpenseMutation() {
+  const qc = useQueryClient();
+  return useMutation<Expense, unknown, { id: number; input: UpdateExpenseInput }>({
+    mutationFn: (args) => updateExpense(args.id, args.input),
+    onSuccess: () => invalidateExpenses(qc),
+  });
+}
+
+export function useVoidExpenseMutation() {
+  const qc = useQueryClient();
+  return useMutation<{ status: string; expense: Expense }, unknown, number>({
+    mutationFn: (id) => voidExpense(id),
+    onSuccess: () => invalidateExpenses(qc),
   });
 }
 
@@ -760,6 +968,7 @@ export function useSubmitAdjustmentMutation() {
     mutationFn: (id: number) => submitAdjustment(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['adjustments'] });
+      invalidateDashboardData(qc);
     },
   });
 }
@@ -770,6 +979,7 @@ export function useApproveAdjustmentMutation() {
     mutationFn: (id: number) => approveAdjustment(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['adjustments'] });
+      invalidateDashboardData(qc);
     },
   });
 }
@@ -782,6 +992,7 @@ export function usePostAdjustmentMutation() {
       qc.invalidateQueries({ queryKey: ['adjustments'] });
       qc.invalidateQueries({ queryKey: ['inventory'] });
       qc.invalidateQueries({ queryKey: ['ledger'] });
+      invalidateDashboardData(qc);
     },
   });
 }
@@ -790,7 +1001,10 @@ export function useCreateAdjustmentMutation() {
   const qc = useQueryClient();
   return useMutation<StockAdjustment, unknown, CreateAdjustmentInput>({
     mutationFn: (input) => createAdjustment(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['adjustments'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['adjustments'] });
+      invalidateDashboardData(qc);
+    },
   });
 }
 
@@ -803,6 +1017,7 @@ export function useQuickPostAdjustmentMutation() {
       qc.invalidateQueries({ queryKey: ['ledger'] });
       qc.invalidateQueries({ queryKey: ['variants'] });
       qc.invalidateQueries({ queryKey: ['adjustments'] });
+      invalidateDashboardData(qc);
     },
   });
 }

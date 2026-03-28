@@ -21,7 +21,9 @@ import {
   TableRow,
   TextField,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
@@ -114,6 +116,8 @@ function formatMoney(value: string | number | null | undefined) {
 }
 
 export function ProductsPage() {
+  const theme = useTheme();
+  const isCompact = useMediaQuery(theme.breakpoints.down('md'));
   const { can } = useAuth();
   const canView = can('PRODUCT_VIEW');
   const canCreate = can('PRODUCT_CREATE');
@@ -475,9 +479,19 @@ export function ProductsPage() {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between">
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        alignItems={{ xs: 'stretch', sm: 'center' }}
+        justifyContent="space-between"
+        spacing={1}
+      >
         <Typography variant="h5">Products</Typography>
-        <Button variant="contained" onClick={openCreate} disabled={!canCreate}>
+        <Button
+          variant="contained"
+          onClick={openCreate}
+          disabled={!canCreate}
+          sx={{ alignSelf: { xs: 'stretch', sm: 'auto' } }}
+        >
           New Product
         </Button>
       </Stack>
@@ -495,7 +509,7 @@ export function ProductsPage() {
             setSearch(e.target.value);
             setPage(1);
           }}
-          sx={{ minWidth: 280, flex: 1 }}
+          sx={{ minWidth: { md: 280 }, flex: 1 }}
         />
 
         <TextField
@@ -507,7 +521,7 @@ export function ProductsPage() {
             setTypeFilter(e.target.value === '' ? '' : toProductType(e.target.value));
             setPage(1);
           }}
-          sx={{ width: 210 }}
+          sx={{ width: { xs: '100%', md: 210 } }}
         >
           <MenuItem value="">All Types</MenuItem>
           {productTypeOptions.map((type) => (
@@ -526,7 +540,7 @@ export function ProductsPage() {
             setBrandFilter(e.target.value === '' ? '' : Number(e.target.value));
             setPage(1);
           }}
-          sx={{ width: 210 }}
+          sx={{ width: { xs: '100%', md: 210 } }}
           disabled={brandsQuery.isLoading}
         >
           <MenuItem value="">All Brands</MenuItem>
@@ -557,6 +571,104 @@ export function ProductsPage() {
         <Alert severity="error">Failed to load products.</Alert>
       ) : sortedRows.length === 0 ? (
         <Alert severity="warning">No products found.</Alert>
+      ) : isCompact ? (
+        <Stack spacing={1.1}>
+          {sortedRows.map((row) => {
+            const active = row.is_active ?? true;
+            return (
+              <Paper key={row.id} variant="outlined" sx={{ p: 1.2, borderRadius: 2, opacity: active ? 1 : 0.72 }}>
+                <Stack spacing={0.65}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+                    <Typography sx={{ fontWeight: 700, minWidth: 0 }}>{row.name}</Typography>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        px: 1,
+                        py: 0.2,
+                        borderRadius: 999,
+                        border: '1px solid',
+                        borderColor: active ? 'success.light' : 'warning.light',
+                        color: active ? 'success.dark' : 'warning.dark',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {active ? 'Active' : 'Inactive'}
+                    </Typography>
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary">
+                    {formatProductTypeLabel(row.product_type ?? 'DEVICE')}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Brand: {row.brand?.name ?? '-'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Base Price: {formatMoney(row.base_price)} • Variants: {row.variants_count ?? 0}
+                  </Typography>
+                  {(canUpdate || canDisable || canDelete) && (
+                    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ pt: 0.3 }}>
+                      {canUpdate && (
+                        <Button size="small" variant="outlined" onClick={() => openEdit(row)} disabled={busy}>
+                          Edit
+                        </Button>
+                      )}
+                      {active ? (
+                        <>
+                          {canDisable && (
+                            <Button
+                              size="small"
+                              color="warning"
+                              variant="outlined"
+                              onClick={() => requestDisable(row)}
+                              disabled={busy}
+                            >
+                              Disable
+                            </Button>
+                          )}
+                          {canDelete && (
+                            <Button
+                              size="small"
+                              color="error"
+                              variant="outlined"
+                              onClick={() => requestDelete(row)}
+                              disabled={busy}
+                            >
+                              Delete
+                            </Button>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {canDisable && (
+                            <Button
+                              size="small"
+                              color="success"
+                              variant="outlined"
+                              onClick={() => enable(row)}
+                              disabled={busy}
+                            >
+                              Enable
+                            </Button>
+                          )}
+                          {canDelete && (
+                            <Button
+                              size="small"
+                              color="error"
+                              variant="outlined"
+                              onClick={() => requestDelete(row)}
+                              disabled={busy}
+                            >
+                              Delete
+                            </Button>
+                          )}
+                        </>
+                      )}
+                    </Stack>
+                  )}
+                </Stack>
+              </Paper>
+            );
+          })}
+        </Stack>
       ) : (
         <Paper variant="outlined">
           <Table size="small" stickyHeader>

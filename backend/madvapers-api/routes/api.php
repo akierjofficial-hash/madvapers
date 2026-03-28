@@ -16,15 +16,21 @@ use App\Http\Controllers\Api\StockAdjustmentController;
 use App\Http\Controllers\Api\TransferController;
 use App\Http\Controllers\Api\SupplierController;
 use App\Http\Controllers\Api\PurchaseOrderController;
+use App\Http\Controllers\Api\ExpenseController;
+use App\Http\Controllers\Api\SalesController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\PublicCatalogController;
 use App\Http\Controllers\Api\PublicBranchController;
 use App\Http\Controllers\Api\PublicReviewController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\HealthController;
+use App\Http\Controllers\Api\AuditEventController;
 
 // Health
-Route::get('/health', fn () => response()->json(['where' => 'api.php', 'status' => 'ok']));
+Route::get('/health', [HealthController::class, 'index']);
+Route::get('/health/live', [HealthController::class, 'live']);
+Route::get('/health/ready', [HealthController::class, 'ready']);
 
 // Public auth
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
@@ -45,9 +51,11 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // Auth
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+    Route::get('/audit/events', [AuditEventController::class, 'index'])->middleware('perm:AUDIT_VIEW');
 
     // Dashboard
     Route::get('/dashboard/summary', [DashboardController::class, 'summary'])->middleware('perm:USER_VIEW');
+    Route::get('/dashboard/approval-queue', [DashboardController::class, 'approvalQueue'])->middleware('perm:USER_VIEW');
     Route::get('/dashboard/kpi-details', [DashboardController::class, 'kpiDetails'])->middleware('perm:USER_VIEW');
 
     // Inventory
@@ -140,4 +148,22 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('/purchase-orders/{po}/approve', [PurchaseOrderController::class, 'approve'])->middleware('perm:PO_APPROVE');
     Route::post('/purchase-orders/{po}/receive', [PurchaseOrderController::class, 'receive'])->middleware('perm:PO_RECEIVE');
     Route::post('/purchase-orders/{po}/cancel', [PurchaseOrderController::class, 'cancel'])->middleware('perm:PO_CREATE');
+
+    // Sales / Cashier
+    Route::get('/sales', [SalesController::class, 'index'])->middleware('perm:SALES_VIEW');
+    Route::get('/sales/{sale}', [SalesController::class, 'show'])->middleware('perm:SALES_VIEW');
+    Route::post('/sales', [SalesController::class, 'store'])->middleware('perm:SALES_CREATE');
+    Route::post('/sales/{sale}/post', [SalesController::class, 'post'])->middleware('perm:SALES_POST');
+    Route::post('/sales/{sale}/void-request', [SalesController::class, 'requestVoid'])->middleware('perm:SALES_VOID_REQUEST');
+    Route::post('/sales/{sale}/void-approve', [SalesController::class, 'approveVoid'])->middleware('perm:SALES_VOID');
+    Route::post('/sales/{sale}/void-reject', [SalesController::class, 'rejectVoid'])->middleware('perm:SALES_VOID');
+    Route::post('/sales/{sale}/void', [SalesController::class, 'void'])->middleware('perm:SALES_VOID');
+    Route::post('/sales/{sale}/payments', [SalesController::class, 'addPayment'])->middleware('perm:SALES_PAYMENT');
+
+    // Expenses
+    Route::get('/expenses', [ExpenseController::class, 'index'])->middleware('perm:EXPENSE_VIEW');
+    Route::get('/expenses/{expense}', [ExpenseController::class, 'show'])->middleware('perm:EXPENSE_VIEW');
+    Route::post('/expenses', [ExpenseController::class, 'store'])->middleware('perm:EXPENSE_CREATE');
+    Route::put('/expenses/{expense}', [ExpenseController::class, 'update'])->middleware('perm:EXPENSE_UPDATE');
+    Route::post('/expenses/{expense}/void', [ExpenseController::class, 'void'])->middleware('perm:EXPENSE_VOID');
 });

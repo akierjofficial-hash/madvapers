@@ -13,6 +13,7 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class DashboardController extends Controller
 {
@@ -54,6 +55,9 @@ class DashboardController extends Controller
             ],
             'kpis' => $this->buildKpis($branchIds),
             'kpi_details' => $this->buildKpiDetails($branchIds),
+            'finance' => $this->buildFinanceOverview($branchIds, $from, $to),
+            'voided_sales_by_branch' => $this->buildVoidedSalesByBranch($branchIds, $from, $to),
+            'top_selling_products' => $this->buildTopSellingProducts($branchIds, $from, $to),
             'approval_queue' => $this->buildApprovalQueue($branchIds),
             'alerts' => $this->buildAlerts($branchIds, $from, $to),
             'branch_health' => $this->buildBranchHealth($branchIds, $from, $to),
@@ -61,12 +65,50 @@ class DashboardController extends Controller
             'trends' => $this->buildTrends($branchIds, $from, $to),
             'quick_actions' => [
                 ['label' => 'Create Purchase Order', 'path' => '/purchase-orders'],
+                ['label' => 'Create Sale', 'path' => '/sales'],
+                ['label' => 'Record Expense', 'path' => '/expenses'],
                 ['label' => 'Create Transfer', 'path' => '/transfers'],
                 ['label' => 'New Stock Adjustment', 'path' => '/adjustments'],
                 ['label' => 'Manage Branches', 'path' => '/branches'],
                 ['label' => 'Manage Accounts', 'path' => '/accounts'],
                 ['label' => 'Open Ledger', 'path' => '/ledger'],
             ],
+        ]);
+    }
+
+    public function approvalQueue(Request $request)
+    {
+        $data = $request->validate([
+            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+        ]);
+
+        $selectedBranchId = isset($data['branch_id']) ? (int) $data['branch_id'] : null;
+        if ($selectedBranchId) {
+            $this->enforceBranchAccessOrFail($request, $selectedBranchId);
+        }
+
+        $branchIds = $this->resolveBranchScope($request, $selectedBranchId);
+        $approvalQueue = $this->buildApprovalQueue($branchIds);
+
+        $adjustments = count($approvalQueue['adjustments'] ?? []);
+        $transfers = count($approvalQueue['transfers'] ?? []);
+        $purchaseOrders = count($approvalQueue['purchase_orders'] ?? []);
+        $voidRequests = count($approvalQueue['void_requests'] ?? []);
+
+        return response()->json([
+            'filters' => [
+                'branch_id' => $selectedBranchId,
+                'applied_branch_ids' => $branchIds,
+            ],
+            'counts' => [
+                'adjustments' => $adjustments,
+                'transfers' => $transfers,
+                'purchase_orders' => $purchaseOrders,
+                'void_requests' => $voidRequests,
+                'total' => $adjustments + $transfers + $purchaseOrders + $voidRequests,
+            ],
+            'approval_queue' => $approvalQueue,
+            'generated_at' => now()->toIso8601String(),
         ]);
     }
 
@@ -164,6 +206,11 @@ class DashboardController extends Controller
 
     private function buildKpis(?array $branchIds): array
     {
+        $trackedVariantCount = $this->applyBranchFilter(
+            DB::table('inventory_balances'),
+            $branchIds
+        )->count();
+
         $lowStock = $this->applyBranchFilter(
             DB::table('inventory_balances'),
             $branchIds
@@ -218,14 +265,27 @@ class DashboardController extends Controller
             ->whereIn('status', ['REQUESTED', 'APPROVED', 'IN_TRANSIT'])
             ->count();
 
+        $pendingVoidRequests = 0;
+        if (Schema::hasTable('sales') && Schema::hasColumn('sales', 'void_request_status')) {
+            $pendingVoidRequests = (int) $this->applyBranchFilter(
+                DB::table('sales'),
+                $branchIds
+            )
+                ->whereIn('status', ['DRAFT', 'POSTED'])
+                ->where('void_request_status', 'PENDING')
+                ->count();
+        }
+
         return [
             'low_stock_count' => $lowStock,
             'out_of_stock_count' => $outOfStock,
             'pending_adjustments' => $pendingAdjustments,
             'pending_po_approvals' => $pendingPoApprovals,
             'pending_transfers' => $pendingTransfers,
+            'pending_void_requests' => $pendingVoidRequests,
             'inventory_value' => round($inventoryValue, 2),
             'missing_cost_count' => (int) $missingCostCount,
+            'tracked_variant_count' => (int) $trackedVariantCount,
         ];
     }
 
@@ -242,6 +302,186 @@ class DashboardController extends Controller
             'inventory_value' => $inventoryValue,
             'missing_cost' => $missingCost,
         ];
+    }
+
+    private function buildFinanceOverview(?array $branchIds, Carbon $from, Carbon $to): array
+    {
+        if (!Schema::hasTable('sales') || !Schema::hasTable('sale_items') || !Schema::hasTable('sale_payments')) {
+            return [
+                'revenue' => 0.0,
+                'cash_in' => 0.0,
+                'cogs' => 0.0,
+                'gross_profit' => 0.0,
+                'restock_spend' => 0.0,
+                'net_cashflow' => 0.0,
+                'net_income' => 0.0,
+                'expense_total' => 0.0,
+                'voided_sales_count' => 0,
+                'voided_sales_amount' => 0.0,
+                'voided_paid_amount' => 0.0,
+            ];
+        }
+
+        $revenue = (float) $this->applyBranchFilter(
+            DB::table('sales')
+                ->where('status', 'POSTED')
+                ->whereBetween('posted_at', [$from, $to]),
+            $branchIds
+        )->sum('grand_total');
+
+        $cashIn = (float) $this->applyBranchFilter(
+            DB::table('sale_payments as sp')
+                ->join('sales as s', 's.id', '=', 'sp.sale_id')
+                ->where('s.status', 'POSTED')
+                ->whereBetween('sp.paid_at', [$from, $to]),
+            $branchIds,
+            's.branch_id'
+        )->sum('sp.amount');
+
+        $cogs = (float) $this->applyBranchFilter(
+            DB::table('sale_items as si')
+                ->join('sales as s', 's.id', '=', 'si.sale_id')
+                ->where('s.status', 'POSTED')
+                ->whereBetween('s.posted_at', [$from, $to]),
+            $branchIds,
+            's.branch_id'
+        )->sum('si.line_cogs');
+
+        $restockSpend = (float) $this->applyBranchFilter(
+            DB::table('purchase_order_items as poi')
+                ->join('purchase_orders as po', 'po.id', '=', 'poi.purchase_order_id')
+                ->whereIn('po.status', ['PARTIALLY_RECEIVED', 'RECEIVED'])
+                ->whereBetween('po.received_at', [$from, $to]),
+            $branchIds,
+            'po.branch_id'
+        )->selectRaw('COALESCE(SUM(COALESCE(poi.qty_received, 0) * COALESCE(poi.unit_cost, 0)), 0) as total_spend')
+            ->value('total_spend');
+
+        $revenue = round($revenue, 2);
+        $cashIn = round($cashIn, 2);
+        $cogs = round($cogs, 2);
+        $restockSpend = round((float) $restockSpend, 2);
+
+        $voidedSalesBase = $this->applyBranchFilter(
+            DB::table('sales')
+                ->where('status', 'VOIDED')
+                ->whereNotNull('voided_at')
+                ->whereBetween('voided_at', [$from, $to]),
+            $branchIds
+        );
+        $voidedSalesCount = (int) (clone $voidedSalesBase)->count();
+        $voidedSalesAmount = round((float) (clone $voidedSalesBase)->sum('grand_total'), 2);
+        $voidedPaidAmount = round((float) (clone $voidedSalesBase)->sum('paid_total'), 2);
+
+        $expenseTotal = 0.0;
+        if (Schema::hasTable('expenses')) {
+            $expenseTotal = (float) $this->applyBranchFilter(
+                DB::table('expenses')
+                    ->where('status', 'POSTED')
+                    ->whereBetween('paid_at', [$from, $to]),
+                $branchIds
+            )->sum('amount');
+        }
+
+        $expenseTotal = round($expenseTotal, 2);
+        $grossProfit = round($revenue - $cogs, 2);
+        $netCashflow = round($cashIn - $restockSpend - $expenseTotal, 2);
+        $netIncome = round($grossProfit - $expenseTotal, 2);
+
+        return [
+            'revenue' => $revenue,
+            'cash_in' => $cashIn,
+            'cogs' => $cogs,
+            'gross_profit' => $grossProfit,
+            'restock_spend' => $restockSpend,
+            'net_cashflow' => $netCashflow,
+            'expense_total' => $expenseTotal,
+            'net_income' => $netIncome,
+            'voided_sales_count' => $voidedSalesCount,
+            'voided_sales_amount' => $voidedSalesAmount,
+            'voided_paid_amount' => $voidedPaidAmount,
+        ];
+    }
+
+    private function buildTopSellingProducts(?array $branchIds, Carbon $from, Carbon $to): array
+    {
+        if (!Schema::hasTable('sales') || !Schema::hasTable('sale_items')) {
+            return [];
+        }
+
+        $rows = $this->applyBranchFilter(
+            DB::table('sale_items as si')
+                ->join('sales as s', 's.id', '=', 'si.sale_id')
+                ->leftJoin('product_variants as pv', 'pv.id', '=', 'si.product_variant_id')
+                ->leftJoin('products as p', 'p.id', '=', 'pv.product_id')
+                ->where('s.status', 'POSTED')
+                ->whereBetween('s.posted_at', [$from, $to])
+                ->groupBy('si.product_variant_id', 'pv.sku', 'pv.variant_name', 'p.name')
+                ->selectRaw('
+                    si.product_variant_id,
+                    pv.sku,
+                    pv.variant_name,
+                    p.name as product_name,
+                    COALESCE(SUM(si.qty), 0) as qty_sold,
+                    COALESCE(SUM(si.line_total), 0) as sales_amount,
+                    COALESCE(SUM(si.line_cogs), 0) as cogs,
+                    COUNT(DISTINCT s.id) as sales_count
+                ')
+                ->orderByRaw('SUM(si.qty) DESC')
+                ->orderByRaw('SUM(si.line_total) DESC')
+                ->limit(12),
+            $branchIds,
+            's.branch_id'
+        )->get();
+
+        return $rows->map(fn ($row) => [
+            'product_variant_id' => (int) ($row->product_variant_id ?? 0),
+            'sku' => $row->sku,
+            'product_name' => $row->product_name,
+            'variant_name' => $row->variant_name,
+            'qty_sold' => round((float) ($row->qty_sold ?? 0), 3),
+            'sales_amount' => round((float) ($row->sales_amount ?? 0), 2),
+            'cogs' => round((float) ($row->cogs ?? 0), 2),
+            'gross_profit' => round((float) ($row->sales_amount ?? 0) - (float) ($row->cogs ?? 0), 2),
+            'sales_count' => (int) ($row->sales_count ?? 0),
+        ])->values()->all();
+    }
+
+    private function buildVoidedSalesByBranch(?array $branchIds, Carbon $from, Carbon $to): array
+    {
+        if (!Schema::hasTable('sales')) {
+            return [];
+        }
+
+        $rows = $this->applyBranchFilter(
+            DB::table('sales as s')
+                ->join('branches as b', 'b.id', '=', 's.branch_id')
+                ->where('s.status', 'VOIDED')
+                ->whereNotNull('s.voided_at')
+                ->whereBetween('s.voided_at', [$from, $to])
+                ->groupBy('s.branch_id', 'b.code', 'b.name')
+                ->selectRaw('
+                    s.branch_id,
+                    b.code as branch_code,
+                    b.name as branch_name,
+                    COUNT(*) as voided_sales_count,
+                    COALESCE(SUM(s.grand_total), 0) as voided_sales_amount,
+                    COALESCE(SUM(s.paid_total), 0) as voided_paid_amount
+                ')
+                ->orderByDesc('voided_sales_amount')
+                ->orderByDesc('voided_sales_count'),
+            $branchIds,
+            's.branch_id'
+        )->get();
+
+        return $rows->map(fn ($row) => [
+            'branch_id' => (int) ($row->branch_id ?? 0),
+            'branch_code' => $row->branch_code,
+            'branch_name' => $row->branch_name,
+            'voided_sales_count' => (int) ($row->voided_sales_count ?? 0),
+            'voided_sales_amount' => round((float) ($row->voided_sales_amount ?? 0), 2),
+            'voided_paid_amount' => round((float) ($row->voided_paid_amount ?? 0), 2),
+        ])->values()->all();
     }
 
     private function buildInventoryKpiRows(?array $branchIds, string $type, int $limit = 80): array
@@ -689,10 +929,62 @@ class DashboardController extends Controller
             ])
             ->values();
 
+        $voidRequests = collect();
+        if (Schema::hasTable('sales') && Schema::hasColumn('sales', 'void_request_status')) {
+            $voidRequests = $this->applyBranchFilter(
+                DB::table('sales as s')
+                    ->leftJoin('branches as b', 'b.id', '=', 's.branch_id')
+                    ->leftJoin('users as req', 'req.id', '=', 's.void_requested_by_user_id')
+                    ->leftJoin('users as cashier', 'cashier.id', '=', 's.cashier_user_id')
+                    ->whereIn('s.status', ['DRAFT', 'POSTED'])
+                    ->where('s.void_request_status', 'PENDING')
+                    ->orderByDesc('s.void_requested_at')
+                    ->orderByDesc('s.id')
+                    ->limit(10)
+                    ->selectRaw('
+                        s.id,
+                        s.sale_number,
+                        s.status,
+                        s.void_request_status,
+                        s.payment_status,
+                        s.branch_id,
+                        b.name as branch_name,
+                        s.void_requested_at,
+                        req.name as requested_by,
+                        cashier.name as cashier_name,
+                        s.grand_total,
+                        s.paid_total,
+                        s.void_request_notes
+                    '),
+                $branchIds,
+                's.branch_id'
+            )
+                ->get()
+                ->map(fn ($row) => [
+                    'id' => (int) $row->id,
+                    'sale_number' => $row->sale_number,
+                    'status' => (string) $row->status,
+                    'void_request_status' => (string) ($row->void_request_status ?? ''),
+                    'payment_status' => (string) $row->payment_status,
+                    'branch_id' => (int) $row->branch_id,
+                    'branch_name' => $row->branch_name,
+                    'void_requested_at' => $row->void_requested_at
+                        ? Carbon::parse($row->void_requested_at)->toIso8601String()
+                        : null,
+                    'requested_by' => $row->requested_by,
+                    'cashier_name' => $row->cashier_name,
+                    'grand_total' => round((float) ($row->grand_total ?? 0), 2),
+                    'paid_total' => round((float) ($row->paid_total ?? 0), 2),
+                    'void_request_notes' => $row->void_request_notes,
+                ])
+                ->values();
+        }
+
         return [
             'adjustments' => $adjustments,
             'transfers' => $transfers,
             'purchase_orders' => $purchaseOrders,
+            'void_requests' => $voidRequests,
         ];
     }
 

@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\Concerns\EnforcesBranchAccess;
 use App\Models\Transfer;
 use App\Models\TransferItem;
 use App\Models\InventoryBalance;
+use App\Support\AuditTrail;
 use App\Services\InventoryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -80,6 +81,22 @@ class TransferController extends Controller
                 ]);
             }
 
+            $totalQty = 0.0;
+            foreach ($data['items'] as $line) {
+                $totalQty += (float) ($line['qty'] ?? 0);
+            }
+
+            $this->recordTransferAudit(
+                $transfer,
+                $request->user()?->id,
+                'TRANSFER_DRAFT_CREATED',
+                'Transfer draft created',
+                [
+                    'item_count' => count($data['items']),
+                    'total_qty' => round($totalQty, 4),
+                ]
+            );
+
             return $transfer->load(['items.variant', 'fromBranch', 'toBranch']);
         });
     }
@@ -137,6 +154,20 @@ class TransferController extends Controller
                 }
             }
 
+            $itemCount = (int) $locked->items()->count();
+            $totalQty = (float) $locked->items()->sum('qty');
+
+            $this->recordTransferAudit(
+                $locked,
+                $request->user()?->id,
+                'TRANSFER_UPDATED',
+                'Transfer draft updated',
+                [
+                    'item_count' => $itemCount,
+                    'total_qty' => round($totalQty, 4),
+                ]
+            );
+
             return $locked->load(['items.variant', 'fromBranch', 'toBranch']);
         });
     }
@@ -162,6 +193,20 @@ class TransferController extends Controller
 
             $locked->status = 'REQUESTED';
             $locked->save();
+
+            $itemCount = (int) $locked->items()->count();
+            $totalQty = (float) $locked->items()->sum('qty');
+
+            $this->recordTransferAudit(
+                $locked,
+                $request->user()?->id,
+                'TRANSFER_REQUESTED',
+                'Transfer requested',
+                [
+                    'item_count' => $itemCount,
+                    'total_qty' => round($totalQty, 4),
+                ]
+            );
 
             return response()->json([
                 'status' => 'ok',
@@ -192,6 +237,13 @@ class TransferController extends Controller
             $locked->approved_at = now();
             $locked->save();
 
+            $this->recordTransferAudit(
+                $locked,
+                $request->user()?->id,
+                'TRANSFER_APPROVED',
+                'Transfer approved'
+            );
+
             return response()->json([
                 'status' => 'ok',
                 'transfer' => $locked->fresh()->load(['items.variant','fromBranch','toBranch']),
@@ -217,6 +269,9 @@ class TransferController extends Controller
             }
 
             $items = $locked->items()->get();
+            $totalQty = (float) $items->sum(function ($item) {
+                return (float) ($item->qty ?? 0);
+            });
 
             // Lock inventory rows for source branch so check + post is race-safe
             $insufficient = [];
@@ -266,6 +321,17 @@ class TransferController extends Controller
             $locked->dispatched_at = now();
             $locked->save();
 
+            $this->recordTransferAudit(
+                $locked,
+                $request->user()?->id,
+                'TRANSFER_DISPATCHED',
+                'Transfer dispatched',
+                [
+                    'item_count' => $items->count(),
+                    'total_qty' => round($totalQty, 4),
+                ]
+            );
+
             return response()->json([
                 'status' => 'ok',
                 'transfer' => $locked->fresh()->load(['items.variant','fromBranch','toBranch']),
@@ -290,6 +356,9 @@ class TransferController extends Controller
             }
 
             $items = $locked->items()->get();
+            $totalQty = (float) $items->sum(function ($item) {
+                return (float) ($item->qty ?? 0);
+            });
 
             foreach ($items as $it) {
                 $inventoryService->postMovement([
@@ -310,6 +379,17 @@ class TransferController extends Controller
             $locked->received_by_user_id = $request->user()?->id;
             $locked->received_at = now();
             $locked->save();
+
+            $this->recordTransferAudit(
+                $locked,
+                $request->user()?->id,
+                'TRANSFER_RECEIVED',
+                'Transfer received',
+                [
+                    'item_count' => $items->count(),
+                    'total_qty' => round($totalQty, 4),
+                ]
+            );
 
             return response()->json([
                 'status' => 'ok',
@@ -345,11 +425,57 @@ class TransferController extends Controller
             $locked->status = 'CANCELLED';
             $locked->save();
 
+            $this->recordTransferAudit(
+                $locked,
+                $request->user()?->id,
+                'TRANSFER_CANCELLED',
+                'Transfer cancelled'
+            );
+
             return response()->json([
                 'status' => 'ok',
                 'transfer' => $locked->fresh()->load(['items.variant','fromBranch','toBranch']),
             ]);
         });
+    }
+
+    private function recordTransferAudit(
+        Transfer $transfer,
+        ?int $userId,
+        string $eventType,
+        string $summary,
+        array $meta = []
+    ): void {
+        $fromBranchId = (int) $transfer->from_branch_id;
+        $toBranchId = (int) $transfer->to_branch_id;
+
+        $branchIds = array_values(array_unique(array_filter([
+            $fromBranchId,
+            $toBranchId,
+        ], function ($branchId) {
+            return (int) $branchId > 0;
+        })));
+
+        $baseMeta = array_merge([
+            'transfer_number' => (string) ($transfer->transfer_number ?? ''),
+            'status' => (string) ($transfer->status ?? ''),
+            'from_branch_id' => $fromBranchId,
+            'to_branch_id' => $toBranchId,
+        ], $meta);
+
+        foreach ($branchIds as $branchId) {
+            AuditTrail::record([
+                'event_type' => $eventType,
+                'entity_type' => 'transfer',
+                'entity_id' => (int) $transfer->id,
+                'branch_id' => (int) $branchId,
+                'user_id' => $userId,
+                'summary' => $summary,
+                'meta' => array_merge($baseMeta, [
+                    'branch_scope' => (int) $branchId === $fromBranchId ? 'FROM' : 'TO',
+                ]),
+            ]);
+        }
     }
 
     private function lockTransfer(int $transferId): Transfer

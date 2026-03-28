@@ -15,6 +15,11 @@ import { AccountsPage } from '../pages/AccountsPage';
 import { ProductsPage } from '../pages/ProductsPage';
 import { BranchesPage } from '../pages/BranchesPage';
 import { DashboardPage } from '../pages/DashboardPage';
+import { AnalyticsPage } from '../pages/AnalyticsPage';
+import { ApprovalsPage } from '../pages/ApprovalsPage';
+import { SalesPage } from '../pages/SalesPage';
+import { ExpensesPage } from '../pages/ExpensesPage';
+import { AuditLogsPage } from '../pages/AuditLogsPage';
 
 export function AppRouter() {
   return (
@@ -29,8 +34,24 @@ export function AppRouter() {
           <Route
             path="/dashboard"
             element={
-              <RequirePermission perm="USER_VIEW">
+              <RequirePermission perm="USER_VIEW" denyRoleCodes={['CASHIER']}>
                 <DashboardPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <RequirePermission perm="USER_VIEW" allowRoleCodes={['ADMIN', 'OWNER']}>
+                <AnalyticsPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="/approvals"
+            element={
+              <RequirePermission perm="USER_VIEW" denyRoleCodes={['CASHIER']}>
+                <ApprovalsPage />
               </RequirePermission>
             }
           />
@@ -38,7 +59,7 @@ export function AppRouter() {
           <Route
             path="/inventory"
             element={
-              <RequirePermission perm="INVENTORY_VIEW">
+              <RequirePermission perm="INVENTORY_VIEW" denyRoleCodes={['CASHIER']}>
                 <InventoryPage />
               </RequirePermission>
             }
@@ -46,7 +67,7 @@ export function AppRouter() {
           <Route
             path="/products"
             element={
-              <RequirePermission perm="PRODUCT_VIEW">
+              <RequirePermission perm="PRODUCT_VIEW" denyRoleCodes={['CASHIER']}>
                 <ProductsPage />
               </RequirePermission>
             }
@@ -54,7 +75,7 @@ export function AppRouter() {
           <Route
             path="/variants"
             element={
-              <RequirePermission perm="PRODUCT_VIEW">
+              <RequirePermission perm="PRODUCT_VIEW" denyRoleCodes={['CASHIER']}>
                 <VariantsPage />
               </RequirePermission>
             }
@@ -62,7 +83,7 @@ export function AppRouter() {
           <Route
             path="/adjustments"
             element={
-              <RequirePermission perm="ADJUSTMENT_VIEW">
+              <RequirePermission perm="ADJUSTMENT_VIEW" denyRoleCodes={['CASHIER']}>
                 <AdjustmentsPage />
               </RequirePermission>
             }
@@ -70,7 +91,7 @@ export function AppRouter() {
           <Route
             path="/transfers"
             element={
-              <RequirePermission perm="TRANSFER_VIEW">
+              <RequirePermission perm="TRANSFER_VIEW" denyRoleCodes={['CASHIER']}>
                 <TransfersPage />
               </RequirePermission>
             }
@@ -78,15 +99,31 @@ export function AppRouter() {
           <Route
             path="/purchase-orders"
             element={
-              <RequirePermission perm="PO_VIEW">
+              <RequirePermission perm="PO_VIEW" denyRoleCodes={['CASHIER']}>
                 <PurchaseOrdersPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="/sales"
+            element={
+              <RequirePermission perm="SALES_VIEW">
+                <SalesPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="/expenses"
+            element={
+              <RequirePermission perm="EXPENSE_VIEW" denyRoleCodes={['CASHIER']}>
+                <ExpensesPage />
               </RequirePermission>
             }
           />
           <Route
             path="/suppliers"
             element={
-              <RequirePermission perm="SUPPLIER_VIEW">
+              <RequirePermission perm="SUPPLIER_VIEW" denyRoleCodes={['CASHIER']}>
                 <SuppliersPage />
               </RequirePermission>
             }
@@ -94,7 +131,7 @@ export function AppRouter() {
           <Route
             path="/accounts"
             element={
-              <RequirePermission perm="USER_VIEW">
+              <RequirePermission perm="USER_VIEW" denyRoleCodes={['CASHIER']}>
                 <AccountsPage />
               </RequirePermission>
             }
@@ -102,7 +139,7 @@ export function AppRouter() {
           <Route
             path="/branches"
             element={
-              <RequirePermission perm="BRANCH_MANAGE">
+              <RequirePermission perm="BRANCH_MANAGE" denyRoleCodes={['CASHIER']}>
                 <BranchesPage />
               </RequirePermission>
             }
@@ -110,8 +147,16 @@ export function AppRouter() {
           <Route
             path="/ledger"
             element={
-              <RequirePermission perm="LEDGER_VIEW">
+              <RequirePermission perm="LEDGER_VIEW" denyRoleCodes={['CASHIER']}>
                 <LedgerPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="/audit-logs"
+            element={
+              <RequirePermission perm="AUDIT_VIEW" denyRoleCodes={['CASHIER']}>
+                <AuditLogsPage />
               </RequirePermission>
             }
           />

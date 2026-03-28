@@ -75,7 +75,7 @@ const themeOptions: ThemeOptions = {
             WebkitOverflowScrolling: 'touch',
           },
           '.MuiPaper-root .MuiTable-root': {
-            minWidth: 740,
+            minWidth: '100%',
           },
           '.MuiTableCell-root': {
             paddingTop: 10,
@@ -120,6 +120,11 @@ const themeOptions: ThemeOptions = {
         root: {
           borderRadius: 12,
           paddingInline: 14,
+          minHeight: 38,
+          '@media (max-width:900px)': {
+            minHeight: 42,
+            paddingInline: 12,
+          },
         },
         contained: {
           boxShadow: '0 6px 14px rgba(15, 118, 110, 0.2)',
@@ -135,6 +140,9 @@ const themeOptions: ThemeOptions = {
         root: {
           borderRadius: 10,
           fontWeight: 600,
+          '@media (max-width:900px)': {
+            minHeight: 28,
+          },
         },
       },
     },
@@ -249,6 +257,22 @@ const themeOptions: ThemeOptions = {
       styleOverrides: {
         root: {
           borderRadius: 10,
+          '@media (max-width:900px)': {
+            minWidth: 34,
+            height: 34,
+          },
+        },
+      },
+    },
+    MuiBottomNavigationAction: {
+      styleOverrides: {
+        root: {
+          minWidth: 66,
+          paddingTop: 8,
+          paddingBottom: 8,
+        },
+        label: {
+          fontWeight: 600,
         },
       },
     },

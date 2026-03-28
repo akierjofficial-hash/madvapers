@@ -52,7 +52,7 @@ class TransferWorkflowTest extends TestCase
             ->where('product_variant_id', $variantId)
             ->value('qty_on_hand');
 
-        $this->actingAsUser('manager@madvapers.local');
+        $manager = $this->actingAsUser('manager@madvapers.local');
         $created = $this->postJson('/api/transfers', [
             'from_branch_id' => $fromBranch->id,
             'to_branch_id' => $toBranch->id,
@@ -73,7 +73,7 @@ class TransferWorkflowTest extends TestCase
         $this->postJson("/api/transfers/{$transferId}/approve")->assertOk();
         $this->postJson("/api/transfers/{$transferId}/dispatch")->assertOk();
 
-        $this->actingAsUser('clerk@madvapers.local');
+        $clerk = $this->actingAsUser('clerk@madvapers.local');
         $this->postJson("/api/transfers/{$transferId}/receive")->assertOk();
 
         $this->assertDatabaseHas('transfers', [
@@ -113,6 +113,46 @@ class TransferWorkflowTest extends TestCase
                 ->where('ref_id', $transferId)
                 ->exists()
         );
+
+        $this->assertDatabaseHas('audit_events', [
+            'event_type' => 'TRANSFER_DRAFT_CREATED',
+            'entity_type' => 'transfer',
+            'entity_id' => $transferId,
+            'branch_id' => $fromBranch->id,
+            'user_id' => $manager->id,
+        ]);
+
+        $this->assertDatabaseHas('audit_events', [
+            'event_type' => 'TRANSFER_REQUESTED',
+            'entity_type' => 'transfer',
+            'entity_id' => $transferId,
+            'branch_id' => $fromBranch->id,
+            'user_id' => $manager->id,
+        ]);
+
+        $this->assertDatabaseHas('audit_events', [
+            'event_type' => 'TRANSFER_APPROVED',
+            'entity_type' => 'transfer',
+            'entity_id' => $transferId,
+            'branch_id' => $toBranch->id,
+            'user_id' => $manager->id,
+        ]);
+
+        $this->assertDatabaseHas('audit_events', [
+            'event_type' => 'TRANSFER_DISPATCHED',
+            'entity_type' => 'transfer',
+            'entity_id' => $transferId,
+            'branch_id' => $fromBranch->id,
+            'user_id' => $manager->id,
+        ]);
+
+        $this->assertDatabaseHas('audit_events', [
+            'event_type' => 'TRANSFER_RECEIVED',
+            'entity_type' => 'transfer',
+            'entity_id' => $transferId,
+            'branch_id' => $toBranch->id,
+            'user_id' => $clerk->id,
+        ]);
     }
 
     public function test_clerk_cannot_create_transfer_from_unassigned_branch(): void

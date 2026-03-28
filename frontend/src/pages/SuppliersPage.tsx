@@ -16,7 +16,9 @@ import {
   TableRow,
   TextField,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useMemo, useState } from 'react';
 import {
   useCreateSupplierMutation,
@@ -28,6 +30,8 @@ import type { Supplier } from '../api/suppliers';
 import { useAuth } from '../auth/AuthProvider';
 
 export function SuppliersPage() {
+  const theme = useTheme();
+  const isCompact = useMediaQuery(theme.breakpoints.down('md'));
   const { can } = useAuth();
   const canView = can('SUPPLIER_VIEW');
   const canManage = can('SUPPLIER_MANAGE');
@@ -134,9 +138,19 @@ export function SuppliersPage() {
 
   return (
     <Stack spacing={2}>
-      <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between" spacing={1}>
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        alignItems={{ xs: 'stretch', sm: 'center' }}
+        justifyContent="space-between"
+        spacing={1}
+      >
         <Typography variant="h5">Suppliers</Typography>
-        <Button variant="contained" onClick={openNew} sx={{ textTransform: 'none' }} disabled={!canManage}>
+        <Button
+          variant="contained"
+          onClick={openNew}
+          sx={{ textTransform: 'none', alignSelf: { xs: 'stretch', sm: 'auto' } }}
+          disabled={!canManage}
+        >
           New Supplier
         </Button>
       </Stack>
@@ -144,11 +158,49 @@ export function SuppliersPage() {
       {!canManage && <Alert severity="info">You have view-only access for suppliers.</Alert>}
 
       {suppliersQuery.isLoading ? (
-        <Alert severity="info">Loading suppliers…</Alert>
+        <Alert severity="info">Loading suppliers...</Alert>
       ) : suppliersQuery.isError ? (
         <Alert severity="error">Failed to load suppliers.</Alert>
       ) : sorted.length === 0 ? (
         <Alert severity="warning">No suppliers yet. Create one.</Alert>
+      ) : isCompact ? (
+        <Stack spacing={1.1}>
+          {sorted.map((s) => (
+            <Paper key={s.id} variant="outlined" sx={{ p: 1.2, borderRadius: 2 }}>
+              <Stack spacing={0.75}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+                  <Typography sx={{ fontWeight: 700, minWidth: 0 }}>{s.name}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    ID {s.id}
+                  </Typography>
+                </Stack>
+                {canSeeActions && (
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => openEdit(s)}
+                      sx={{ textTransform: 'none' }}
+                      disabled={!canManage}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      size="small"
+                      color="error"
+                      variant="outlined"
+                      onClick={() => requestRemove(s)}
+                      disabled={deleteMut.isPending || !canManage}
+                      sx={{ textTransform: 'none' }}
+                    >
+                      Delete
+                    </Button>
+                  </Stack>
+                )}
+              </Stack>
+            </Paper>
+          ))}
+        </Stack>
       ) : (
         <Paper variant="outlined">
           <Table size="small">
@@ -171,7 +223,12 @@ export function SuppliersPage() {
                   {canSeeActions && (
                     <TableCell align="right">
                       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="flex-end">
-                        <Button size="small" onClick={() => openEdit(s)} sx={{ textTransform: 'none' }} disabled={!canManage}>
+                        <Button
+                          size="small"
+                          onClick={() => openEdit(s)}
+                          sx={{ textTransform: 'none' }}
+                          disabled={!canManage}
+                        >
                           Edit
                         </Button>
                         <Button
@@ -209,21 +266,24 @@ export function SuppliersPage() {
           </Box>
 
           {(createMut.isError || updateMut.isError) && (
-  <Alert severity="error" sx={{ mt: 2, whiteSpace: 'pre-line' }}>
-    {String(
-      (createMut.error as any)?.response?.data?.message ??
-        JSON.stringify((createMut.error as any)?.response?.data?.errors ?? null, null, 2) ??
-        (updateMut.error as any)?.response?.data?.message ??
-        JSON.stringify((updateMut.error as any)?.response?.data?.errors ?? null, null, 2) ??
-        'Failed to save supplier.'
-    )}
-  </Alert>
-)}
-
+            <Alert severity="error" sx={{ mt: 2, whiteSpace: 'pre-line' }}>
+              {String(
+                (createMut.error as any)?.response?.data?.message ??
+                  JSON.stringify((createMut.error as any)?.response?.data?.errors ?? null, null, 2) ??
+                  (updateMut.error as any)?.response?.data?.message ??
+                  JSON.stringify((updateMut.error as any)?.response?.data?.errors ?? null, null, 2) ??
+                  'Failed to save supplier.'
+              )}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={submit} disabled={!canManage || createMut.isPending || updateMut.isPending}>
+          <Button
+            variant="contained"
+            onClick={submit}
+            disabled={!canManage || createMut.isPending || updateMut.isPending}
+          >
             Save
           </Button>
         </DialogActions>
@@ -270,5 +330,3 @@ export function SuppliersPage() {
     </Stack>
   );
 }
-
-

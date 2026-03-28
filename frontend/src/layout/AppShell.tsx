@@ -7,6 +7,7 @@ import {
   Box,
   Button,
   Chip,
+  Collapse,
   Divider,
   Drawer,
   IconButton,
@@ -28,17 +29,28 @@ import WidgetsOutlinedIcon from '@mui/icons-material/WidgetsOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined';
+import PointOfSaleOutlinedIcon from '@mui/icons-material/PointOfSaleOutlined';
+import RequestQuoteOutlinedIcon from '@mui/icons-material/RequestQuoteOutlined';
 import ApartmentOutlinedIcon from '@mui/icons-material/ApartmentOutlined';
 import GroupOutlinedIcon from '@mui/icons-material/GroupOutlined';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import FmdGoodOutlinedIcon from '@mui/icons-material/FmdGoodOutlined';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
+import QueryStatsOutlinedIcon from '@mui/icons-material/QueryStatsOutlined';
+import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
+import GavelOutlinedIcon from '@mui/icons-material/GavelOutlined';
+import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
+import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { authStorage } from '../auth/authStorage';
-import { useDashboardSummaryQuery } from '../api/queries';
+import { useDashboardApprovalQueueQuery, useDashboardSummaryQuery } from '../api/queries';
+import { subscribeApprovalQueueRealtime } from '../realtime/approvalQueueRealtime';
 
 type NavItem = {
   to: string;
@@ -46,81 +58,115 @@ type NavItem = {
   perm: string;
   icon: ReactNode;
   notificationCount?: number;
+  allowRoleCodes?: string[];
+  requiresAnyPerms?: string[];
 };
 
 const drawerWidth = 248;
+const SECONDARY_NAV_PATHS = new Set(['/suppliers', '/branches', '/accounts', '/audit-logs', '/ledger']);
+const ADMIN_MOBILE_FIXED_PATHS = ['/dashboard', '/approvals', '/sales'] as const;
+const ADMIN_MOBILE_MENU_VALUE = '__menu__';
 
 export function AppShell() {
   const theme = useTheme();
+  const queryClient = useQueryClient();
   const isDesktop = useMediaQuery(theme.breakpoints.up('lg'));
+  const isPhone = useMediaQuery(theme.breakpoints.down('sm'));
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, logout, can, isLoggingOut } = useAuth();
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [seenPending, setSeenPending] = useState<{
-    adjustments: number;
-    transfers: number;
-    purchaseOrders: number;
-  }>({ adjustments: 0, transfers: 0, purchaseOrders: 0 });
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [secondaryOpen, setSecondaryOpen] = useState(false);
+  const [selectedBranchId, setSelectedBranchId] = useState<number | null>(() => {
+    const stored = authStorage.getLastBranchId();
+    return typeof stored === 'number' && Number.isFinite(stored) && stored > 0 ? stored : null;
+  });
 
   const canDashboardView = can('USER_VIEW');
+  // Query both scopes to avoid branch-filter mismatch between pages and sidebar badges.
+  const approvalQueueGlobalQuery = useDashboardApprovalQueueQuery({}, canDashboardView);
+  const approvalQueueBranchQuery = useDashboardApprovalQueueQuery(
+    { branch_id: selectedBranchId ?? undefined },
+    canDashboardView && !!selectedBranchId
+  );
   const dashboardSummaryQuery = useDashboardSummaryQuery({}, canDashboardView);
+  const roleCode = String(user?.role?.code ?? '').toUpperCase();
+  const isCashierRole = roleCode === 'CASHIER';
 
-  useEffect(() => {
-    const userId = user?.id;
-    if (!userId) {
-      setSeenPending({ adjustments: 0, transfers: 0, purchaseOrders: 0 });
-      return;
-    }
-    const refreshSeen = () => {
-      setSeenPending(authStorage.getSeenPending(userId));
-    };
+  const readCount = (
+    data: any,
+    key: 'adjustments' | 'transfers' | 'purchase_orders' | 'void_requests'
+  ): number => {
+    if (!data) return 0;
+    const fromCounts = Number(data?.counts?.[key] ?? 0);
+    if (Number.isFinite(fromCounts) && fromCounts > 0) return fromCounts;
+    const fromRows = Number(data?.approval_queue?.[key]?.length ?? 0);
+    return Number.isFinite(fromRows) ? fromRows : 0;
+  };
 
-    refreshSeen();
+  const countFor = (
+    key: 'adjustments' | 'transfers' | 'purchase_orders' | 'void_requests'
+  ): number =>
+    Math.max(
+      readCount(approvalQueueGlobalQuery.data, key),
+      readCount(approvalQueueBranchQuery.data, key)
+    );
 
-    const onSeenUpdated = (event: Event) => {
-      const custom = event as CustomEvent<{ userId?: number }>;
-      const eventUserId = Number(custom.detail?.userId ?? 0);
-      if (eventUserId && eventUserId !== userId) return;
-      refreshSeen();
-    };
+  const readTotal = (data: any): number => {
+    if (!data) return 0;
+    const explicit = Number(data?.counts?.total ?? 0);
+    if (Number.isFinite(explicit) && explicit > 0) return explicit;
+    return (
+      readCount(data, 'adjustments') +
+      readCount(data, 'transfers') +
+      readCount(data, 'purchase_orders') +
+      readCount(data, 'void_requests')
+    );
+  };
 
-    const onStorage = (event: StorageEvent) => {
-      if (!event.key || !event.key.startsWith('mv_seen_pending_v1:')) return;
-      refreshSeen();
-    };
-
-    window.addEventListener('mv_seen_pending_updated', onSeenUpdated as EventListener);
-    window.addEventListener('storage', onStorage);
-
-    return () => {
-      window.removeEventListener('mv_seen_pending_updated', onSeenUpdated as EventListener);
-      window.removeEventListener('storage', onStorage);
-    };
-  }, [user?.id]);
-
-  const newPendingCounts = useMemo(
+  const pendingCounts = useMemo(
     () => ({
       adjustments: can('ADJUSTMENT_VIEW')
-        ? (dashboardSummaryQuery.data?.approval_queue.adjustments ?? []).filter(
-            (row) => Number(row.id ?? 0) > seenPending.adjustments
-          ).length
+        ? countFor('adjustments')
         : 0,
       transfers: can('TRANSFER_VIEW')
-        ? (dashboardSummaryQuery.data?.approval_queue.transfers ?? []).filter(
-            (row) => Number(row.id ?? 0) > seenPending.transfers
-          ).length
+        ? countFor('transfers')
         : 0,
       purchaseOrders: can('PO_VIEW')
-        ? (dashboardSummaryQuery.data?.approval_queue.purchase_orders ?? []).filter(
-            (row) => Number(row.id ?? 0) > seenPending.purchaseOrders
-          ).length
+        ? countFor('purchase_orders')
+        : 0,
+      voidRequests: can('SALES_VOID')
+        ? Math.max(
+            countFor('void_requests'),
+            Number(dashboardSummaryQuery.data?.kpis?.pending_void_requests ?? 0)
+          )
         : 0,
     }),
-    [can, dashboardSummaryQuery.data, seenPending.adjustments, seenPending.purchaseOrders, seenPending.transfers]
+    [approvalQueueBranchQuery.data, approvalQueueGlobalQuery.data, can, dashboardSummaryQuery.data]
+  );
+  const approvalsBadgeCount = Math.max(
+    0,
+    readTotal(approvalQueueGlobalQuery.data),
+    readTotal(approvalQueueBranchQuery.data)
   );
 
   const navItems: NavItem[] = [
     { to: '/dashboard', label: 'Dashboard', perm: 'USER_VIEW', icon: <DashboardOutlinedIcon /> },
+    {
+      to: '/approvals',
+      label: 'Approvals',
+      perm: 'USER_VIEW',
+      icon: <GavelOutlinedIcon />,
+      notificationCount: approvalsBadgeCount,
+      requiresAnyPerms: ['ADJUSTMENT_APPROVE', 'TRANSFER_APPROVE', 'PO_APPROVE', 'SALES_VOID'],
+    },
+    {
+      to: '/analytics',
+      label: 'Analytics',
+      perm: 'USER_VIEW',
+      icon: <QueryStatsOutlinedIcon />,
+      allowRoleCodes: ['ADMIN', 'OWNER'],
+    },
     { to: '/inventory', label: 'Inventory', perm: 'INVENTORY_VIEW', icon: <Inventory2OutlinedIcon /> },
     { to: '/products', label: 'Products', perm: 'PRODUCT_VIEW', icon: <StorefrontOutlinedIcon /> },
     { to: '/variants', label: 'Variants', perm: 'PRODUCT_VIEW', icon: <WidgetsOutlinedIcon /> },
@@ -129,45 +175,189 @@ export function AppShell() {
       label: 'Adjustments',
       perm: 'ADJUSTMENT_VIEW',
       icon: <ReceiptLongOutlinedIcon />,
-      notificationCount: newPendingCounts.adjustments,
+      notificationCount: pendingCounts.adjustments,
     },
     {
       to: '/transfers',
       label: 'Transfers',
       perm: 'TRANSFER_VIEW',
       icon: <SwapHorizOutlinedIcon />,
-      notificationCount: newPendingCounts.transfers,
+      notificationCount: pendingCounts.transfers,
     },
     {
       to: '/purchase-orders',
       label: 'Purchase Orders',
       perm: 'PO_VIEW',
       icon: <LocalShippingOutlinedIcon />,
-      notificationCount: newPendingCounts.purchaseOrders,
+      notificationCount: pendingCounts.purchaseOrders,
     },
+    {
+      to: '/sales',
+      label: 'Sales',
+      perm: 'SALES_VIEW',
+      icon: <PointOfSaleOutlinedIcon />,
+      notificationCount: pendingCounts.voidRequests,
+    },
+    { to: '/expenses', label: 'Expenses', perm: 'EXPENSE_VIEW', icon: <RequestQuoteOutlinedIcon /> },
     { to: '/suppliers', label: 'Suppliers', perm: 'SUPPLIER_VIEW', icon: <ApartmentOutlinedIcon /> },
     { to: '/branches', label: 'Branches', perm: 'BRANCH_MANAGE', icon: <FmdGoodOutlinedIcon /> },
     { to: '/accounts', label: 'Accounts', perm: 'USER_VIEW', icon: <GroupOutlinedIcon /> },
+    { to: '/audit-logs', label: 'Audit Logs', perm: 'AUDIT_VIEW', icon: <FactCheckOutlinedIcon /> },
     { to: '/ledger', label: 'Ledger', perm: 'LEDGER_VIEW', icon: <AccountTreeOutlinedIcon /> },
   ];
 
-  const availableNav = navItems.filter((item) => can(item.perm));
+  const availableNav = navItems.filter((item) => {
+    if (!can(item.perm)) return false;
+    if (item.requiresAnyPerms?.length) {
+      const hasAnyRequiredPerm = item.requiresAnyPerms.some((perm) => can(perm));
+      if (!hasAnyRequiredPerm) return false;
+    }
+    if (item.allowRoleCodes?.length) {
+      const allowed = item.allowRoleCodes.map((code) => code.toUpperCase()).includes(roleCode);
+      if (!allowed) return false;
+    }
+    if (isCashierRole && item.to !== '/sales') return false;
+    return true;
+  });
+
+  const isRouteActive = (to: string) =>
+    location.pathname === to || location.pathname.startsWith(`${to}/`);
+
+  const primaryNav = useMemo(
+    () => availableNav.filter((item) => !SECONDARY_NAV_PATHS.has(item.to)),
+    [availableNav]
+  );
+
+  const secondaryNav = useMemo(
+    () => availableNav.filter((item) => SECONDARY_NAV_PATHS.has(item.to)),
+    [availableNav]
+  );
+
+  useEffect(() => {
+    if (secondaryNav.some((item) => isRouteActive(item.to))) {
+      setSecondaryOpen(true);
+    }
+  }, [secondaryNav, location.pathname]);
+
+  useEffect(() => {
+    const syncFromStorage = () => {
+      const stored = authStorage.getLastBranchId();
+      const next = typeof stored === 'number' && Number.isFinite(stored) && stored > 0 ? stored : null;
+      setSelectedBranchId((prev) => (prev === next ? prev : next));
+    };
+
+    const onBranchChanged = () => syncFromStorage();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'mv_last_branch_id') syncFromStorage();
+    };
+
+    window.addEventListener('mv_branch_changed', onBranchChanged as EventListener);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('mv_branch_changed', onBranchChanged as EventListener);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    const refreshApprovalSignals = () => {
+      void approvalQueueGlobalQuery.refetch();
+      if (selectedBranchId) {
+        void approvalQueueBranchQuery.refetch();
+      }
+      void dashboardSummaryQuery.refetch();
+    };
+
+    const onPing = () => refreshApprovalSignals();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'mv_approval_queue_ping_at') {
+        refreshApprovalSignals();
+      }
+    };
+
+    window.addEventListener('mv_approval_queue_ping', onPing as EventListener);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('mv_approval_queue_ping', onPing as EventListener);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [
+    approvalQueueBranchQuery,
+    approvalQueueGlobalQuery,
+    dashboardSummaryQuery,
+    selectedBranchId,
+  ]);
+
+  useEffect(() => {
+    if (!canDashboardView) return;
+
+    const unsubscribe = subscribeApprovalQueueRealtime(() => {
+      // Sync all approval/snapshot widgets and page-level approval queue queries.
+      void queryClient.invalidateQueries({ queryKey: ['dashboardApprovalQueue'] });
+      void queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
+      authStorage.pingApprovalQueue();
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [canDashboardView, queryClient]);
 
   const activeLabel = useMemo(() => {
-    const hit = availableNav.find((item) =>
-      location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
-    );
-    return hit?.label ?? 'Dashboard';
-  }, [availableNav, location.pathname]);
+    const hit = availableNav.find((item) => isRouteActive(item.to));
+    return hit?.label ?? (isCashierRole ? 'Sales' : 'Dashboard');
+  }, [availableNav, isCashierRole, location.pathname]);
 
-  const mobileQuickNav = useMemo(() => availableNav.slice(0, 4), [availableNav]);
+  const mobileQuickNav = useMemo(() => {
+    if (isCashierRole) return availableNav.slice(0, 4);
+    return ADMIN_MOBILE_FIXED_PATHS
+      .map((path) => availableNav.find((item) => item.to === path))
+      .filter((item): item is NavItem => !!item);
+  }, [availableNav, isCashierRole]);
+
+  const mobileMenuNav = useMemo(
+    () =>
+      availableNav.filter(
+        (item) => !ADMIN_MOBILE_FIXED_PATHS.includes(item.to as (typeof ADMIN_MOBILE_FIXED_PATHS)[number])
+      ),
+    [availableNav]
+  );
+  const mobileMenuHasNotifications = useMemo(
+    () => mobileMenuNav.some((item) => Number(item.notificationCount ?? 0) > 0),
+    [mobileMenuNav]
+  );
 
   const mobileNavValue = useMemo(() => {
-    const hit = mobileQuickNav.find((item) =>
-      location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
-    );
+    if (!isCashierRole) {
+      const fixedHit = mobileQuickNav.find((item) => isRouteActive(item.to));
+      if (fixedHit) return fixedHit.to;
+      if (mobileMenuNav.some((item) => isRouteActive(item.to))) return ADMIN_MOBILE_MENU_VALUE;
+      return '';
+    }
+    const hit = mobileQuickNav.find((item) => isRouteActive(item.to));
     return hit?.to ?? '';
-  }, [mobileQuickNav, location.pathname]);
+  }, [isCashierRole, mobileMenuNav, mobileQuickNav, location.pathname]);
+
+  const handleMobileNavChange = (_: React.SyntheticEvent, value: string) => {
+    if (!value) return;
+
+    if (!isCashierRole) {
+      if (value === ADMIN_MOBILE_MENU_VALUE) {
+        setMobileMenuOpen(true);
+        return;
+      }
+      setMobileMenuOpen(false);
+      navigate(value);
+      return;
+    }
+
+    navigate(value);
+  };
+
+  useEffect(() => {
+    if (mobileMenuOpen) setMobileMenuOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
 
   const initials = (user?.name ?? 'U')
     .split(' ')
@@ -189,17 +379,21 @@ export function AppShell() {
 
       <Divider />
 
-      <List sx={{ px: 1.2, py: 1.5, flexGrow: 1 }}>
-        {availableNav.map((item) => (
+      <List sx={{ px: 1.1, py: 1.25, flexGrow: 1, overflowY: 'auto' }}>
+        {primaryNav.map((item) => (
+          (() => {
+            const count = Math.max(0, Number(item.notificationCount ?? 0));
+            return (
           <ListItemButton
             key={item.to}
             component={NavLink}
             to={item.to}
-            onClick={() => !isDesktop && setMobileOpen(false)}
             sx={{
-              mb: 0.4,
+              mb: 0.25,
               borderRadius: 2,
+              minHeight: 40,
               color: 'text.secondary',
+              px: 1.1,
               '& .MuiListItemIcon-root': {
                 color: 'text.secondary',
                 minWidth: 34,
@@ -214,8 +408,8 @@ export function AppShell() {
             }}
           >
             <ListItemIcon>
-              {(item.notificationCount ?? 0) > 0 ? (
-                <Badge color="error" badgeContent={item.notificationCount} max={99} overlap="circular">
+              {count > 0 ? (
+                <Badge color="error" variant="dot" overlap="circular">
                   <Box component="span" sx={{ display: 'inline-flex' }}>
                     {item.icon}
                   </Box>
@@ -224,9 +418,139 @@ export function AppShell() {
                 item.icon
               )}
             </ListItemIcon>
-            <ListItemText primary={item.label} />
+            <ListItemText
+              primary={
+                <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={0.8}>
+                  <Box component="span">{item.label}</Box>
+                  {count > 0 ? (
+                    <Box
+                      component="span"
+                      sx={{
+                        minWidth: 20,
+                        px: 0.7,
+                        height: 20,
+                        borderRadius: 10,
+                        bgcolor: 'error.main',
+                        color: 'error.contrastText',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        lineHeight: 1,
+                      }}
+                    >
+                      {count > 99 ? '99+' : count}
+                    </Box>
+                  ) : null}
+                </Stack>
+              }
+            />
           </ListItemButton>
+            );
+          })()
         ))}
+
+        {secondaryNav.length > 0 && (
+          <>
+            <ListItemButton
+              onClick={() => setSecondaryOpen((open) => !open)}
+              sx={{
+                mt: 0.25,
+                mb: 0.15,
+                borderRadius: 2,
+                minHeight: 40,
+                px: 1.1,
+                color: 'text.secondary',
+              }}
+            >
+              <ListItemIcon sx={{ color: 'text.secondary', minWidth: 34 }}>
+                <AccountTreeOutlinedIcon />
+              </ListItemIcon>
+              <ListItemText
+                primary="More Pages"
+                secondary={`${secondaryNav.length} modules`}
+                primaryTypographyProps={{ fontWeight: 600 }}
+              />
+              {secondaryOpen ? <ExpandLessRoundedIcon fontSize="small" /> : <ExpandMoreRoundedIcon fontSize="small" />}
+            </ListItemButton>
+
+            <Collapse in={secondaryOpen} timeout="auto" unmountOnExit>
+              <List disablePadding sx={{ pt: 0.2 }}>
+                {secondaryNav.map((item) => (
+                  (() => {
+                    const count = Math.max(0, Number(item.notificationCount ?? 0));
+                    return (
+                  <ListItemButton
+                    key={item.to}
+                    component={NavLink}
+                    to={item.to}
+                    sx={{
+                      mb: 0.2,
+                      ml: 0.8,
+                      borderRadius: 2,
+                      minHeight: 38,
+                      color: 'text.secondary',
+                      '& .MuiListItemIcon-root': {
+                        color: 'text.secondary',
+                        minWidth: 32,
+                      },
+                      '&.active': {
+                        backgroundColor: alpha(theme.palette.primary.main, 0.12),
+                        color: 'primary.main',
+                        '& .MuiListItemIcon-root': {
+                          color: 'primary.main',
+                        },
+                      },
+                    }}
+                  >
+                    <ListItemIcon>
+                      {count > 0 ? (
+                        <Badge color="error" variant="dot" overlap="circular">
+                          <Box component="span" sx={{ display: 'inline-flex' }}>
+                            {item.icon}
+                          </Box>
+                        </Badge>
+                      ) : (
+                        item.icon
+                      )}
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={
+                        <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={0.8}>
+                          <Box component="span">{item.label}</Box>
+                          {count > 0 ? (
+                            <Box
+                              component="span"
+                              sx={{
+                                minWidth: 18,
+                                px: 0.6,
+                                height: 18,
+                                borderRadius: 9,
+                                bgcolor: 'error.main',
+                                color: 'error.contrastText',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: 10,
+                                fontWeight: 700,
+                                lineHeight: 1,
+                              }}
+                            >
+                              {count > 99 ? '99+' : count}
+                            </Box>
+                          ) : null}
+                        </Stack>
+                      }
+                    />
+                  </ListItemButton>
+                    );
+                  })()
+                ))}
+              </List>
+            </Collapse>
+          </>
+        )}
       </List>
 
       <Box sx={{ px: 2, pb: 2 }}>
@@ -238,8 +562,9 @@ export function AppShell() {
   );
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
+    <Box className="mobile-shell-root" sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
       <AppBar
+        className="mobile-shell-topbar"
         position="fixed"
         sx={{
           ml: { lg: `${drawerWidth}px` },
@@ -248,12 +573,6 @@ export function AppShell() {
         }}
       >
         <Toolbar sx={{ minHeight: { xs: 64, md: 68 }, px: { xs: 1, md: 2 } }}>
-          {!isDesktop && (
-            <IconButton onClick={() => setMobileOpen(true)} sx={{ mr: 1.2 }} edge="start">
-              <MenuRoundedIcon />
-            </IconButton>
-          )}
-
           <Box sx={{ flexGrow: 1, minWidth: 0 }}>
             <Typography variant="h6" noWrap>
               {activeLabel}
@@ -285,38 +604,52 @@ export function AppShell() {
               onClick={() => void logout()}
               size="small"
               disabled={isLoggingOut}
+              sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
             >
               {isLoggingOut ? 'Logging out...' : 'Logout'}
             </Button>
+            <Tooltip title={isLoggingOut ? 'Logging out...' : 'Logout'}>
+              <span>
+                <IconButton
+                  color="inherit"
+                  onClick={() => void logout()}
+                  disabled={isLoggingOut}
+                  sx={{ display: { xs: 'inline-flex', sm: 'none' } }}
+                >
+                  <LogoutRoundedIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
           </Stack>
         </Toolbar>
       </AppBar>
 
-      <Drawer
-        variant={isDesktop ? 'permanent' : 'temporary'}
-        open={isDesktop ? true : mobileOpen}
-        onClose={() => setMobileOpen(false)}
-        ModalProps={{ keepMounted: true }}
-        sx={{
-          width: { xs: '84vw', lg: drawerWidth },
-          flexShrink: 0,
-          '& .MuiDrawer-paper': {
-            width: { xs: '84vw', lg: drawerWidth },
-            maxWidth: { xs: 320, lg: drawerWidth },
-            boxSizing: 'border-box',
-          },
-        }}
-      >
-        {navDrawer}
-      </Drawer>
+      {isDesktop && (
+        <Drawer
+          variant="permanent"
+          open
+          PaperProps={{ className: 'mobile-shell-drawer' }}
+          sx={{
+            width: drawerWidth,
+            flexShrink: 0,
+            '& .MuiDrawer-paper': {
+              width: drawerWidth,
+              boxSizing: 'border-box',
+            },
+          }}
+        >
+          {navDrawer}
+        </Drawer>
+      )}
 
       <Box
         component="main"
+        className="mobile-shell-main"
         sx={{
           ml: { lg: `${drawerWidth}px` },
           pt: { xs: 10, md: 11 },
           px: { xs: 1.5, md: 3 },
-          pb: { xs: 11, md: 3 },
+          pb: { xs: 'calc(88px + env(safe-area-inset-bottom))', md: 3 },
         }}
       >
         <Box sx={{ maxWidth: 1680, mx: 'auto' }}>
@@ -333,10 +666,11 @@ export function AppShell() {
             bottom: 0,
             zIndex: (t) => t.zIndex.appBar,
             pb: 'env(safe-area-inset-bottom)',
-            px: 1,
+            px: isPhone ? 0.6 : 1,
           }}
         >
           <Box
+            className="mobile-shell-bottom-nav"
             sx={{
               borderRadius: '14px 14px 0 0',
               border: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
@@ -345,7 +679,7 @@ export function AppShell() {
               backdropFilter: 'blur(10px)',
             }}
           >
-            <BottomNavigation value={mobileNavValue} showLabels>
+            <BottomNavigation value={mobileNavValue} onChange={handleMobileNavChange} showLabels>
               {mobileQuickNav.map((item) => (
                 <BottomNavigationAction
                   key={item.to}
@@ -362,13 +696,83 @@ export function AppShell() {
                       item.icon
                     )
                   }
-                  component={NavLink}
-                  to={item.to}
                 />
               ))}
+              {!isCashierRole && (
+                <BottomNavigationAction
+                  key={ADMIN_MOBILE_MENU_VALUE}
+                  value={ADMIN_MOBILE_MENU_VALUE}
+                  label="Menu"
+                  icon={
+                    mobileMenuHasNotifications ? (
+                      <Badge color="error" variant="dot" overlap="circular">
+                        <Box component="span" sx={{ display: 'inline-flex' }}>
+                          <MenuRoundedIcon />
+                        </Box>
+                      </Badge>
+                    ) : (
+                      <MenuRoundedIcon />
+                    )
+                  }
+                />
+              )}
             </BottomNavigation>
           </Box>
         </Box>
+      )}
+
+      {!isDesktop && !isCashierRole && (
+        <Drawer
+          anchor="bottom"
+          open={mobileMenuOpen}
+          onClose={() => setMobileMenuOpen(false)}
+          PaperProps={{ className: 'mobile-admin-menu-sheet' }}
+        >
+          <Box sx={{ px: 1.5, pt: 1.2, pb: 0.6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+              Menu
+            </Typography>
+            <IconButton size="small" onClick={() => setMobileMenuOpen(false)}>
+              <CloseRoundedIcon fontSize="small" />
+            </IconButton>
+          </Box>
+          <Divider />
+          <List sx={{ px: 1, pt: 0.7, pb: 1.2, maxHeight: '70vh', overflowY: 'auto' }}>
+            {mobileMenuNav.map((item) => {
+              const count = Math.max(0, Number(item.notificationCount ?? 0));
+              return (
+                <ListItemButton
+                  key={`mobile-menu-${item.to}`}
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    navigate(item.to);
+                  }}
+                  sx={{
+                    borderRadius: 2,
+                    mb: 0.4,
+                    minHeight: 44,
+                    '&.active': {
+                      backgroundColor: alpha(theme.palette.primary.main, 0.12),
+                    },
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: 34 }}>
+                    {count > 0 ? (
+                      <Badge color="error" variant="dot" overlap="circular">
+                        <Box component="span" sx={{ display: 'inline-flex' }}>
+                          {item.icon}
+                        </Box>
+                      </Badge>
+                    ) : (
+                      item.icon
+                    )}
+                  </ListItemIcon>
+                  <ListItemText primary={item.label} />
+                </ListItemButton>
+              );
+            })}
+          </List>
+        </Drawer>
       )}
     </Box>
   );

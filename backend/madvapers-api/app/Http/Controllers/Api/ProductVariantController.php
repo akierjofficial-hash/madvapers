@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\Concerns\EnforcesBranchAccess;
 use App\Models\ProductVariant;
 use App\Models\Product;
 use Illuminate\Http\Request;
@@ -18,28 +19,61 @@ use Illuminate\Support\Facades\DB;
 
 class ProductVariantController extends Controller
 {
+    use EnforcesBranchAccess;
+
     public function index(Request $request)
     {
         $like = DB::getDriverName() === 'pgsql' ? 'ilike' : 'like';
         $request->validate([
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+            'product_id' => ['nullable', 'integer', 'exists:products,id'],
+            'search' => ['nullable', 'string', 'max:120'],
+            'code' => ['nullable', 'string', 'max:120'],
         ]);
 
         $branchId = $request->filled('branch_id') ? (int) $request->input('branch_id') : null;
+        $assignedBranchIds = null;
+
+        if ($branchId !== null) {
+            $this->enforceBranchAccessOrFail($request, $branchId);
+        } elseif (!$this->isPrivilegedUser($request->user())) {
+            $assignedBranchIds = $this->assignedBranchIds($request);
+        }
 
         $q = ProductVariant::query()
             ->with(['product.brand', 'product.category'])
             ->withSum(
                 [
-                    'inventoryBalances as qty_on_hand' => static function ($sub) use ($branchId) {
+                    'inventoryBalances as qty_on_hand' => static function ($sub) use ($branchId, $assignedBranchIds) {
                         if ($branchId !== null) {
                             $sub->where('branch_id', $branchId);
+                            return;
                         }
+
+                        if (!is_array($assignedBranchIds)) {
+                            return;
+                        }
+
+                        if (empty($assignedBranchIds)) {
+                            $sub->whereRaw('1 = 0');
+                            return;
+                        }
+
+                        $sub->whereIn('branch_id', $assignedBranchIds);
                     },
                 ],
                 'qty_on_hand'
             )
             ->orderBy('id', 'desc');
+
+        if ($request->filled('code')) {
+            $code = trim((string) $request->input('code'));
+            $q->where(function ($sub) use ($code) {
+                $sub->where('barcode', $code)
+                    ->orWhere('sku', $code);
+            });
+            $q->orderByRaw('CASE WHEN barcode = ? THEN 0 WHEN sku = ? THEN 1 ELSE 2 END', [$code, $code]);
+        }
 
         if ($request->filled('search')) {
             $term = '%' . trim((string) $request->input('search')) . '%';

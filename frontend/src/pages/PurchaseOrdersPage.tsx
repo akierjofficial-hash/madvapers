@@ -21,7 +21,9 @@ import {
   TableRow,
   TextField,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { BranchSelect } from '../components/BranchSelect';
@@ -140,6 +142,8 @@ type PrettyRow = {
 };
 
 export function PurchaseOrdersPage() {
+  const theme = useTheme();
+  const isCompactList = useMediaQuery(theme.breakpoints.down('md'));
   const { user, can } = useAuth();
   const navigate = useNavigate();
   const canBranchView = can('BRANCH_VIEW');
@@ -592,7 +596,7 @@ export function PurchaseOrdersPage() {
             setStatus(e.target.value);
             setPage(1);
           }}
-          sx={{ width: 240 }}
+          sx={{ width: { xs: '100%', md: 240 } }}
         >
           {STATUSES.map((s) => (
             <MenuItem key={s || 'ALL'} value={s}>
@@ -612,6 +616,51 @@ export function PurchaseOrdersPage() {
         <Alert severity="error">Failed to load purchase orders.</Alert>
       ) : pretty.length === 0 ? (
         <Alert severity="warning">No purchase orders found.</Alert>
+      ) : isCompactList ? (
+        <Stack spacing={1}>
+          {pretty.map((r) => (
+            <Paper
+              key={r.id}
+              variant="outlined"
+              role="button"
+              tabIndex={0}
+              onClick={() => openPurchaseOrderRow(r)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  openPurchaseOrderRow(r);
+                }
+              }}
+              sx={{
+                p: 1.2,
+                cursor: 'pointer',
+                bgcolor: r.isNew ? 'rgba(211, 47, 47, 0.06)' : undefined,
+              }}
+            >
+              <Stack spacing={0.75}>
+                <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
+                  <Typography variant="subtitle2" sx={{ fontFamily: 'monospace' }}>
+                    PO #{r.id}
+                  </Typography>
+                  <Stack direction="row" spacing={0.6} alignItems="center">
+                    <Chip size="small" color={statusChipColor(r.status)} label={formatStatus(r.status)} />
+                    {r.isNew && <Chip size="small" color="error" label="NEW" sx={{ height: 20, fontSize: 10 }} />}
+                  </Stack>
+                </Stack>
+                <Typography variant="body2">Supplier: {r.supplier}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Branch: {r.branch}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Lines: {r.itemsCount} | Qty Ordered: {qtyFmt(r.totalQty)}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Notes: {r.notes.trim() ? r.notes : '-'}
+                </Typography>
+              </Stack>
+            </Paper>
+          ))}
+        </Stack>
       ) : (
         <Paper variant="outlined">
           <Table size="small" stickyHeader>

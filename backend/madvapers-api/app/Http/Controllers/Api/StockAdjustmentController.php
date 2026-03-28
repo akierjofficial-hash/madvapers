@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Api\Concerns\EnforcesBranchAccess;
 use App\Models\StockAdjustment;
 use App\Models\StockAdjustmentItem;
+use App\Support\AuditTrail;
 use App\Services\InventoryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -71,6 +72,8 @@ class StockAdjustmentController extends Controller
                 $adj->update(['reference_no' => $referenceNo]);
             }
 
+            $itemCount = 0;
+            $totalQtyDelta = 0.0;
             foreach ($data['items'] as $it) {
                 StockAdjustmentItem::create([
                     'stock_adjustment_id' => $adj->id,
@@ -79,7 +82,25 @@ class StockAdjustmentController extends Controller
                     'unit_cost' => $it['unit_cost'] ?? null,
                     'notes' => $it['notes'] ?? null,
                 ]);
+                $itemCount++;
+                $totalQtyDelta += (float) $it['qty_delta'];
             }
+
+            AuditTrail::record([
+                'event_type' => 'ADJUSTMENT_DRAFT_CREATED',
+                'entity_type' => 'adjustment',
+                'entity_id' => (int) $adj->id,
+                'branch_id' => (int) $adj->branch_id,
+                'user_id' => $userId,
+                'summary' => 'Adjustment draft created',
+                'meta' => [
+                    'reference_no' => (string) ($adj->reference_no ?? ''),
+                    'reason_code' => (string) ($adj->reason_code ?? ''),
+                    'status' => (string) ($adj->status ?? ''),
+                    'item_count' => $itemCount,
+                    'total_qty_delta' => round($totalQtyDelta, 4),
+                ],
+            ]);
 
             return response()->json(
                 $adj->load(['branch', 'items.variant.product', 'createdBy', 'approvedBy', 'postedBy']),
@@ -111,6 +132,20 @@ class StockAdjustmentController extends Controller
 
             $locked->update(['status' => 'SUBMITTED']);
 
+            AuditTrail::record([
+                'event_type' => 'ADJUSTMENT_SUBMITTED',
+                'entity_type' => 'adjustment',
+                'entity_id' => (int) $locked->id,
+                'branch_id' => (int) $locked->branch_id,
+                'user_id' => $request->user()?->id,
+                'summary' => 'Adjustment submitted',
+                'meta' => [
+                    'reference_no' => (string) ($locked->reference_no ?? ''),
+                    'reason_code' => (string) ($locked->reason_code ?? ''),
+                    'status' => 'SUBMITTED',
+                ],
+            ]);
+
             return response()->json(['status' => 'ok', 'adjustment' => $locked]);
         });
     }
@@ -135,6 +170,20 @@ class StockAdjustmentController extends Controller
                 'approved_at' => now(),
             ]);
 
+            AuditTrail::record([
+                'event_type' => 'ADJUSTMENT_APPROVED',
+                'entity_type' => 'adjustment',
+                'entity_id' => (int) $locked->id,
+                'branch_id' => (int) $locked->branch_id,
+                'user_id' => $request->user()?->id,
+                'summary' => 'Adjustment approved',
+                'meta' => [
+                    'reference_no' => (string) ($locked->reference_no ?? ''),
+                    'reason_code' => (string) ($locked->reason_code ?? ''),
+                    'status' => 'APPROVED',
+                ],
+            ]);
+
             return response()->json(['status' => 'ok', 'adjustment' => $locked]);
         });
     }
@@ -154,6 +203,10 @@ class StockAdjustmentController extends Controller
             }
 
             $locked->load('items');
+            $itemCount = $locked->items->count();
+            $totalQtyDelta = (float) $locked->items->sum(function ($item) {
+                return (float) ($item->qty_delta ?? 0);
+            });
 
             foreach ($locked->items as $item) {
                 $qtyDelta = (float) $item->qty_delta;
@@ -183,6 +236,22 @@ class StockAdjustmentController extends Controller
                 'status' => 'POSTED',
                 'posted_by_user_id' => $request->user()->id,
                 'posted_at' => now(),
+            ]);
+
+            AuditTrail::record([
+                'event_type' => 'ADJUSTMENT_POSTED',
+                'entity_type' => 'adjustment',
+                'entity_id' => (int) $locked->id,
+                'branch_id' => (int) $locked->branch_id,
+                'user_id' => $request->user()?->id,
+                'summary' => 'Adjustment posted',
+                'meta' => [
+                    'reference_no' => (string) ($locked->reference_no ?? ''),
+                    'reason_code' => (string) ($locked->reason_code ?? ''),
+                    'status' => 'POSTED',
+                    'item_count' => $itemCount,
+                    'total_qty_delta' => round($totalQtyDelta, 4),
+                ],
             ]);
 
             return response()->json(['status' => 'ok', 'adjustment' => $locked]);

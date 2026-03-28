@@ -48,6 +48,7 @@ import type {
   DashboardAdjustmentQueueItem,
   DashboardKpiDetailType,
   DashboardPurchaseOrderQueueItem,
+  DashboardSaleVoidRequestQueueItem,
   DashboardTransferQueueItem,
   DashboardBranchHealth,
   DashboardInventoryKpiItem,
@@ -55,6 +56,8 @@ import type {
 
 const QUICK_ACTION_PERMISSION: Record<string, string> = {
   '/purchase-orders': 'PO_VIEW',
+  '/sales': 'SALES_CREATE',
+  '/expenses': 'EXPENSE_CREATE',
   '/transfers': 'TRANSFER_VIEW',
   '/adjustments': 'ADJUSTMENT_VIEW',
   '/branches': 'BRANCH_MANAGE',
@@ -66,6 +69,7 @@ const QUEUE_TABS = [
   { key: 'adjustments', label: 'Adjustments' },
   { key: 'transfers', label: 'Transfers' },
   { key: 'purchase_orders', label: 'Purchase Orders' },
+  { key: 'void_requests', label: 'Void Requests' },
 ] as const;
 
 type QueueTabKey = (typeof QUEUE_TABS)[number]['key'];
@@ -79,6 +83,13 @@ type KpiCardKey =
   | 'pending-transfers'
   | 'inventory-value';
 
+type PieBreakdownItem = {
+  label: string;
+  value: number;
+  color: string;
+  tooltip?: string;
+};
+
 const KPI_DETAIL_TYPE_BY_CARD: Record<KpiCardKey, DashboardKpiDetailType> = {
   'low-stock': 'low_stock',
   'out-of-stock': 'out_of_stock',
@@ -87,6 +98,17 @@ const KPI_DETAIL_TYPE_BY_CARD: Record<KpiCardKey, DashboardKpiDetailType> = {
   'pending-transfers': 'pending_transfers',
   'inventory-value': 'inventory_value',
 };
+
+const PIE_COLORS = ['#0f766e', '#2ea99f', '#f59e0b', '#b45309', '#475467', '#64748b', '#7c8ea3'];
+const SURFACE_BORDER = alpha('#d9e2ec', 0.92);
+const SURFACE_SX = {
+  border: `1px solid ${SURFACE_BORDER}`,
+  borderRadius: 2,
+  bgcolor: 'background.paper',
+  boxShadow: '0 4px 14px rgba(16, 24, 40, 0.035)',
+} as const;
+const SECTION_PAPER_SX = { ...SURFACE_SX, p: { xs: 1.25, md: 1.5 } } as const;
+const SECTION_PAPER_LG_SX = { ...SURFACE_SX, p: { xs: 1.4, md: 1.7 } } as const;
 
 function toInt(value: string | null): number | null {
   if (!value) return null;
@@ -107,6 +129,10 @@ function addDays(date: Date, days: number): Date {
   return next;
 }
 
+function startOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
 function normalizeDateInput(value: string | null, fallback: string): string {
   if (!value) return fallback;
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : fallback;
@@ -123,6 +149,14 @@ function formatShortDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function money(value: number): string {
+  return Number(value ?? 0).toLocaleString(undefined, {
+    style: 'currency',
+    currency: 'PHP',
+    maximumFractionDigits: 2,
+  });
 }
 
 function formatStatus(raw?: string | null): string {
@@ -186,6 +220,53 @@ function riskScore(item: DashboardBranchHealth): number {
   return Number(item.out_of_stock_count ?? 0) * 3 + Number(item.low_stock_count ?? 0) + openCount;
 }
 
+function polarToCartesian(cx: number, cy: number, radius: number, angleInDegrees: number) {
+  const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180.0;
+  return {
+    x: cx + radius * Math.cos(angleInRadians),
+    y: cy + radius * Math.sin(angleInRadians),
+  };
+}
+
+function describeArc(
+  cx: number,
+  cy: number,
+  radius: number,
+  startAngle: number,
+  endAngle: number
+): string {
+  // Gauge angles are standard polar degrees:
+  // 180 = left, 90 = top, 0 = right (top half spans 180 -> 0).
+  const toGaugePoint = (angleInDegrees: number) => {
+    const angleInRadians = (angleInDegrees * Math.PI) / 180;
+    return {
+      x: cx + radius * Math.cos(angleInRadians),
+      y: cy - radius * Math.sin(angleInRadians),
+    };
+  };
+
+  const start = toGaugePoint(startAngle);
+  const end = toGaugePoint(endAngle);
+  const largeArcFlag = Math.abs(endAngle - startAngle) > 180 ? '1' : '0';
+  const sweepFlag = startAngle >= endAngle ? '1' : '0';
+
+  return ['M', start.x, start.y, 'A', radius, radius, 0, largeArcFlag, sweepFlag, end.x, end.y].join(' ');
+}
+
+function describePieSlice(
+  cx: number,
+  cy: number,
+  radius: number,
+  startAngle: number,
+  endAngle: number
+): string {
+  const start = polarToCartesian(cx, cy, radius, startAngle);
+  const end = polarToCartesian(cx, cy, radius, endAngle);
+  const largeArcFlag = endAngle - startAngle > 180 ? 1 : 0;
+
+  return `M ${cx} ${cy} L ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${end.x} ${end.y} Z`;
+}
+
 export function DashboardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -193,9 +274,11 @@ export function DashboardPage() {
 
   const canDashboardView = can('USER_VIEW');
   const canBranchView = can('BRANCH_VIEW');
+  const canUseApprovalCenter =
+    can('ADJUSTMENT_APPROVE') || can('TRANSFER_APPROVE') || can('PO_APPROVE') || can('SALES_VOID');
 
   const defaultDateTo = useMemo(() => toLocalDateInput(new Date()), []);
-  const defaultDateFrom = useMemo(() => toLocalDateInput(addDays(new Date(), -13)), []);
+  const defaultDateFrom = useMemo(() => toLocalDateInput(startOfMonth(new Date())), []);
 
   const [branchId, setBranchId] = useState<number | ''>(() => {
     const fromUrl = toInt(searchParams.get('branch_id'));
@@ -273,10 +356,25 @@ export function DashboardPage() {
   const queueAdjustments = summary?.approval_queue.adjustments ?? [];
   const queueTransfers = summary?.approval_queue.transfers ?? [];
   const queuePurchaseOrders = summary?.approval_queue.purchase_orders ?? [];
+  const queueVoidRequests = summary?.approval_queue.void_requests ?? [];
   const alerts = summary?.alerts ?? [];
+  const finance = summary?.finance ?? {
+    revenue: 0,
+    cash_in: 0,
+    cogs: 0,
+    gross_profit: 0,
+    restock_spend: 0,
+    net_cashflow: 0,
+    expense_total: 0,
+    net_income: 0,
+    voided_sales_count: 0,
+    voided_sales_amount: 0,
+    voided_paid_amount: 0,
+  };
   const branchHealth = summary?.branch_health ?? [];
   const trends = summary?.trends ?? [];
   const activityFeed = summary?.activity_feed ?? [];
+  const inventoryValueKpiRows = summary?.kpi_details.inventory_value ?? [];
 
   const activeKpiType: DashboardKpiDetailType = activeKpiKey
     ? KPI_DETAIL_TYPE_BY_CARD[activeKpiKey]
@@ -381,6 +479,14 @@ export function DashboardPage() {
   const branchLabel =
     user?.branch?.name ??
     (typeof branchId === 'number' ? `Branch #${branchId}` : 'No branch assigned');
+  const selectedBranchLabel = useMemo(() => {
+    if (typeof branchId !== 'number') {
+      return canBranchView ? 'All branches' : branchLabel;
+    }
+    const selectedBranch = (branchesQuery.data ?? []).find((branch) => branch.id === branchId);
+    if (!selectedBranch) return branchLabel;
+    return `${selectedBranch.code} - ${selectedBranch.name}`;
+  }, [branchId, branchesQuery.data, branchLabel, canBranchView]);
 
   const filteredQuickActions = (summary?.quick_actions ?? []).filter((action) => {
     const requiredPermission = QUICK_ACTION_PERMISSION[action.path];
@@ -415,11 +521,175 @@ export function DashboardPage() {
     );
   }, [recentTrends]);
 
+  const movementHasLedgerData = useMemo(
+    () =>
+      recentTrends.some(
+        (point) => Number(point.in_qty ?? 0) > 0 || Number(point.out_qty ?? 0) > 0
+      ),
+    [recentTrends]
+  );
+
+  const movementHasWorkflowData = useMemo(
+    () =>
+      recentTrends.some(
+        (point) =>
+          Number(point.adjustments ?? 0) > 0 ||
+          Number(point.transfers ?? 0) > 0 ||
+          Number(point.po_created ?? 0) > 0 ||
+          Number(point.po_received ?? 0) > 0
+      ),
+    [recentTrends]
+  );
+
+  const hasMovementSeriesData = movementHasLedgerData || movementHasWorkflowData;
+
+  const movementSeries = useMemo(() => {
+    let runningValue = 0;
+    return recentTrends.map((point) => {
+      const inQty = Number(point.in_qty ?? 0);
+      const outQty = Number(point.out_qty ?? 0);
+      const workflowCount =
+        Number(point.adjustments ?? 0) +
+        Number(point.transfers ?? 0) +
+        Number(point.po_created ?? 0) +
+        Number(point.po_received ?? 0);
+
+      if (movementHasLedgerData) {
+        runningValue += inQty - outQty;
+      } else if (movementHasWorkflowData) {
+        runningValue += workflowCount;
+      }
+
+      return {
+        date: point.date,
+        label: formatShortDate(point.date),
+        value: runningValue,
+        inQty,
+        outQty,
+        workflowCount,
+      };
+    });
+  }, [movementHasLedgerData, movementHasWorkflowData, recentTrends]);
+
+  const movementHeadline = useMemo(() => {
+    if (movementSeries.length === 0 || !hasMovementSeriesData) {
+      return { current: 0, deltaPct: 0 };
+    }
+
+    const first = movementSeries[0].value;
+    const last = movementSeries[movementSeries.length - 1].value;
+    const base = Math.max(Math.abs(first), 1);
+    const deltaPct = ((last - first) / base) * 100;
+
+    return { current: last, deltaPct };
+  }, [hasMovementSeriesData, movementSeries]);
+
+  const topMovingItemsData = useMemo(() => {
+    const bucket = new Map<string, number>();
+
+    for (const row of activityFeed) {
+      const qty = Math.abs(Number(row.qty_delta ?? 0));
+      if (!qty || Number.isNaN(qty)) continue;
+      const key = row.product_name ?? row.variant_name ?? row.sku ?? `Item #${row.product_variant_id ?? row.id}`;
+      bucket.set(key, (bucket.get(key) ?? 0) + qty);
+    }
+
+    const movementItems = Array.from(bucket.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([label, value], idx) => ({
+        label,
+        value,
+        color: PIE_COLORS[idx % PIE_COLORS.length],
+        tooltip: `${label} | ${value.toLocaleString(undefined, { maximumFractionDigits: 3 })} moved`,
+      }));
+
+    if (movementItems.length > 0) {
+      return { mode: 'movement' as const, items: movementItems };
+    }
+
+    const fallbackItems = inventoryValueKpiRows
+      .filter((row) => Number(row.stock_value ?? 0) > 0)
+      .sort((a, b) => Number(b.stock_value ?? 0) - Number(a.stock_value ?? 0))
+      .slice(0, 6)
+      .map((row, idx) => {
+        const product = row.product_name ?? 'Product';
+        const variant = row.variant_name ?? '';
+        const sku = row.sku ?? '';
+        const label = variant && variant.toLowerCase() !== product.toLowerCase() ? `${product} - ${variant}` : product;
+        const stockValue = Number(row.stock_value ?? 0);
+
+        return {
+          label,
+          value: stockValue,
+          color: PIE_COLORS[idx % PIE_COLORS.length],
+          tooltip: `${product}${variant ? ` | ${variant}` : ''}${sku ? ` | ${sku}` : ''} | Value ${money(stockValue)}`,
+        };
+      });
+
+    if (fallbackItems.length > 0) {
+      return { mode: 'inventory' as const, items: fallbackItems };
+    }
+
+    return { mode: 'none' as const, items: [] as PieBreakdownItem[] };
+  }, [activityFeed, inventoryValueKpiRows]);
+
+  const topMovingItems = topMovingItemsData.items;
+  const inventorySnapshotSeries = useMemo(() => {
+    return inventoryValueKpiRows
+      .filter((row) => Number(row.stock_value ?? 0) > 0)
+      .sort((a, b) => Number(b.stock_value ?? 0) - Number(a.stock_value ?? 0))
+      .slice(0, 14)
+      .map((row, idx) => {
+        const rawLabel =
+          row.sku ??
+          row.variant_name ??
+          row.product_name ??
+          `Item ${idx + 1}`;
+        const label = rawLabel.length > 11 ? `${rawLabel.slice(0, 11)}...` : rawLabel;
+
+        return {
+          label,
+          value: Number(row.stock_value ?? 0),
+          tooltip: `${row.product_name ?? row.variant_name ?? row.sku ?? `Item ${idx + 1}`} | Value ${Number(
+            row.stock_value ?? 0
+          ).toLocaleString(undefined, { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })}`,
+        };
+      });
+  }, [inventoryValueKpiRows]);
+
+  const showInventorySnapshotChart = !hasMovementSeriesData && inventorySnapshotSeries.length > 0;
+  const trackedVariantsCount = Number(summary?.kpis.tracked_variant_count ?? 0);
+
+  const stockGaugeData = useMemo(() => {
+    const critical = Number(summary?.kpis.out_of_stock_count ?? 0);
+    const warning = Number(summary?.kpis.low_stock_count ?? 0);
+    const base = Math.max(trackedVariantsCount, critical + warning, 1);
+    const healthy = Math.max(0, base - critical - warning);
+
+    return [
+      { label: 'Out of stock', value: critical, color: '#dc2626' },
+      { label: 'Low stock', value: warning, color: '#f59e0b' },
+      { label: 'Healthy tracked', value: healthy, color: '#0f766e' },
+    ];
+  }, [summary?.kpis.low_stock_count, summary?.kpis.out_of_stock_count, trackedVariantsCount]);
+
+  const alertCountByCode = useMemo(() => {
+    const map = new Map<string, number>();
+    alerts.forEach((alert) => {
+      map.set(alert.code, Number(alert.count ?? 0));
+    });
+    return map;
+  }, [alerts]);
+
   const queueCounts = {
     adjustments: queueAdjustments.length,
     transfers: queueTransfers.length,
     purchase_orders: queuePurchaseOrders.length,
+    void_requests: queueVoidRequests.length,
   };
+  const queueTotalCount =
+    queueCounts.adjustments + queueCounts.transfers + queueCounts.purchase_orders + queueCounts.void_requests;
 
   const kpiCards: Array<{
     key: KpiCardKey;
@@ -435,7 +705,7 @@ export function DashboardPage() {
       value: Number(summary?.kpis.low_stock_count ?? 0).toLocaleString(),
       hint: 'Needs replenishment',
       icon: <WarningAmberRoundedIcon fontSize="small" />,
-      accent: '#f59e0b',
+      accent: '#a16207',
     },
     {
       key: 'out-of-stock',
@@ -443,7 +713,7 @@ export function DashboardPage() {
       value: Number(summary?.kpis.out_of_stock_count ?? 0).toLocaleString(),
       hint: 'Unavailable items',
       icon: <RemoveShoppingCartOutlinedIcon fontSize="small" />,
-      accent: '#ef4444',
+      accent: '#991b1b',
     },
     {
       key: 'pending-adjustments',
@@ -451,7 +721,7 @@ export function DashboardPage() {
       value: Number(summary?.kpis.pending_adjustments ?? 0).toLocaleString(),
       hint: 'Draft / submit / approve',
       icon: <ReceiptLongOutlinedIcon fontSize="small" />,
-      accent: '#0f766e',
+      accent: '#475569',
     },
     {
       key: 'pending-po',
@@ -459,7 +729,7 @@ export function DashboardPage() {
       value: Number(summary?.kpis.pending_po_approvals ?? 0).toLocaleString(),
       hint: 'Waiting approval',
       icon: <TaskAltOutlinedIcon fontSize="small" />,
-      accent: '#0891b2',
+      accent: '#64748b',
     },
     {
       key: 'pending-transfers',
@@ -467,7 +737,7 @@ export function DashboardPage() {
       value: Number(summary?.kpis.pending_transfers ?? 0).toLocaleString(),
       hint: 'Requested / in transit',
       icon: <SwapHorizOutlinedIcon fontSize="small" />,
-      accent: '#7c3aed',
+      accent: '#0f766e',
     },
     {
       key: 'inventory-value',
@@ -494,7 +764,7 @@ export function DashboardPage() {
     if (mode === '7d') from = addDays(today, -6);
     if (mode === '14d') from = addDays(today, -13);
     if (mode === '30d') from = addDays(today, -29);
-    if (mode === 'month') from = new Date(today.getFullYear(), today.getMonth(), 1);
+    if (mode === 'month') from = startOfMonth(today);
 
     setDateFrom(toLocalDateInput(from));
     setDateTo(toLocalDateInput(today));
@@ -521,6 +791,18 @@ export function DashboardPage() {
     navigate(`/transfers?${params.toString()}`);
   };
 
+  const openSalesVoidRequests = (saleId?: number | null, requestedAt?: string | null) => {
+    if (saleId && saleId > 0) {
+      authStorage.markSeenPending(user?.id, 'voidRequests', saleId);
+      authStorage.markSeenPendingAt(user?.id, 'voidRequests', requestedAt);
+    }
+
+    const params = new URLSearchParams();
+    params.set('void_request_status', 'PENDING');
+    if (typeof branchId === 'number') params.set('branch_id', String(branchId));
+    navigate(`/sales?${params.toString()}`);
+  };
+
   const renderQueueTable = () => {
     if (queueTab === 'adjustments') {
       return (
@@ -533,6 +815,10 @@ export function DashboardPage() {
 
     if (queueTab === 'transfers') {
       return <QueueTransfersTable rows={queueTransfers} onOpen={openTransfers} />;
+    }
+
+    if (queueTab === 'void_requests') {
+      return <QueueSaleVoidRequestsTable rows={queueVoidRequests} onOpen={openSalesVoidRequests} />;
     }
 
     return (
@@ -730,40 +1016,111 @@ export function DashboardPage() {
     <Stack spacing={2}>
       <Paper
         sx={{
+          ...SURFACE_SX,
           p: { xs: 1.5, md: 2 },
-          borderColor: alpha('#0f766e', 0.2),
-          backgroundImage:
-            'linear-gradient(135deg, rgba(15,118,110,0.09) 0%, rgba(255,255,255,0.95) 44%, rgba(245,158,11,0.08) 100%)',
+          backgroundImage: 'none',
         }}
       >
         <Stack spacing={1.5}>
           <Stack
-            direction={{ xs: 'column', md: 'row' }}
+            direction={{ xs: 'column', lg: 'row' }}
             justifyContent="space-between"
-            alignItems={{ xs: 'flex-start', md: 'center' }}
-            spacing={1.5}
+            alignItems={{ xs: 'stretch', lg: 'flex-start' }}
+            spacing={{ xs: 1.25, md: 1.5 }}
           >
-            <Box>
+            <Box sx={{ minWidth: 0, flex: 1 }}>
               <Typography variant="h5" sx={{ mb: 0.3 }}>
                 {can('BRANCH_MANAGE') ? 'Admin Dashboard' : 'Operations Dashboard'}
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 Operations command center for approvals, risk, and branch performance.
               </Typography>
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={0.75}
+                sx={{
+                  mt: 1,
+                  '& .MuiChip-root': {
+                    maxWidth: '100%',
+                    justifyContent: 'flex-start',
+                    borderRadius: 1.25,
+                    height: { xs: 30, sm: 28 },
+                    '& .MuiChip-label': {
+                      width: '100%',
+                      px: 1.05,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    },
+                  },
+                }}
+                useFlexGap
+                flexWrap={{ xs: 'nowrap', md: 'wrap' }}
+              >
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  label={`Branch: ${selectedBranchLabel}`}
+                  sx={{
+                    borderColor: alpha('#0f766e', 0.25),
+                    bgcolor: alpha('#0f766e', 0.05),
+                    maxWidth: { xs: '100%', md: 360 },
+                  }}
+                />
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  label={`Period: ${formatShortDate(dateFrom)} - ${formatShortDate(dateTo)}`}
+                />
+                <Chip
+                  size="small"
+                  color={queueTotalCount > 0 ? 'warning' : 'default'}
+                  variant={queueTotalCount > 0 ? 'filled' : 'outlined'}
+                  label={`Open Queue: ${queueTotalCount.toLocaleString()}`}
+                />
+              </Stack>
             </Box>
-            <Stack direction="row" spacing={1} flexWrap="wrap">
+
+            <Box
+              sx={{
+                width: { xs: '100%', lg: 'auto' },
+                display: 'grid',
+                gap: 1,
+                gridTemplateColumns: {
+                  xs: 'repeat(2, minmax(0, 1fr))',
+                  sm: 'repeat(3, minmax(0, 1fr))',
+                  lg: 'repeat(4, auto)',
+                },
+                '& .MuiButton-root': {
+                  minHeight: 38,
+                  fontSize: { xs: '0.84rem', sm: '0.86rem' },
+                  px: { xs: 1.2, sm: 1.5 },
+                  minWidth: 0,
+                },
+              }}
+            >
+              {canUseApprovalCenter && (
+                <Button
+                  size="small"
+                  variant="contained"
+                  color="warning"
+                  onClick={() => navigate('/approvals')}
+                  sx={{ whiteSpace: 'nowrap', gridColumn: { xs: '1 / -1', lg: 'auto' } }}
+                >
+                  Open Approval Center
+                </Button>
+              )}
               {filteredQuickActions.slice(0, 3).map((action) => (
                 <Button
                   key={action.path}
                   size="small"
                   variant="outlined"
                   onClick={() => navigate(action.path)}
-                  sx={{ bgcolor: alpha('#ffffff', 0.8) }}
+                  sx={{ whiteSpace: 'nowrap' }}
                 >
                   {action.label}
                 </Button>
               ))}
-            </Stack>
+            </Box>
           </Stack>
 
           <Box
@@ -772,10 +1129,10 @@ export function DashboardPage() {
               gap: 1.25,
               gridTemplateColumns: {
                 xs: '1fr',
-                sm: '1.4fr 1fr',
+                sm: 'repeat(2, minmax(0, 1fr))',
                 lg: canBranchView ? '2fr 1fr 1fr auto' : '2fr 1fr auto',
               },
-              alignItems: 'center',
+              alignItems: { xs: 'stretch', lg: 'center' },
             }}
           >
             {canBranchView ? (
@@ -828,7 +1185,19 @@ export function DashboardPage() {
               InputLabelProps={{ shrink: true }}
             />
 
-            <Stack direction="row" spacing={1} justifyContent={{ xs: 'flex-start', lg: 'flex-end' }}>
+            <Stack
+              direction="row"
+              spacing={1}
+              justifyContent={{ xs: 'stretch', lg: 'flex-end' }}
+              sx={{
+                width: { xs: '100%', lg: 'auto' },
+                '& .MuiButton-root': {
+                  flex: { xs: '1 1 0', lg: '0 0 auto' },
+                  minHeight: 40,
+                  whiteSpace: 'nowrap',
+                },
+              }}
+            >
               <Button
                 size="small"
                 variant="outlined"
@@ -877,80 +1246,317 @@ export function DashboardPage() {
         sx={{
           display: 'grid',
           gap: 1.5,
-          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', xl: 'repeat(3, 1fr)' },
+          gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', xl: '1.3fr 1.3fr 1fr 1fr' },
         }}
       >
-        {kpiCards.map((card) => (
-          <Paper
-            key={card.key}
-            role="button"
-            tabIndex={0}
-            onClick={() => setActiveKpiKey(card.key)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                setActiveKpiKey(card.key);
-              }
-            }}
-            sx={{
-              p: 1.6,
-              borderColor: alpha(card.accent, 0.28),
-              position: 'relative',
-              overflow: 'hidden',
-              cursor: 'pointer',
-              transition: 'transform 140ms ease, box-shadow 140ms ease',
-              '&:hover': {
-                transform: 'translateY(-2px)',
-                boxShadow: 6,
-              },
-              ...(activeKpiKey === card.key
-                ? {
-                    boxShadow: 7,
-                    borderColor: alpha(card.accent, 0.6),
-                  }
-                : {}),
-              '&::before': {
-                content: '""',
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                height: 4,
-                backgroundColor: alpha(card.accent, 0.95),
-              },
-            }}
-          >
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.8 }}>
-              <Typography variant="body2" color="text.secondary">
-                {card.label}
-              </Typography>
-              <Box
-                sx={{
-                  color: card.accent,
-                  width: 30,
-                  height: 30,
-                  borderRadius: 1.5,
-                  display: 'grid',
-                  placeItems: 'center',
-                  bgcolor: alpha(card.accent, 0.12),
-                  border: `1px solid ${alpha(card.accent, 0.22)}`,
-                }}
-              >
-                {card.icon}
-              </Box>
-            </Stack>
+        <Paper sx={SECTION_PAPER_SX}>
+          <SectionHeader
+            title="Inventory Overview"
+            subtitle="Stock position and costing health"
+            icon={<AccountBalanceWalletOutlinedIcon sx={{ fontSize: 16 }} />}
+          />
+          <Box sx={{ display: 'grid', gap: 1, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' } }}>
+            <MetricTile
+              label="Inventory Value"
+              value={Number(summary?.kpis.inventory_value ?? 0).toLocaleString(undefined, {
+                style: 'currency',
+                currency: 'PHP',
+                maximumFractionDigits: 2,
+              })}
+              accent="#475569"
+              hint="Cost estimate"
+              icon={<AccountBalanceWalletOutlinedIcon sx={{ fontSize: 14 }} />}
+              onClick={() => setActiveKpiKey('inventory-value')}
+            />
+            <MetricTile
+              label="Missing Cost"
+              value={Number(summary?.kpis.missing_cost_count ?? 0).toLocaleString()}
+              accent="#78716c"
+              hint="Rows needing cost"
+              icon={<ReceiptLongOutlinedIcon sx={{ fontSize: 14 }} />}
+            />
+            <MetricTile
+              label="Low Stock"
+              value={Number(summary?.kpis.low_stock_count ?? 0).toLocaleString()}
+              accent="#a16207"
+              hint="Needs replenishment"
+              icon={<WarningAmberRoundedIcon sx={{ fontSize: 14 }} />}
+              onClick={() => setActiveKpiKey('low-stock')}
+            />
+            <MetricTile
+              label="Out Of Stock"
+              value={Number(summary?.kpis.out_of_stock_count ?? 0).toLocaleString()}
+              accent="#991b1b"
+              hint="Unavailable now"
+              icon={<RemoveShoppingCartOutlinedIcon sx={{ fontSize: 14 }} />}
+              onClick={() => setActiveKpiKey('out-of-stock')}
+            />
+          </Box>
+        </Paper>
 
-            <Typography variant="h5" sx={{ fontWeight: 700, lineHeight: 1.15 }}>
-              {card.value}
+        <Paper sx={SECTION_PAPER_SX}>
+          <SectionHeader
+            title="Workflow Overview"
+            subtitle="Approvals and pending operational tasks"
+            icon={<AccessTimeOutlinedIcon sx={{ fontSize: 16 }} />}
+          />
+          <Box sx={{ display: 'grid', gap: 1, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' } }}>
+            <MetricTile
+              label="Pending Adj."
+              value={Number(summary?.kpis.pending_adjustments ?? 0).toLocaleString()}
+              accent="#475569"
+              hint="Draft / submit / approve"
+              icon={<ReceiptLongOutlinedIcon sx={{ fontSize: 14 }} />}
+              onClick={() => setActiveKpiKey('pending-adjustments')}
+            />
+            <MetricTile
+              label="Pending PO"
+              value={Number(summary?.kpis.pending_po_approvals ?? 0).toLocaleString()}
+              accent="#64748b"
+              hint="Waiting approval"
+              icon={<TaskAltOutlinedIcon sx={{ fontSize: 14 }} />}
+              onClick={() => setActiveKpiKey('pending-po')}
+            />
+            <MetricTile
+              label="Pending Transfers"
+              value={Number(summary?.kpis.pending_transfers ?? 0).toLocaleString()}
+              accent="#0f766e"
+              hint="Requested / in transit"
+              icon={<SwapHorizOutlinedIcon sx={{ fontSize: 14 }} />}
+              onClick={() => setActiveKpiKey('pending-transfers')}
+            />
+            <MetricTile
+              label="Void Requests"
+              value={Number(summary?.kpis.pending_void_requests ?? 0).toLocaleString()}
+              accent="#7f1d1d"
+              hint="Waiting approval"
+              icon={<WarningAmberRoundedIcon sx={{ fontSize: 14 }} />}
+              onClick={() => openSalesVoidRequests()}
+            />
+            <MetricTile
+              label="Queue Total"
+              value={queueTotalCount.toLocaleString()}
+              accent="#64748b"
+              hint="Actionable items"
+              icon={<AccessTimeOutlinedIcon sx={{ fontSize: 14 }} />}
+            />
+          </Box>
+        </Paper>
+
+        <Paper sx={SECTION_PAPER_SX}>
+          <SectionHeader
+            title="Stock Health"
+            subtitle="Availability split of tracked variants"
+            icon={<WarningAmberRoundedIcon sx={{ fontSize: 16 }} />}
+          />
+          <HalfGaugeChart
+            data={stockGaugeData}
+            centerLabel={trackedVariantsCount.toLocaleString()}
+            subLabel="Tracked Variants"
+          />
+        </Paper>
+
+        <Paper sx={SECTION_PAPER_SX}>
+          <SectionHeader
+            title="Risk Snapshot"
+            subtitle="Current exceptions requiring attention"
+            icon={<WarningAmberRoundedIcon sx={{ fontSize: 16 }} />}
+          />
+          <Stack spacing={1}>
+            <MetricLine label="Active Alerts" value={Number(alerts.length ?? 0).toLocaleString()} tone="#475569" />
+            <MetricLine
+              label="Negative Stock"
+              value={Number(alertCountByCode.get('NEGATIVE_STOCK') ?? 0).toLocaleString()}
+              tone="#9a3412"
+            />
+            <MetricLine
+              label="Overdue Transfers"
+              value={Number(alertCountByCode.get('OVERDUE_TRANSFERS') ?? 0).toLocaleString()}
+              tone="#7f1d1d"
+            />
+            <MetricLine
+              label="Stale PO Drafts"
+              value={Number(alertCountByCode.get('STALE_PO_DRAFTS') ?? 0).toLocaleString()}
+              tone="#334155"
+            />
+            <MetricLine
+              label="Pending Void Requests"
+              value={Number(summary?.kpis.pending_void_requests ?? 0).toLocaleString()}
+              tone="#7f1d1d"
+            />
+          </Stack>
+        </Paper>
+      </Box>
+
+      <Paper sx={SECTION_PAPER_SX}>
+        <SectionHeader
+          title="Finance Overview"
+          subtitle="Cashflow and profitability for selected period"
+          icon={<AccountBalanceWalletOutlinedIcon sx={{ fontSize: 16 }} />}
+        />
+        <Box
+          sx={{
+            display: 'grid',
+            gap: 1,
+            gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)', xl: 'repeat(8, 1fr)' },
+          }}
+        >
+          <MetricTile
+            label="Cash In"
+            value={money(finance.cash_in)}
+            accent="#14532d"
+            hint="Collected payments"
+            icon={<AccountBalanceWalletOutlinedIcon sx={{ fontSize: 14 }} />}
+          />
+          <MetricTile
+            label="Revenue"
+            value={money(finance.revenue)}
+            accent="#334155"
+            hint="Posted sales amount"
+            icon={<TaskAltOutlinedIcon sx={{ fontSize: 14 }} />}
+          />
+          <MetricTile
+            label="COGS"
+            value={money(finance.cogs)}
+            accent="#78716c"
+            hint="Cost of sold goods"
+            icon={<ReceiptLongOutlinedIcon sx={{ fontSize: 14 }} />}
+          />
+          <MetricTile
+            label="Gross Profit"
+            value={money(finance.gross_profit)}
+            accent="#0f766e"
+            hint="Revenue - COGS"
+            icon={<AutoGraphOutlinedIcon sx={{ fontSize: 14 }} />}
+          />
+          <MetricTile
+            label="Restock Spend"
+            value={money(finance.restock_spend)}
+            accent="#9a3412"
+            hint="Received purchase costs"
+            icon={<SwapHorizOutlinedIcon sx={{ fontSize: 14 }} />}
+          />
+          <MetricTile
+            label="Expense Total"
+            value={money(finance.expense_total)}
+            accent="#7f1d1d"
+            hint="Posted operating expenses"
+            icon={<WarningAmberRoundedIcon sx={{ fontSize: 14 }} />}
+          />
+          <MetricTile
+            label="Net Income"
+            value={money(finance.net_income)}
+            accent={finance.net_income >= 0 ? '#334155' : '#7f1d1d'}
+            hint="Gross profit - expenses"
+            icon={<AutoGraphOutlinedIcon sx={{ fontSize: 14 }} />}
+          />
+          <MetricTile
+            label="Net Cashflow"
+            value={money(finance.net_cashflow)}
+            accent={finance.net_cashflow >= 0 ? '#0f766e' : '#7f1d1d'}
+            hint="Cash in - restock spend - expenses"
+            icon={<AccountBalanceWalletOutlinedIcon sx={{ fontSize: 14 }} />}
+          />
+        </Box>
+      </Paper>
+
+      <Box
+        sx={{
+          display: 'grid',
+          gap: 1.5,
+          gridTemplateColumns: { xs: '1fr', xl: '1.75fr 1fr' },
+          alignItems: 'start',
+        }}
+      >
+        <Paper sx={SECTION_PAPER_SX}>
+          <SectionHeader
+            title="Stock Movement Overview"
+            subtitle={movementHasLedgerData ? 'Net inbound vs outbound quantity trend' : 'Workflow activity trend'}
+            icon={<AutoGraphOutlinedIcon sx={{ fontSize: 16 }} />}
+            action={
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                  {(hasMovementSeriesData
+                    ? movementHeadline.current
+                    : showInventorySnapshotChart
+                      ? inventorySnapshotSeries[0]?.value ?? 0
+                      : 0
+                  ).toLocaleString(undefined, {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 2,
+                  })}
+                </Typography>
+                <Chip
+                  size="small"
+                  color={
+                    hasMovementSeriesData
+                      ? movementHeadline.deltaPct >= 0
+                        ? 'success'
+                        : 'error'
+                      : showInventorySnapshotChart
+                        ? 'info'
+                      : 'default'
+                  }
+                  variant={hasMovementSeriesData ? 'filled' : 'outlined'}
+                  label={
+                    hasMovementSeriesData
+                      ? `${movementHeadline.deltaPct >= 0 ? '+' : ''}${movementHeadline.deltaPct.toFixed(1)}%`
+                      : showInventorySnapshotChart
+                        ? 'Snapshot'
+                        : 'No movement'
+                  }
+                />
+              </Stack>
+            }
+          />
+
+          {movementSeries.length === 0 ? (
+            <Alert severity="info">No trend data available for selected period.</Alert>
+          ) : showInventorySnapshotChart ? (
+            <>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                No movement in this range. Showing top inventory-value snapshot instead.
+              </Typography>
+              <AreaTrendChart data={inventorySnapshotSeries} />
+            </>
+          ) : !hasMovementSeriesData ? (
+            <Alert severity="info">
+              No posted stock movement was found in this range. Try a wider date range or create/post inventory movements.
+            </Alert>
+          ) : (
+            <AreaTrendChart
+              data={movementSeries.map((point) => ({
+                label: point.label,
+                value: point.value,
+                tooltip: movementHasLedgerData
+                  ? `${point.date} | In ${point.inQty.toLocaleString()} / Out ${point.outQty.toLocaleString()}`
+                  : `${point.date} | Workflows ${point.workflowCount.toLocaleString()}`,
+              }))}
+            />
+          )}
+        </Paper>
+
+        <Paper sx={SECTION_PAPER_SX}>
+          <SectionHeader
+            title="Top Moving Items"
+            subtitle={
+              topMovingItemsData.mode === 'movement'
+                ? 'Most active SKUs by quantity moved'
+                : 'Fallback to top inventory value when movement is empty'
+            }
+            icon={<AutoGraphOutlinedIcon sx={{ fontSize: 16 }} />}
+          />
+          {topMovingItemsData.mode === 'inventory' && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+              No movement records in this period. Showing top inventory-value items instead.
             </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {card.hint}
-            </Typography>
-            <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: 'text.secondary' }}>
-              Click for details
-            </Typography>
-          </Paper>
-        ))}
+          )}
+          {topMovingItems.length === 0 ? (
+            <Alert severity="info">No movement or inventory-value breakdown available.</Alert>
+          ) : (
+            <PieBreakdownChart data={topMovingItems} />
+          )}
+        </Paper>
       </Box>
 
       <Box
@@ -961,24 +1567,14 @@ export function DashboardPage() {
           alignItems: 'start',
         }}
       >
-        <Paper sx={{ p: 0, overflow: 'hidden' }}>
-          <Stack
-            direction={{ xs: 'column', sm: 'row' }}
-            spacing={0.5}
-            justifyContent="space-between"
-            alignItems={{ xs: 'flex-start', sm: 'center' }}
-            sx={{ px: 2, pt: 1.5, pb: 0.5 }}
-          >
-            <Stack direction="row" spacing={1} alignItems="center">
-              <AccessTimeOutlinedIcon fontSize="small" color="primary" />
-              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                Approval Queue
-              </Typography>
-            </Stack>
-            <Typography variant="caption" color="text.secondary">
-              Items that need action now
-            </Typography>
-          </Stack>
+        <Paper sx={{ ...SURFACE_SX, p: 0, overflow: 'hidden' }}>
+          <Box sx={{ px: 2, pt: 1.5, pb: 0.2 }}>
+            <SectionHeader
+              title="Approval Queue"
+              subtitle="Items requiring action right now"
+              icon={<AccessTimeOutlinedIcon sx={{ fontSize: 16 }} />}
+            />
+          </Box>
 
           <Tabs
             value={queueTab}
@@ -1002,13 +1598,12 @@ export function DashboardPage() {
           </Box>
         </Paper>
 
-        <Paper sx={{ p: 1.6 }}>
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-            <WarningAmberRoundedIcon fontSize="small" color="warning" />
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-              Alerts
-            </Typography>
-          </Stack>
+        <Paper sx={SECTION_PAPER_LG_SX}>
+          <SectionHeader
+            title="Alerts"
+            subtitle="Exceptions and compliance checks"
+            icon={<WarningAmberRoundedIcon sx={{ fontSize: 16 }} />}
+          />
 
           <Stack spacing={1}>
             {alerts.length === 0 ? (
@@ -1052,15 +1647,12 @@ export function DashboardPage() {
           alignItems: 'start',
         }}
       >
-        <Paper sx={{ p: 1.6 }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.2 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-              Branch Health
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Risk and workflow snapshot
-            </Typography>
-          </Stack>
+        <Paper sx={SECTION_PAPER_LG_SX}>
+          <SectionHeader
+            title="Branch Health"
+            subtitle="Risk, stock and workflow snapshot per branch"
+            icon={<TaskAltOutlinedIcon sx={{ fontSize: 16 }} />}
+          />
 
           {branchHealth.length === 0 ? (
             <Alert severity="info">No branch health data available for the selected filters.</Alert>
@@ -1093,14 +1685,13 @@ export function DashboardPage() {
                       }
                     }}
                     sx={{
+                      ...SURFACE_SX,
                       p: 1.4,
-                      borderColor: alpha('#0f766e', 0.2),
-                      bgcolor: alpha('#ffffff', 0.92),
                       cursor: 'pointer',
-                      transition: 'transform 120ms ease, box-shadow 120ms ease',
+                      transition: 'border-color 120ms ease, box-shadow 120ms ease',
                       '&:hover': {
-                        transform: 'translateY(-1px)',
-                        boxShadow: 4,
+                        borderColor: alpha('#0f766e', 0.35),
+                        boxShadow: '0 8px 16px rgba(15,118,110,0.08)',
                       },
                     }}
                   >
@@ -1171,13 +1762,12 @@ export function DashboardPage() {
           )}
         </Paper>
 
-        <Paper sx={{ p: 1.6 }}>
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-            <AutoGraphOutlinedIcon fontSize="small" color="primary" />
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-              14-Day Trend
-            </Typography>
-          </Stack>
+        <Paper sx={SECTION_PAPER_LG_SX}>
+          <SectionHeader
+            title="14-Day Trend"
+            subtitle="Inbound and outbound daily movement"
+            icon={<AutoGraphOutlinedIcon sx={{ fontSize: 16 }} />}
+          />
 
           {recentTrends.length === 0 ? (
             <Alert severity="info">No trend data for selected period.</Alert>
@@ -1242,15 +1832,17 @@ export function DashboardPage() {
         </Paper>
       </Box>
 
-      <Paper sx={{ p: 1.6 }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-            Recent Activity
-          </Typography>
-          <Button variant="outlined" size="small" onClick={() => navigate('/ledger')}>
-            Open Ledger
-          </Button>
-        </Stack>
+      <Paper sx={SECTION_PAPER_LG_SX}>
+        <SectionHeader
+          title="Recent Activity"
+          subtitle="Latest posted stock movements"
+          icon={<AccessTimeOutlinedIcon sx={{ fontSize: 16 }} />}
+          action={
+            <Button variant="outlined" size="small" onClick={() => navigate('/ledger')}>
+              Open Ledger
+            </Button>
+          }
+        />
 
         {activityFeed.length === 0 ? (
           <Alert severity="info">No stock movement activity in this period.</Alert>
@@ -1258,7 +1850,7 @@ export function DashboardPage() {
           <TableContainer
             sx={{
               maxHeight: { xs: 300, md: 360 },
-              border: `1px solid ${alpha('#d9e2ec', 0.85)}`,
+              border: `1px solid ${SURFACE_BORDER}`,
               borderRadius: 2,
             }}
           >
@@ -1446,6 +2038,401 @@ export function DashboardPage() {
   );
 }
 
+function SectionHeader({
+  title,
+  subtitle,
+  icon,
+  action,
+}: {
+  title: string;
+  subtitle?: string;
+  icon?: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <Stack
+      direction={{ xs: 'column', sm: 'row' }}
+      spacing={0.8}
+      alignItems={{ xs: 'flex-start', sm: 'center' }}
+      justifyContent="space-between"
+      sx={{ mb: 1.1 }}
+    >
+      <Stack direction="row" spacing={1} alignItems="center">
+        {icon && (
+          <Box
+            sx={{
+              width: 28,
+              height: 28,
+              borderRadius: 1,
+              bgcolor: alpha('#0f766e', 0.08),
+              color: 'primary.main',
+              display: 'grid',
+              placeItems: 'center',
+              flexShrink: 0,
+            }}
+          >
+            {icon}
+          </Box>
+        )}
+        <Box>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+            {title}
+          </Typography>
+          {subtitle && (
+            <Typography variant="caption" color="text.secondary">
+              {subtitle}
+            </Typography>
+          )}
+        </Box>
+      </Stack>
+      {action}
+    </Stack>
+  );
+}
+
+function MetricTile({
+  label,
+  value,
+  accent,
+  hint,
+  icon,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  accent: string;
+  hint?: string;
+  icon?: ReactNode;
+  onClick?: () => void;
+}) {
+  return (
+    <Paper
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : -1}
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (!onClick) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick();
+        }
+      }}
+      sx={{
+        p: 1.25,
+        border: `1px solid ${SURFACE_BORDER}`,
+        borderLeft: `3px solid ${alpha(accent, 0.45)}`,
+        borderRadius: 1.5,
+        minHeight: 100,
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'border-color 120ms ease, box-shadow 120ms ease',
+        '&:hover': onClick
+          ? {
+              borderColor: alpha(accent, 0.55),
+              boxShadow: `0 0 0 1px ${alpha(accent, 0.12)}, 0 6px 16px rgba(16,24,40,0.06)`,
+            }
+          : undefined,
+      }}
+    >
+      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={0.75}>
+        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }}>
+          {label}
+        </Typography>
+        {icon && (
+          <Box
+            sx={{
+              width: 22,
+              height: 22,
+              borderRadius: 0.8,
+              bgcolor: alpha(accent, 0.11),
+              color: accent,
+              display: 'grid',
+              placeItems: 'center',
+              flexShrink: 0,
+            }}
+          >
+            {icon}
+          </Box>
+        )}
+      </Stack>
+      <Typography variant="h6" sx={{ mt: 0.4, fontWeight: 700, lineHeight: 1.25, color: '#0f172a' }}>
+        {value}
+      </Typography>
+      {hint && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.15 }}>
+          {hint}
+        </Typography>
+      )}
+    </Paper>
+  );
+}
+
+function MetricLine({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: string;
+}) {
+  return (
+    <Box
+      sx={{
+        border: `1px solid ${SURFACE_BORDER}`,
+        borderRadius: 1.2,
+        px: 1,
+        py: 0.75,
+        borderLeft: `2px solid ${alpha(tone, 0.4)}`,
+      }}
+    >
+      <Stack direction="row" justifyContent="space-between" alignItems="center">
+        <Typography variant="caption" color="text.secondary">
+          {label}
+        </Typography>
+        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+          {value}
+        </Typography>
+      </Stack>
+    </Box>
+  );
+}
+
+function HalfGaugeChart({
+  data,
+  centerLabel,
+  subLabel,
+}: {
+  data: Array<{ label: string; value: number; color: string }>;
+  centerLabel: string;
+  subLabel: string;
+}) {
+  const total = Math.max(
+    1,
+    data.reduce((sum, item) => sum + Math.max(0, Number(item.value ?? 0)), 0)
+  );
+
+  let currentAngle = 180;
+  const arcs = data.map((item) => {
+    const share = (Math.max(0, Number(item.value ?? 0)) / total) * 180;
+    const start = currentAngle;
+    const end = currentAngle - share;
+    currentAngle = end;
+
+    return {
+      ...item,
+      d: describeArc(110, 110, 78, start, end),
+    };
+  });
+
+  return (
+    <Stack spacing={1}>
+      <Box sx={{ display: 'grid', placeItems: 'center' }}>
+        <Box component="svg" viewBox="0 0 220 140" sx={{ width: '100%', maxWidth: 260 }}>
+          <path d={describeArc(110, 110, 78, 180, 0)} stroke="#dbe5ef" strokeWidth={18} fill="none" />
+          {arcs.map((arc) => (
+            <path key={arc.label} d={arc.d} stroke={arc.color} strokeWidth={18} fill="none" />
+          ))}
+          <text x="110" y="100" textAnchor="middle" fontSize="22" fontWeight="700" fill="#0f172a">
+            {centerLabel}
+          </text>
+          <text x="110" y="118" textAnchor="middle" fontSize="10" fill="#64748b">
+            {subLabel}
+          </text>
+        </Box>
+      </Box>
+      <Stack spacing={0.6}>
+        {data.map((item) => (
+          <Stack key={item.label} direction="row" justifyContent="space-between" alignItems="center">
+            <Stack direction="row" spacing={0.6} alignItems="center">
+              <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: item.color }} />
+              <Typography variant="caption" color="text.secondary">
+                {item.label}
+              </Typography>
+            </Stack>
+            <Typography variant="caption" sx={{ fontWeight: 700 }}>
+              {Number(item.value ?? 0).toLocaleString()}
+            </Typography>
+          </Stack>
+        ))}
+      </Stack>
+    </Stack>
+  );
+}
+
+function AreaTrendChart({
+  data,
+}: {
+  data: Array<{ label: string; value: number; tooltip: string }>;
+}) {
+  if (data.length === 0) {
+    return null;
+  }
+
+  const width = 760;
+  const height = 290;
+  const padX = 34;
+  const padTop = 16;
+  const padBottom = 38;
+  const chartW = width - padX * 2;
+  const chartH = height - padTop - padBottom;
+
+  const values = data.map((point) => Number(point.value ?? 0));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+
+  const points = data.map((point, idx) => {
+    const x = padX + (idx / Math.max(1, data.length - 1)) * chartW;
+    const y = padTop + ((max - Number(point.value ?? 0)) / range) * chartH;
+    return { ...point, x, y };
+  });
+
+  const linePath = points
+    .map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
+    .join(' ');
+  const areaPath = `${linePath} L ${points[points.length - 1].x} ${height - padBottom} L ${points[0].x} ${
+    height - padBottom
+  } Z`;
+
+  return (
+    <Box sx={{ width: '100%', overflowX: 'auto' }}>
+      <Box component="svg" viewBox={`0 0 ${width} ${height}`} sx={{ width: '100%', minWidth: 560 }}>
+        <defs>
+          <linearGradient id="movementAreaFill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#0f766e" stopOpacity="0.26" />
+            <stop offset="100%" stopColor="#0f766e" stopOpacity="0.04" />
+          </linearGradient>
+        </defs>
+
+        {[0, 0.25, 0.5, 0.75, 1].map((step) => {
+          const y = padTop + chartH * step;
+          return <line key={step} x1={padX} x2={width - padX} y1={y} y2={y} stroke="#e5e7eb" strokeWidth={1} />;
+        })}
+
+        {points.map((point, idx) => (
+          <line
+            key={point.label + idx}
+            x1={point.x}
+            x2={point.x}
+            y1={padTop}
+            y2={height - padBottom}
+            stroke={idx % 3 === 0 ? '#eef2f7' : 'transparent'}
+            strokeWidth={1}
+          />
+        ))}
+
+        <path d={areaPath} fill="url(#movementAreaFill)" />
+        <path d={linePath} fill="none" stroke="#0f766e" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round" />
+
+        {points.map((point, idx) => (
+          <g key={`point-${idx}`}>
+            <circle cx={point.x} cy={point.y} r={2.8} fill="#0b4d48" />
+            <title>{point.tooltip}</title>
+          </g>
+        ))}
+
+        {points.map((point, idx) =>
+          idx % Math.ceil(points.length / 7) === 0 || idx === points.length - 1 ? (
+            <text key={`label-${idx}`} x={point.x} y={height - 14} textAnchor="middle" fontSize="10" fill="#64748b">
+              {point.label}
+            </text>
+          ) : null
+        )}
+      </Box>
+    </Box>
+  );
+}
+
+function PieBreakdownChart({
+  data,
+}: {
+  data: PieBreakdownItem[];
+}) {
+  const [hoveredSliceIndex, setHoveredSliceIndex] = useState<number | null>(null);
+  const total = Math.max(
+    1,
+    data.reduce((sum, item) => sum + Math.max(0, Number(item.value ?? 0)), 0)
+  );
+
+  let angle = -90;
+  const slices = data.map((item) => {
+    const sweep = (Math.max(0, Number(item.value ?? 0)) / total) * 360;
+    const start = angle;
+    const end = angle + sweep;
+    angle = end;
+    return {
+      ...item,
+      path: describePieSlice(110, 110, 88, start, end),
+      pct: (Math.max(0, Number(item.value ?? 0)) / total) * 100,
+    };
+  });
+  const activeSlice = hoveredSliceIndex !== null ? slices[hoveredSliceIndex] ?? null : null;
+
+  return (
+    <Stack spacing={1}>
+      <Box sx={{ display: 'grid', placeItems: 'center' }}>
+        <Box component="svg" viewBox="0 0 220 220" sx={{ width: '100%', maxWidth: 250 }}>
+          {slices.map((slice, idx) => (
+            <g key={`${slice.label}-${idx}`}>
+              <path
+                d={slice.path}
+                fill={slice.color}
+                stroke="#ffffff"
+                strokeWidth={2}
+                style={{
+                  cursor: 'pointer',
+                  opacity: hoveredSliceIndex === null || hoveredSliceIndex === idx ? 1 : 0.5,
+                  transition: 'opacity 120ms ease',
+                }}
+                tabIndex={0}
+                onMouseEnter={() => setHoveredSliceIndex(idx)}
+                onMouseLeave={() => setHoveredSliceIndex((current) => (current === idx ? null : current))}
+                onFocus={() => setHoveredSliceIndex(idx)}
+                onBlur={() => setHoveredSliceIndex((current) => (current === idx ? null : current))}
+              />
+              <title>{slice.tooltip ?? `${slice.label} | ${slice.pct.toFixed(1)}%`}</title>
+            </g>
+          ))}
+        </Box>
+      </Box>
+      <Box
+        sx={{
+          px: 1,
+          py: 0.75,
+          borderRadius: 1.2,
+          border: `1px dashed ${alpha('#0f766e', 0.35)}`,
+          bgcolor: alpha('#0f766e', 0.04),
+          minHeight: 34,
+          display: 'flex',
+          alignItems: 'center',
+        }}
+      >
+        <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
+          {activeSlice
+            ? activeSlice.tooltip ?? `${activeSlice.label} | ${activeSlice.pct.toFixed(1)}%`
+            : 'Hover a pie slice to view product details.'}
+        </Typography>
+      </Box>
+
+      <Stack spacing={0.6}>
+        {slices.map((slice, idx) => (
+          <Stack key={`${slice.label}-legend-${idx}`} direction="row" justifyContent="space-between" alignItems="center">
+            <Stack direction="row" spacing={0.6} alignItems="center" sx={{ minWidth: 0 }}>
+              <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: slice.color, flexShrink: 0 }} />
+              <Typography variant="caption" color="text.secondary" noWrap>
+                {slice.label}
+              </Typography>
+            </Stack>
+            <Typography variant="caption" sx={{ fontWeight: 700 }}>
+              {slice.pct.toFixed(0)}%
+            </Typography>
+          </Stack>
+        ))}
+      </Stack>
+    </Stack>
+  );
+}
+
 function QueueAdjustmentsTable({
   rows,
   onOpen,
@@ -1460,7 +2447,7 @@ function QueueAdjustmentsTable({
   }
 
   return (
-    <TableContainer sx={{ maxHeight: 320, borderRadius: 2, border: `1px solid ${alpha('#d9e2ec', 0.85)}` }}>
+    <TableContainer sx={{ maxHeight: 320, borderRadius: 2, border: `1px solid ${SURFACE_BORDER}` }}>
       <Table size="small" stickyHeader>
         <TableHead>
           <TableRow>
@@ -1513,7 +2500,7 @@ function QueueTransfersTable({
   }
 
   return (
-    <TableContainer sx={{ maxHeight: 320, borderRadius: 2, border: `1px solid ${alpha('#d9e2ec', 0.85)}` }}>
+    <TableContainer sx={{ maxHeight: 320, borderRadius: 2, border: `1px solid ${SURFACE_BORDER}` }}>
       <Table size="small" stickyHeader>
         <TableHead>
           <TableRow>
@@ -1570,7 +2557,7 @@ function QueuePurchaseOrdersTable({
   }
 
   return (
-    <TableContainer sx={{ maxHeight: 320, borderRadius: 2, border: `1px solid ${alpha('#d9e2ec', 0.85)}` }}>
+    <TableContainer sx={{ maxHeight: 320, borderRadius: 2, border: `1px solid ${SURFACE_BORDER}` }}>
       <Table size="small" stickyHeader>
         <TableHead>
           <TableRow>
@@ -1611,6 +2598,63 @@ function QueuePurchaseOrdersTable({
   );
 }
 
+function QueueSaleVoidRequestsTable({
+  rows,
+  onOpen,
+  emptyMessage = 'No sale void requests waiting for approval.',
+}: {
+  rows: DashboardSaleVoidRequestQueueItem[];
+  onOpen: (saleId?: number | null, requestedAt?: string | null) => void;
+  emptyMessage?: string;
+}) {
+  if (rows.length === 0) {
+    return <Alert severity="success">{emptyMessage}</Alert>;
+  }
+
+  return (
+    <TableContainer sx={{ maxHeight: 320, borderRadius: 2, border: `1px solid ${SURFACE_BORDER}` }}>
+      <Table size="small" stickyHeader>
+        <TableHead>
+          <TableRow>
+            <TableCell>Sale</TableCell>
+            <TableCell>Requested</TableCell>
+            <TableCell>Branch</TableCell>
+            <TableCell>By</TableCell>
+            <TableCell>Status</TableCell>
+            <TableCell align="right">Grand Total</TableCell>
+            <TableCell align="right" width={96}>
+              Action
+            </TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {rows.map((row) => (
+            <TableRow key={row.id} hover>
+              <TableCell sx={{ fontFamily: 'monospace' }}>{row.sale_number?.trim() || `Sale #${row.id}`}</TableCell>
+              <TableCell>{formatDateTime(row.void_requested_at)}</TableCell>
+              <TableCell>{row.branch_name ?? row.branch_id}</TableCell>
+              <TableCell>{row.requested_by ?? row.cashier_name ?? '-'}</TableCell>
+              <TableCell>
+                <Chip
+                  size="small"
+                  color={String(row.void_request_status ?? '').toUpperCase() === 'PENDING' ? 'warning' : 'default'}
+                  label={`${formatStatus(row.void_request_status)} / ${formatStatus(row.payment_status)}`}
+                />
+              </TableCell>
+              <TableCell align="right">{money(Number(row.grand_total ?? 0))}</TableCell>
+              <TableCell align="right">
+                <Button size="small" onClick={() => onOpen(row.id, row.void_requested_at ?? null)}>
+                  Open
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  );
+}
+
 function InventoryKpiTable({
   rows,
   emptyMessage,
@@ -1623,7 +2667,7 @@ function InventoryKpiTable({
   }
 
   return (
-    <TableContainer sx={{ maxHeight: 420, borderRadius: 2, border: `1px solid ${alpha('#d9e2ec', 0.85)}` }}>
+    <TableContainer sx={{ maxHeight: 420, borderRadius: 2, border: `1px solid ${SURFACE_BORDER}` }}>
       <Table size="small" stickyHeader>
         <TableHead>
           <TableRow>
@@ -1667,3 +2711,4 @@ function InventoryKpiTable({
     </TableContainer>
   );
 }
+

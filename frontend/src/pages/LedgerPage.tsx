@@ -16,7 +16,9 @@ import {
   TableRow,
   TextField,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
@@ -50,6 +52,8 @@ function qty(v?: string | null) {
 }
 
 export function LedgerPage() {
+  const theme = useTheme();
+  const isCompact = useMediaQuery(theme.breakpoints.down('md'));
   const { user, can } = useAuth();
   const canBranchView = can('BRANCH_VIEW');
   const branchesQuery = useBranchesQuery(canBranchView);
@@ -256,7 +260,7 @@ export function LedgerPage() {
       {canBranchView && branchesQuery.isError && <Alert severity="error">Failed to load branches.</Alert>}
 
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
-        <Box sx={{ flex: 1, minWidth: 260 }}>
+        <Box sx={{ flex: 1, minWidth: { md: 260 } }}>
           {canBranchView ? (
             <BranchSelect
               branches={branchesQuery.data ?? []}
@@ -285,7 +289,7 @@ export function LedgerPage() {
             setMovementType(e.target.value);
             setPage(1);
           }}
-          sx={{ width: 220 }}
+          sx={{ width: { xs: '100%', md: 220 } }}
         >
           {MOVEMENT_TYPES.map((t) => (
             <MenuItem key={t || 'ALL'} value={t}>
@@ -302,7 +306,7 @@ export function LedgerPage() {
             setSearch(e.target.value);
             setPage(1);
           }}
-          sx={{ flex: 2, minWidth: 260 }}
+          sx={{ flex: 2, minWidth: { md: 260 } }}
         />
       </Stack>
 
@@ -371,6 +375,45 @@ export function LedgerPage() {
         <Alert severity="error">Failed to load ledger.</Alert>
       ) : filteredRows.length === 0 ? (
         <Alert severity="warning">No ledger entries found.</Alert>
+      ) : isCompact ? (
+        <Stack spacing={1.1}>
+          {filteredRows.map((r) => {
+            const v = r.variant;
+            const p = v?.product;
+            const performer = r.performed_by ?? (r as any).performedBy;
+            const ref = r.ref_type ? `${r.ref_type}${r.ref_id ? ` #${r.ref_id}` : ''}` : '-';
+            return (
+              <Paper
+                key={r.id}
+                variant="outlined"
+                onClick={() => setSelected(r)}
+                sx={{ p: 1.2, borderRadius: 2, cursor: 'pointer' }}
+              >
+                <Stack spacing={0.65}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+                    <Typography sx={{ fontWeight: 700 }}>{v?.sku ?? '-'}</Typography>
+                    <Typography sx={{ fontWeight: 700 }}>{qty(r.qty_delta)}</Typography>
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary">
+                    {p?.name ?? '-'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {r.movement_type ?? '-'} • {r.posted_at ? new Date(r.posted_at).toLocaleString() : '-'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Ref: {ref}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {transferCounterparty(r)}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    By: {performer?.name ?? '-'}
+                  </Typography>
+                </Stack>
+              </Paper>
+            );
+          })}
+        </Stack>
       ) : (
         <Paper variant="outlined">
           <Table size="small" stickyHeader>

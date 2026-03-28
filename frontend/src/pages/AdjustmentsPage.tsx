@@ -21,7 +21,9 @@ import {
   TableRow,
   TextField,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
@@ -63,6 +65,8 @@ function getVariantOnHand(v: any): number | null {
 }
 
 export function AdjustmentsPage() {
+  const theme = useTheme();
+  const isCompactList = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
   const { user, can } = useAuth();
   const canBranchView = can('BRANCH_VIEW');
@@ -520,7 +524,7 @@ export function AdjustmentsPage() {
             setPage(1);
             setSelected(null);
           }}
-          sx={{ width: 220 }}
+          sx={{ width: { xs: '100%', md: 220 } }}
         >
           {STATUSES.map((s) => (
             <MenuItem key={s || 'ALL'} value={s}>
@@ -540,6 +544,50 @@ export function AdjustmentsPage() {
         <Alert severity="error">Failed to load adjustments.</Alert>
       ) : pretty.length === 0 ? (
         <Alert severity="warning">No adjustments found.</Alert>
+      ) : isCompactList ? (
+        <Stack spacing={1}>
+          {pretty.map((r) => (
+            <Paper
+              key={r.id}
+              variant="outlined"
+              role="button"
+              tabIndex={0}
+              onClick={() => openAdjustmentRow(r)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  openAdjustmentRow(r);
+                }
+              }}
+              sx={{
+                p: 1.2,
+                cursor: 'pointer',
+                bgcolor: r.isNew ? 'rgba(211, 47, 47, 0.06)' : undefined,
+              }}
+            >
+              <Stack spacing={0.75}>
+                <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
+                  <Typography variant="subtitle2" sx={{ fontFamily: 'monospace' }}>
+                    ADJ #{r.id}
+                  </Typography>
+                  <Stack direction="row" spacing={0.6} alignItems="center">
+                    <Chip size="small" label={r.status} />
+                    {r.isNew && <Chip size="small" color="error" label="NEW" sx={{ height: 20, fontSize: 10 }} />}
+                  </Stack>
+                </Stack>
+                <Typography variant="caption" color="text.secondary">
+                  {r.createdAt}
+                </Typography>
+                <Typography variant="body2">
+                  Reason: {r.reason} | Ref: {r.ref}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Items: {r.itemsCount} | Qty Delta: {qty(r.totalDelta)} | By: {r.createdBy}
+                </Typography>
+              </Stack>
+            </Paper>
+          ))}
+        </Stack>
       ) : (
         <Paper variant="outlined">
           <Table size="small" stickyHeader>

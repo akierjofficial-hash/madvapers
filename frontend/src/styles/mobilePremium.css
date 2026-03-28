@@ -1,0 +1,248 @@
+:root {
+  --color-bg: #f4f5f8;
+  --color-surface: #ffffff;
+  --color-border: #edf0f5;
+  --color-border-mid: #e2e8f0;
+
+  --color-text-1: #0f172a;
+  --color-text-2: #64748b;
+  --color-text-3: #94a3b8;
+  --color-text-4: #b0bac9;
+
+  --color-primary: #4338ca;
+  --color-primary-bg: #eef2ff;
+  --color-primary-muted: #c7d2fe;
+
+  --color-success: #059669;
+  --color-success-bg: #ecfdf5;
+  --color-success-bd: #a7f3d0;
+
+  --color-warning: #d97706;
+  --color-warning-bg: #fffbeb;
+  --color-warning-bd: #fde68a;
+
+  --color-danger: #b91c1c;
+  --color-danger-bg: #fef2f2;
+  --color-danger-bd: #fecaca;
+
+  --font-main: 'Plus Jakarta Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+
+  --cat-pod: #4338ca;
+  --cat-pod-bg: #eef2ff;
+  --cat-dis: #0284c7;
+  --cat-dis-bg: #e0f2fe;
+  --cat-dev: #059669;
+  --cat-dev-bg: #ecfdf5;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (max-width: 900px) {
+  body {
+    background: var(--color-bg) !important;
+    color: var(--color-text-1);
+    font-family: var(--font-main);
+  }
+
+  .mobile-shell-root {
+    background: var(--color-bg) !important;
+  }
+
+  .mobile-shell-root .MuiTypography-root,
+  .mobile-shell-root .MuiButton-root,
+  .mobile-shell-root .MuiInputBase-input,
+  .mobile-shell-root .MuiChip-label {
+    font-family: var(--font-main);
+  }
+
+  .mobile-shell-topbar.MuiAppBar-root {
+    background: rgba(255, 255, 255, 0.94) !important;
+    color: var(--color-text-1) !important;
+    border-bottom: 1px solid var(--color-border) !important;
+    backdrop-filter: blur(6px);
+  }
+
+  .mobile-shell-drawer.MuiPaper-root {
+    background: var(--color-surface) !important;
+    border-right: 1px solid var(--color-border) !important;
+  }
+
+  .mobile-shell-main {
+    background: var(--color-bg);
+  }
+
+  .mobile-shell-main .MuiPaper-root {
+    border-color: var(--color-border);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  }
+
+  .mobile-shell-main .MuiOutlinedInput-root {
+    border-radius: var(--radius-lg);
+    background: #fff;
+  }
+
+  .mobile-shell-main .MuiButton-containedPrimary,
+  .cashier-mobile-surface .MuiButton-containedPrimary {
+    background: var(--color-primary);
+    color: #fff;
+    box-shadow: none;
+  }
+
+  .mobile-shell-main .MuiButton-outlined,
+  .cashier-mobile-surface .MuiButton-outlined {
+    border-color: var(--color-border-mid);
+    color: var(--color-text-2);
+    background: #fff;
+  }
+
+  .mobile-shell-main .MuiChip-root {
+    border-radius: 10px;
+  }
+
+  .mobile-shell-bottom-nav {
+    border-color: var(--color-border) !important;
+    background: rgba(255, 255, 255, 0.96) !important;
+  }
+
+  .mobile-shell-bottom-nav .MuiBottomNavigationAction-root {
+    color: var(--color-text-3);
+  }
+
+  .mobile-shell-bottom-nav .Mui-selected {
+    color: var(--color-primary) !important;
+  }
+
+  .cashier-mobile-surface {
+    --card-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+  }
+
+  .cashier-mobile-panel {
+    border: 1px solid var(--color-border) !important;
+    border-radius: var(--radius-xl) !important;
+    box-shadow: var(--card-shadow) !important;
+    background: var(--color-surface) !important;
+  }
+
+  .cashier-mobile-search-row {
+    gap: 10px !important;
+  }
+
+  .cashier-mobile-categories {
+    display: flex;
+    overflow-x: auto;
+    gap: 7px !important;
+    scrollbar-width: none;
+  }
+
+  .cashier-mobile-categories::-webkit-scrollbar {
+    display: none;
+  }
+
+  .cashier-mobile-card {
+    border-radius: var(--radius-xl) !important;
+    border: 1.5px solid var(--color-border) !important;
+    transition: border-color 0.18s ease, transform 0.18s ease, background-color 0.18s ease;
+  }
+
+  .cashier-mobile-card.selected {
+    border-color: var(--color-primary) !important;
+    background: #fafbff !important;
+  }
+
+  .cashier-mobile-card.pod .cashier-mobile-card-accent {
+    background: var(--cat-pod);
+  }
+
+  .cashier-mobile-card.disposable .cashier-mobile-card-accent {
+    background: var(--cat-dis);
+  }
+
+  .cashier-mobile-card.device .cashier-mobile-card-accent {
+    background: var(--cat-dev);
+  }
+
+  .cashier-mobile-card.pod .cashier-mobile-card-icon {
+    background: var(--cat-pod-bg);
+    color: var(--cat-pod);
+  }
+
+  .cashier-mobile-card.disposable .cashier-mobile-card-icon {
+    background: var(--cat-dis-bg);
+    color: var(--cat-dis);
+  }
+
+  .cashier-mobile-card.device .cashier-mobile-card-icon {
+    background: var(--cat-dev-bg);
+    color: var(--cat-dev);
+  }
+
+  .cashier-mobile-card-icon-text {
+    font-weight: 800;
+    font-size: 11px;
+    letter-spacing: 0.4px;
+  }
+
+  .cashier-mobile-sku {
+    font-family: var(--font-mono);
+    letter-spacing: 0.4px;
+    font-size: 10px;
+    color: var(--color-text-4);
+  }
+
+  .cashier-mobile-status-badge {
+    border: 1px solid;
+    border-radius: 7px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    line-height: 1;
+  }
+
+  .cashier-mobile-status-badge.available {
+    color: #065f46;
+    background: var(--color-success-bg);
+    border-color: var(--color-success-bd);
+  }
+
+  .cashier-mobile-status-badge.low_stock {
+    color: #92400e;
+    background: var(--color-warning-bg);
+    border-color: var(--color-warning-bd);
+  }
+
+  .cashier-mobile-status-badge.unavailable {
+    color: var(--color-danger);
+    background: var(--color-danger-bg);
+    border-color: var(--color-danger-bd);
+  }
+
+  .cashier-mobile-status-badge.in_cart {
+    color: var(--color-primary);
+    background: var(--color-primary-bg);
+    border-color: var(--color-primary-muted);
+  }
+
+  .cashier-mobile-cartbar {
+    border: 1px solid var(--color-border) !important;
+    border-radius: var(--radius-xl) !important;
+    box-shadow: var(--card-shadow) !important;
+    background: #fff !important;
+  }
+
+  .mobile-admin-menu-sheet.MuiPaper-root {
+    border: 1px solid var(--color-border);
+    border-bottom: none;
+    border-radius: 18px 18px 0 0;
+    background: #fff;
+    box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.1);
+  }
+}

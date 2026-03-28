@@ -21,7 +21,9 @@ import {
   TableRow,
   TextField,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useEffect, useState } from 'react';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import type { UpdateUserInput } from '../api/accounts';
@@ -69,6 +71,8 @@ function parseError(error: unknown, fallback: string) {
 }
 
 export function AccountsPage() {
+  const theme = useTheme();
+  const isCompact = useMediaQuery(theme.breakpoints.down('md'));
   const { user: me, can } = useAuth();
 
   const canView = can('USER_VIEW');
@@ -402,9 +406,19 @@ export function AccountsPage() {
 
   return (
     <Stack spacing={2}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between">
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        alignItems={{ xs: 'stretch', sm: 'center' }}
+        justifyContent="space-between"
+        spacing={1}
+      >
         <Typography variant="h5">Account Management</Typography>
-        <Button variant="contained" onClick={handleOpenCreate} disabled={!canCreate || actionsBusy}>
+        <Button
+          variant="contained"
+          onClick={handleOpenCreate}
+          disabled={!canCreate || actionsBusy}
+          sx={{ alignSelf: { xs: 'stretch', sm: 'auto' } }}
+        >
           New Account
         </Button>
       </Stack>
@@ -425,7 +439,7 @@ export function AccountsPage() {
             setSearch(e.target.value);
             setPage(1);
           }}
-          sx={{ minWidth: 280, flex: 1 }}
+          sx={{ minWidth: { md: 280 }, flex: 1 }}
         />
 
         <TextField
@@ -437,7 +451,7 @@ export function AccountsPage() {
             setRoleFilter(e.target.value === '' ? '' : Number(e.target.value));
             setPage(1);
           }}
-          sx={{ width: 220 }}
+          sx={{ width: { xs: '100%', md: 220 } }}
           disabled={!canRoleView || rolesQuery.isLoading}
         >
           <MenuItem value="">All roles</MenuItem>
@@ -458,7 +472,7 @@ export function AccountsPage() {
               setBranchFilter(e.target.value === '' ? '' : Number(e.target.value));
               setPage(1);
             }}
-            sx={{ width: 220 }}
+            sx={{ width: { xs: '100%', md: 220 } }}
             disabled={branchesQuery.isLoading}
           >
             <MenuItem value="">All branches</MenuItem>
@@ -490,6 +504,78 @@ export function AccountsPage() {
         <Alert severity="error">Failed to load users.</Alert>
       ) : rows.length === 0 ? (
         <Alert severity="warning">No users found.</Alert>
+      ) : isCompact ? (
+        <Stack spacing={1.1}>
+          {rows.map((row) => {
+            const isActive = row.is_active ?? true;
+            return (
+              <Paper key={row.id} variant="outlined" sx={{ p: 1.2, opacity: isActive ? 1 : 0.72, borderRadius: 2 }}>
+                <Stack spacing={0.7}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+                    <Typography sx={{ fontWeight: 700, minWidth: 0 }}>{row.name || '-'}</Typography>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        px: 1,
+                        py: 0.2,
+                        borderRadius: 999,
+                        border: '1px solid',
+                        borderColor: isActive ? 'success.light' : 'warning.light',
+                        color: isActive ? 'success.dark' : 'warning.dark',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {isActive ? 'Active' : 'Inactive'}
+                    </Typography>
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
+                    {row.email || '-'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Role: {row.role?.name ?? row.role?.code ?? '-'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Branch: {row.branch?.name ?? '-'} • ID {row.id}
+                  </Typography>
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ pt: 0.3 }}>
+                    {canUpdate && (
+                      <Button size="small" variant="outlined" onClick={() => openEditDialog(row)} disabled={actionsBusy}>
+                        Edit
+                      </Button>
+                    )}
+                    {canUpdate && (
+                      <Button size="small" variant="outlined" onClick={() => openPasswordDialog(row)} disabled={actionsBusy}>
+                        Password
+                      </Button>
+                    )}
+                    {canDisable &&
+                      (isActive ? (
+                        <Button
+                          size="small"
+                          color="warning"
+                          variant="outlined"
+                          onClick={() => requestDisable(row)}
+                          disabled={actionsBusy || row.id === me?.id}
+                        >
+                          Disable
+                        </Button>
+                      ) : (
+                        <Button
+                          size="small"
+                          color="success"
+                          variant="outlined"
+                          onClick={() => requestEnable(row)}
+                          disabled={actionsBusy}
+                        >
+                          Enable
+                        </Button>
+                      ))}
+                  </Stack>
+                </Stack>
+              </Paper>
+            );
+          })}
+        </Stack>
       ) : (
         <Paper variant="outlined">
           <Table size="small" stickyHeader>

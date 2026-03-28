@@ -85,7 +85,7 @@ class AdjustmentWorkflowTest extends TestCase
             ->where('product_variant_id', $variantId)
             ->sum('qty_on_hand');
 
-        $this->actingAsUser('manager@madvapers.local');
+        $manager = $this->actingAsUser('manager@madvapers.local');
 
         $created = $this->postJson('/api/adjustments', [
             'branch_id' => $branch->id,
@@ -135,6 +135,38 @@ class AdjustmentWorkflowTest extends TestCase
                 ->where('ref_id', $adjustmentId)
                 ->exists()
         );
+
+        $this->assertDatabaseHas('audit_events', [
+            'event_type' => 'ADJUSTMENT_DRAFT_CREATED',
+            'entity_type' => 'adjustment',
+            'entity_id' => $adjustmentId,
+            'branch_id' => $branch->id,
+            'user_id' => $manager->id,
+        ]);
+
+        $this->assertDatabaseHas('audit_events', [
+            'event_type' => 'ADJUSTMENT_SUBMITTED',
+            'entity_type' => 'adjustment',
+            'entity_id' => $adjustmentId,
+            'branch_id' => $branch->id,
+            'user_id' => $manager->id,
+        ]);
+
+        $this->assertDatabaseHas('audit_events', [
+            'event_type' => 'ADJUSTMENT_APPROVED',
+            'entity_type' => 'adjustment',
+            'entity_id' => $adjustmentId,
+            'branch_id' => $branch->id,
+            'user_id' => $manager->id,
+        ]);
+
+        $this->assertDatabaseHas('audit_events', [
+            'event_type' => 'ADJUSTMENT_POSTED',
+            'entity_type' => 'adjustment',
+            'entity_id' => $adjustmentId,
+            'branch_id' => $branch->id,
+            'user_id' => $manager->id,
+        ]);
     }
 
     public function test_clerk_can_submit_but_cannot_approve_adjustment(): void

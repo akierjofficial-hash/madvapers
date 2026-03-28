@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Api\Concerns\EnforcesBranchAccess;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Support\AuditTrail;
 use App\Services\InventoryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -100,6 +101,32 @@ class PurchaseOrderController extends Controller
                 PurchaseOrderItem::create($itemAttrs);
             }
 
+            $totalQtyOrdered = 0.0;
+            $totalAmount = 0.0;
+            foreach ($data['items'] as $it) {
+                $qtyOrdered = (float) ($it['qty_ordered'] ?? 0);
+                $unitCost = (float) ($it['unit_cost'] ?? 0);
+                $totalQtyOrdered += $qtyOrdered;
+                $totalAmount += $qtyOrdered * $unitCost;
+            }
+
+            AuditTrail::record([
+                'event_type' => 'PO_DRAFT_CREATED',
+                'entity_type' => 'purchase_order',
+                'entity_id' => (int) $po->id,
+                'branch_id' => (int) $po->branch_id,
+                'user_id' => $request->user()?->id,
+                'summary' => 'Purchase order draft created',
+                'meta' => [
+                    'reference_no' => (string) ($po->reference_no ?? ''),
+                    'status' => (string) ($po->status ?? ''),
+                    'supplier_id' => (int) $po->supplier_id,
+                    'item_count' => count($data['items']),
+                    'total_qty_ordered' => round($totalQtyOrdered, 4),
+                    'total_amount' => round($totalAmount, 2),
+                ],
+            ]);
+
             return $po->load(['items.variant.product', 'supplier', 'branch']);
         });
     }
@@ -119,6 +146,20 @@ class PurchaseOrderController extends Controller
             }
 
             $locked->update($update);
+
+            AuditTrail::record([
+                'event_type' => 'PO_SUBMITTED',
+                'entity_type' => 'purchase_order',
+                'entity_id' => (int) $locked->id,
+                'branch_id' => (int) $locked->branch_id,
+                'user_id' => $request->user()?->id,
+                'summary' => 'Purchase order submitted',
+                'meta' => [
+                    'reference_no' => (string) ($locked->reference_no ?? ''),
+                    'status' => 'SUBMITTED',
+                    'supplier_id' => (int) $locked->supplier_id,
+                ],
+            ]);
 
             return response()->json([
                 'status' => 'ok',
@@ -146,6 +187,20 @@ class PurchaseOrderController extends Controller
 
             $locked->update($update);
 
+            AuditTrail::record([
+                'event_type' => 'PO_APPROVED',
+                'entity_type' => 'purchase_order',
+                'entity_id' => (int) $locked->id,
+                'branch_id' => (int) $locked->branch_id,
+                'user_id' => $request->user()?->id,
+                'summary' => 'Purchase order approved',
+                'meta' => [
+                    'reference_no' => (string) ($locked->reference_no ?? ''),
+                    'status' => 'APPROVED',
+                    'supplier_id' => (int) $locked->supplier_id,
+                ],
+            ]);
+
             return response()->json([
                 'status' => 'ok',
                 'purchase_order' => $locked->fresh()->load(['supplier', 'branch', 'items.variant.product']),
@@ -164,6 +219,20 @@ class PurchaseOrderController extends Controller
 
             $locked->status = 'CANCELLED';
             $locked->save();
+
+            AuditTrail::record([
+                'event_type' => 'PO_CANCELLED',
+                'entity_type' => 'purchase_order',
+                'entity_id' => (int) $locked->id,
+                'branch_id' => (int) $locked->branch_id,
+                'user_id' => $request->user()?->id,
+                'summary' => 'Purchase order cancelled',
+                'meta' => [
+                    'reference_no' => (string) ($locked->reference_no ?? ''),
+                    'status' => 'CANCELLED',
+                    'supplier_id' => (int) $locked->supplier_id,
+                ],
+            ]);
 
             return $locked->fresh()->load(['items.variant.product', 'branch', 'supplier']);
         });
@@ -279,6 +348,27 @@ class PurchaseOrderController extends Controller
                 $locked->received_at = now();
             }
             $locked->save();
+
+            $totalQtyReceived = 0.0;
+            foreach ($lines as $line) {
+                $totalQtyReceived += (float) ($line['qty_received'] ?? 0);
+            }
+
+            AuditTrail::record([
+                'event_type' => 'PO_RECEIVED',
+                'entity_type' => 'purchase_order',
+                'entity_id' => (int) $locked->id,
+                'branch_id' => (int) $locked->branch_id,
+                'user_id' => $request->user()?->id,
+                'summary' => $allReceived ? 'Purchase order fully received' : 'Purchase order partially received',
+                'meta' => [
+                    'reference_no' => (string) ($locked->reference_no ?? ''),
+                    'status' => (string) $locked->status,
+                    'supplier_id' => (int) $locked->supplier_id,
+                    'line_count' => count($lines),
+                    'qty_received_now' => round($totalQtyReceived, 4),
+                ],
+            ]);
 
             return response()->json([
                 'status' => 'ok',

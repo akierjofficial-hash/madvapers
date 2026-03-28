@@ -90,7 +90,7 @@ class PurchaseOrderWorkflowTest extends TestCase
             ->where('product_variant_id', $variantId)
             ->sum('qty_on_hand');
 
-        $this->actingAsUser('manager@madvapers.local');
+        $manager = $this->actingAsUser('manager@madvapers.local');
 
         $created = $this->postJson('/api/purchase-orders', [
             'supplier_id' => $supplier->id,
@@ -138,6 +138,38 @@ class PurchaseOrderWorkflowTest extends TestCase
                 ->where('ref_id', $poId)
                 ->exists()
         );
+
+        $this->assertDatabaseHas('audit_events', [
+            'event_type' => 'PO_DRAFT_CREATED',
+            'entity_type' => 'purchase_order',
+            'entity_id' => $poId,
+            'branch_id' => $branch->id,
+            'user_id' => $manager->id,
+        ]);
+
+        $this->assertDatabaseHas('audit_events', [
+            'event_type' => 'PO_SUBMITTED',
+            'entity_type' => 'purchase_order',
+            'entity_id' => $poId,
+            'branch_id' => $branch->id,
+            'user_id' => $manager->id,
+        ]);
+
+        $this->assertDatabaseHas('audit_events', [
+            'event_type' => 'PO_APPROVED',
+            'entity_type' => 'purchase_order',
+            'entity_id' => $poId,
+            'branch_id' => $branch->id,
+            'user_id' => $manager->id,
+        ]);
+
+        $this->assertDatabaseHas('audit_events', [
+            'event_type' => 'PO_RECEIVED',
+            'entity_type' => 'purchase_order',
+            'entity_id' => $poId,
+            'branch_id' => $branch->id,
+            'user_id' => $manager->id,
+        ]);
     }
 
     public function test_clerk_cannot_approve_purchase_order(): void
