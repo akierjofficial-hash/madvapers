@@ -16,6 +16,12 @@ return Application::configure(basePath: dirname(__DIR__))
         // Enable Sanctum first-party SPA cookie authentication on API routes.
         $middleware->statefulApi();
 
+        // Login endpoint is credential-based and rate-limited; excluding CSRF here
+        // avoids cross-subdomain SPA login failures on shared hosting domains.
+        $middleware->validateCsrfTokens(except: [
+            'api/auth/login',
+        ]);
+
         $middleware->alias([
             'perm' => \App\Http\Middleware\RequirePermission::class,
         ]);
