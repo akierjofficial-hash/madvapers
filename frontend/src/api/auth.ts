@@ -17,9 +17,8 @@ export type MeResponse = {
 };
 
 export async function login(payload: LoginInput): Promise<LoginResponse> {
-  await ensureCsrfCookie();
+  await ensureCsrfCookie({ force: true });
   const { data } = await api.post<LoginResponse>('/auth/login', payload);
-  await ensureCsrfCookie();
   return data;
 }
 

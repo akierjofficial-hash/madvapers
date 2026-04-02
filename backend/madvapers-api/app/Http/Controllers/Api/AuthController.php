@@ -99,10 +99,6 @@ class AuthController extends Controller
 
     public function csrfToken(Request $request)
     {
-        if ($request->hasSession()) {
-            $request->session()->regenerateToken();
-        }
-
         return response()->json([
             'csrf_token' => csrf_token(),
         ]);

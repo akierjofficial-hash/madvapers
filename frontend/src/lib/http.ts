@@ -43,7 +43,13 @@ function deriveApiOrigin(baseUrl: string): string {
 
 export const API_ORIGIN = deriveApiOrigin(API_BASE_URL);
 
-export async function ensureCsrfCookie(): Promise<void> {
+export async function ensureCsrfCookie(options?: { force?: boolean }): Promise<void> {
+  const force = options?.force === true;
+  const existing = String(api.defaults.headers.common['X-CSRF-TOKEN'] ?? '').trim();
+  if (!force && existing) {
+    return;
+  }
+
   await axios.get(`${API_ORIGIN}/sanctum/csrf-cookie`, {
     withCredentials: true,
     headers: { Accept: 'application/json' },
@@ -90,7 +96,7 @@ api.interceptors.response.use(
     // Recover once from missing/expired CSRF cookie.
     if (status === 419 && config && isMutationMethod(config.method) && !config._csrfRetried) {
       config._csrfRetried = true;
-      await ensureCsrfCookie();
+      await ensureCsrfCookie({ force: true });
       return api.request(config);
     }
 
