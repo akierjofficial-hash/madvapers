@@ -33,7 +33,8 @@ Route::get('/health/live', [HealthController::class, 'live']);
 Route::get('/health/ready', [HealthController::class, 'ready']);
 
 // Public auth
-Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
+Route::post('/auth/login', [AuthController::class, 'login'])->middleware(['web', 'throttle:login']);
+Route::get('/auth/csrf-token', [AuthController::class, 'csrfToken'])->middleware(['web', 'throttle:public-api']);
 
 Route::middleware(['throttle:public-api'])->group(function () {
     Route::get('/public/products', [PublicCatalogController::class, 'index']);

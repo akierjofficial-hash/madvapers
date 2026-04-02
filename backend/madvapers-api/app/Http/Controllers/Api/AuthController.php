@@ -97,6 +97,17 @@ class AuthController extends Controller
         return response()->json($this->authPayload($user));
     }
 
+    public function csrfToken(Request $request)
+    {
+        if ($request->hasSession()) {
+            $request->session()->regenerateToken();
+        }
+
+        return response()->json([
+            'csrf_token' => csrf_token(),
+        ]);
+    }
+
     public function me(Request $request)
     {
         if (!$request->user()?->is_active) {
