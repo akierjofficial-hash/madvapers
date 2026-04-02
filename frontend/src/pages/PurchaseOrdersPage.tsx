@@ -9,6 +9,7 @@ import {
   DialogTitle,
   Divider,
   Drawer,
+  Menu,
   MenuItem,
   Pagination,
   Paper,
@@ -46,6 +47,7 @@ import {
   useSubmitPurchaseOrderMutation,
   useApprovePurchaseOrderMutation,
   useReceivePurchaseOrderMutation,
+  useDashboardApprovalQueueQuery,
 } from '../api/queries';
 
 const STATUSES = ['', 'DRAFT', 'SUBMITTED', 'APPROVED', 'PARTIALLY_RECEIVED', 'RECEIVED', 'CANCELLED'] as const;
@@ -170,6 +172,7 @@ export function PurchaseOrdersPage() {
   const [seenSubmittedPoId, setSeenSubmittedPoId] = useState<number>(() =>
     authStorage.getSeenPending(user?.id).purchaseOrders
   );
+  const [pendingPoBranchAnchorEl, setPendingPoBranchAnchorEl] = useState<HTMLElement | null>(null);
 
   // Drawer
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -182,6 +185,7 @@ export function PurchaseOrdersPage() {
   const submitMut = useSubmitPurchaseOrderMutation();
   const approveMut = useApprovePurchaseOrderMutation();
   const receiveMut = useReceivePurchaseOrderMutation();
+  const approvalQueueQuery = useDashboardApprovalQueueQuery({}, canPOView);
 
   // Create dialog state
   const [openCreate, setOpenCreate] = useState(false);
@@ -286,6 +290,87 @@ export function PurchaseOrdersPage() {
       };
     });
   }, [rows, seenSubmittedPoId]);
+  const pendingPoBranches = useMemo(() => {
+    const queueRows = approvalQueueQuery.data?.approval_queue?.purchase_orders ?? [];
+    const branchLabelById = new Map<number, string>();
+    for (const branch of branchesQuery.data ?? []) {
+      const id = Number(branch.id);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      branchLabelById.set(id, `${branch.code} - ${branch.name}`);
+    }
+
+    const grouped = new Map<
+      number,
+      {
+        branchId: number;
+        branchLabel: string;
+        requestCount: number;
+        latestRequestedAtTs: number;
+      }
+    >();
+
+    for (const row of queueRows) {
+      const statusText = String((row as any)?.status ?? '').toUpperCase();
+      if (statusText && statusText !== 'SUBMITTED') continue;
+
+      const queueBranchId = Number((row as any)?.branch_id ?? 0);
+      if (!Number.isFinite(queueBranchId) || queueBranchId <= 0) continue;
+
+      const queueBranchName = String((row as any)?.branch_name ?? '').trim();
+      const queueBranchLabel = queueBranchName || branchLabelById.get(queueBranchId) || `Branch #${queueBranchId}`;
+      const submittedAtRaw = Date.parse(String((row as any)?.created_at ?? ''));
+      const submittedAtTs = Number.isFinite(submittedAtRaw) ? submittedAtRaw : 0;
+
+      const existing = grouped.get(queueBranchId);
+      if (existing) {
+        existing.requestCount += 1;
+        existing.latestRequestedAtTs = Math.max(existing.latestRequestedAtTs, submittedAtTs);
+      } else {
+        grouped.set(queueBranchId, {
+          branchId: queueBranchId,
+          branchLabel: queueBranchLabel,
+          requestCount: 1,
+          latestRequestedAtTs: submittedAtTs,
+        });
+      }
+    }
+
+    return Array.from(grouped.values()).sort(
+      (a, b) =>
+        b.latestRequestedAtTs - a.latestRequestedAtTs ||
+        b.requestCount - a.requestCount ||
+        a.branchLabel.localeCompare(b.branchLabel)
+    );
+  }, [approvalQueueQuery.data?.approval_queue?.purchase_orders, branchesQuery.data]);
+  const hasPendingPoBranchAlerts = pendingPoBranches.length > 0;
+  const pendingPoBranchCountMap = useMemo(
+    () =>
+      pendingPoBranches.reduce<Record<number, number>>((acc, item) => {
+        acc[item.branchId] = item.requestCount;
+        return acc;
+      }, {}),
+    [pendingPoBranches]
+  );
+  const pendingPoDotTitle = useMemo(() => {
+    if (!hasPendingPoBranchAlerts) return 'No submitted purchase orders';
+    if (pendingPoBranches.length === 1) {
+      return `Submitted purchase order from ${pendingPoBranches[0].branchLabel}`;
+    }
+    return `Submitted purchase orders from ${pendingPoBranches.length} branches`;
+  }, [hasPendingPoBranchAlerts, pendingPoBranches]);
+
+  const jumpToPendingPoBranch = (nextBranchId: number) => {
+    setBranchId(nextBranchId);
+    authStorage.setLastBranchId(nextBranchId);
+    setStatus('SUBMITTED');
+    setPage(1);
+    setPendingPoBranchAnchorEl(null);
+  };
+
+  useEffect(() => {
+    if (hasPendingPoBranchAlerts) return;
+    setPendingPoBranchAnchorEl(null);
+  }, [hasPendingPoBranchAlerts]);
 
   const openPurchaseOrderRow = (row: PrettyRow) => {
     if (row.status === 'SUBMITTED') {
@@ -581,6 +666,11 @@ export function PurchaseOrdersPage() {
                 authStorage.setLastBranchId(id);
                 setPage(1);
               }}
+              showAlertDot={hasPendingPoBranchAlerts}
+              alertDotTitle={pendingPoDotTitle}
+              onAlertDotClick={(event) => setPendingPoBranchAnchorEl(event.currentTarget)}
+              showBranchAlertDots
+              alertCountsByBranchId={pendingPoBranchCountMap}
             />
           ) : (
             <TextField size="small" label="Branch" value={branchLabel} disabled fullWidth />
@@ -605,6 +695,30 @@ export function PurchaseOrdersPage() {
           ))}
         </TextField>
       </Stack>
+
+      <Menu
+        anchorEl={pendingPoBranchAnchorEl}
+        open={Boolean(pendingPoBranchAnchorEl) && hasPendingPoBranchAlerts}
+        onClose={() => setPendingPoBranchAnchorEl(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        PaperProps={{ sx: { minWidth: 260 } }}
+      >
+        {pendingPoBranches.map((item) => (
+          <MenuItem
+            key={item.branchId}
+            selected={branchId === item.branchId}
+            onClick={() => jumpToPendingPoBranch(item.branchId)}
+          >
+            <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ width: '100%' }}>
+              <Typography variant="body2" sx={{ fontWeight: branchId === item.branchId ? 700 : 500 }}>
+                {item.branchLabel}
+              </Typography>
+              <Chip size="small" color="error" label={item.requestCount === 1 ? '1 req' : `${item.requestCount} req`} />
+            </Stack>
+          </MenuItem>
+        ))}
+      </Menu>
 
       {branchId === '' ? (
         <Alert severity={canBranchView ? 'info' : 'error'}>

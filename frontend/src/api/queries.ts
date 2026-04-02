@@ -164,7 +164,7 @@ function parsePollMs(value: string | undefined, fallbackMs: number): number {
 const REALTIME_POLLING_ENABLED = String(import.meta.env.VITE_REALTIME_POLLING ?? 'true').toLowerCase() !== 'false';
 
 const POLL_MS = {
-  approvalQueue: parsePollMs(import.meta.env.VITE_REALTIME_APPROVAL_QUEUE_MS, 1000),
+  approvalQueue: parsePollMs(import.meta.env.VITE_REALTIME_APPROVAL_QUEUE_MS, 3000),
   inventory: parsePollMs(import.meta.env.VITE_REALTIME_INVENTORY_MS, 5000),
   ledger: parsePollMs(import.meta.env.VITE_REALTIME_LEDGER_MS, 5000),
   adjustments: parsePollMs(import.meta.env.VITE_REALTIME_ADJUSTMENTS_MS, 5000),
@@ -243,7 +243,7 @@ export function useDashboardApprovalQueueQuery(params: DashboardApprovalQueueQue
     placeholderData: keepPreviousData,
     // Keep approval notifications polling even if global realtime toggles are disabled.
     refetchInterval: enabled ? POLL_MS.approvalQueue : false,
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
   });

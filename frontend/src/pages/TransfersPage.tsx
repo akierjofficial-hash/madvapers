@@ -10,6 +10,7 @@ import {
   Divider,
   Drawer,
   IconButton,
+  Menu,
   MenuItem,
   Pagination,
   Paper,
@@ -49,6 +50,7 @@ import {
   useTransferQuery,
   useTransfersQuery,
   useVariantsQuery,
+  useDashboardApprovalQueueQuery,
 } from '../api/queries';
 import type { Transfer } from '../api/transfers';
 
@@ -142,6 +144,7 @@ export function TransfersPage() {
   const [seenRequestedTransferId, setSeenRequestedTransferId] = useState<number>(() =>
     authStorage.getSeenPending(user?.id).transfers
   );
+  const [pendingTransferBranchAnchorEl, setPendingTransferBranchAnchorEl] = useState<HTMLElement | null>(null);
 
   // Drawer state
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -203,6 +206,7 @@ export function TransfersPage() {
     openCreate && canTransferCreate && variantSearchDebounced.length >= 2
   );
   const variantOptions: any[] = variantLookupQuery.data?.data ?? [];
+  const approvalQueueQuery = useDashboardApprovalQueueQuery({}, canTransferView);
 
   const pickVariant = (v: any) => {
     const id = Number(v?.id);
@@ -372,6 +376,28 @@ export function TransfersPage() {
 
   const rows = transfersQuery.data?.data ?? [];
   const totalPages = transfersQuery.data?.last_page ?? 1;
+  const branchLabelById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const branch of branchesQuery.data ?? []) {
+      const id = Number(branch.id);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      const code = String(branch.code ?? '').trim();
+      const name = String(branch.name ?? '').trim();
+      if (!name) continue;
+      map.set(id, code ? `${code} - ${name}` : name);
+    }
+    return map;
+  }, [branchesQuery.data]);
+
+  const resolveBranchLabel = (branchId: number | null | undefined, explicitName?: unknown): string => {
+    const name = String(explicitName ?? '').trim();
+    if (name) return name;
+    const n = Number(branchId);
+    if (Number.isFinite(n) && n > 0) {
+      return branchLabelById.get(n) ?? 'Unknown branch';
+    }
+    return 'Unknown branch';
+  };
 
   const pretty = useMemo(() => {
     return rows.map((t: Transfer) => {
@@ -381,19 +407,97 @@ export function TransfersPage() {
       const statusText = String((t as any).status ?? '-');
       const transferId = Number(t.id ?? 0);
       const isNew = statusText === 'REQUESTED' && transferId > seenRequestedTransferId;
+      const fromBranchIdValue = Number((t as any).from_branch_id ?? 0);
+      const toBranchIdValue = Number((t as any).to_branch_id ?? 0);
 
       return {
         id: transferId,
         status: statusText,
         isNew,
-        from: (t as any).fromBranch?.name ?? (t as any).from_branch_id,
-        to: (t as any).toBranch?.name ?? (t as any).to_branch_id,
+        from: resolveBranchLabel(fromBranchIdValue, (t as any).fromBranch?.name),
+        to: resolveBranchLabel(toBranchIdValue, (t as any).toBranch?.name),
         itemsCount,
         totalQty,
         notes: (t as any).notes ?? '',
       };
     });
-  }, [rows, seenRequestedTransferId]);
+  }, [rows, seenRequestedTransferId, branchLabelById]);
+  const pendingTransferBranches = useMemo(() => {
+    const queueRows = approvalQueueQuery.data?.approval_queue?.transfers ?? [];
+    const grouped = new Map<
+      number,
+      {
+        branchId: number;
+        branchLabel: string;
+        requestCount: number;
+        latestRequestedAtTs: number;
+      }
+    >();
+
+    for (const row of queueRows) {
+      const statusText = String((row as any)?.status ?? '').toUpperCase();
+      if (statusText && statusText !== 'REQUESTED') continue;
+
+      const sourceBranchId = Number((row as any)?.from_branch_id ?? 0);
+      if (!Number.isFinite(sourceBranchId) || sourceBranchId <= 0) continue;
+
+      const sourceBranchName = String((row as any)?.from_branch_name ?? '').trim();
+      const sourceBranchLabel =
+        sourceBranchName || branchLabelById.get(sourceBranchId) || `Branch #${sourceBranchId}`;
+      const requestedAtRaw = Date.parse(String((row as any)?.created_at ?? ''));
+      const requestedAtTs = Number.isFinite(requestedAtRaw) ? requestedAtRaw : 0;
+
+      const existing = grouped.get(sourceBranchId);
+      if (existing) {
+        existing.requestCount += 1;
+        existing.latestRequestedAtTs = Math.max(existing.latestRequestedAtTs, requestedAtTs);
+      } else {
+        grouped.set(sourceBranchId, {
+          branchId: sourceBranchId,
+          branchLabel: sourceBranchLabel,
+          requestCount: 1,
+          latestRequestedAtTs: requestedAtTs,
+        });
+      }
+    }
+
+    return Array.from(grouped.values()).sort(
+      (a, b) =>
+        b.latestRequestedAtTs - a.latestRequestedAtTs ||
+        b.requestCount - a.requestCount ||
+        a.branchLabel.localeCompare(b.branchLabel)
+    );
+  }, [approvalQueueQuery.data?.approval_queue?.transfers, branchLabelById]);
+  const hasPendingTransferBranchAlerts = pendingTransferBranches.length > 0;
+  const pendingTransferBranchCountMap = useMemo(
+    () =>
+      pendingTransferBranches.reduce<Record<number, number>>((acc, item) => {
+        acc[item.branchId] = item.requestCount;
+        return acc;
+      }, {}),
+    [pendingTransferBranches]
+  );
+  const pendingTransferDotTitle = useMemo(() => {
+    if (!hasPendingTransferBranchAlerts) return 'No pending transfer requests';
+    if (pendingTransferBranches.length === 1) {
+      return `Pending transfer request from ${pendingTransferBranches[0].branchLabel}`;
+    }
+    return `Pending transfer requests from ${pendingTransferBranches.length} branches`;
+  }, [hasPendingTransferBranchAlerts, pendingTransferBranches]);
+
+  const jumpToPendingTransferBranch = (nextBranchId: number) => {
+    setFromBranchId(nextBranchId);
+    authStorage.setLastBranchId(nextBranchId);
+    setToBranchId('');
+    setStatus('REQUESTED');
+    setPage(1);
+    setPendingTransferBranchAnchorEl(null);
+  };
+
+  useEffect(() => {
+    if (hasPendingTransferBranchAlerts) return;
+    setPendingTransferBranchAnchorEl(null);
+  }, [hasPendingTransferBranchAlerts]);
 
   const openTransferRow = (row: { id: number; status: string }) => {
     if (row.status === 'REQUESTED') {
@@ -576,14 +680,16 @@ export function TransfersPage() {
     }
   };
   const fromBranchLabel =
-    user?.branch?.name ??
-    (typeof fromBranchId === 'number' ? `Branch #${fromBranchId}` : 'No branch assigned');
+    typeof fromBranchId === 'number'
+      ? resolveBranchLabel(fromBranchId, user?.branch?.name)
+      : user?.branch?.name ?? 'No branch assigned';
   const createFromBranchLabel =
-    user?.branch?.name ??
-    (typeof createFrom === 'number' ? `Branch #${createFrom}` : fromBranchLabel);
-  const toBranchLabel = typeof toBranchId === 'number' ? `Branch #${toBranchId}` : 'Any';
+    typeof createFrom === 'number'
+      ? resolveBranchLabel(createFrom, user?.branch?.name)
+      : fromBranchLabel;
+  const toBranchLabel = typeof toBranchId === 'number' ? resolveBranchLabel(toBranchId) : 'Any';
   const createToBranchLabel =
-    typeof createTo === 'number' ? `Branch #${createTo}` : 'Select a destination branch';
+    typeof createTo === 'number' ? resolveBranchLabel(createTo) : 'Select a destination branch';
 
   if (!canTransferView) {
     return <Alert severity="error">Not authorized to view Transfers (TRANSFER_VIEW).</Alert>;
@@ -622,6 +728,11 @@ export function TransfersPage() {
                 authStorage.setLastBranchId(id);
                 setPage(1);
               }}
+              showAlertDot={hasPendingTransferBranchAlerts}
+              alertDotTitle={pendingTransferDotTitle}
+              onAlertDotClick={(event) => setPendingTransferBranchAnchorEl(event.currentTarget)}
+              showBranchAlertDots
+              alertCountsByBranchId={pendingTransferBranchCountMap}
             />
           ) : (
             <TextField size="small" label="From branch" value={fromBranchLabel} disabled fullWidth />
@@ -664,6 +775,30 @@ export function TransfersPage() {
           ))}
         </TextField>
       </Stack>
+
+      <Menu
+        anchorEl={pendingTransferBranchAnchorEl}
+        open={Boolean(pendingTransferBranchAnchorEl) && hasPendingTransferBranchAlerts}
+        onClose={() => setPendingTransferBranchAnchorEl(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        PaperProps={{ sx: { minWidth: 260 } }}
+      >
+        {pendingTransferBranches.map((item) => (
+          <MenuItem
+            key={item.branchId}
+            selected={fromBranchId === item.branchId}
+            onClick={() => jumpToPendingTransferBranch(item.branchId)}
+          >
+            <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ width: '100%' }}>
+              <Typography variant="body2" sx={{ fontWeight: fromBranchId === item.branchId ? 700 : 500 }}>
+                {item.branchLabel}
+              </Typography>
+              <Chip size="small" color="error" label={item.requestCount === 1 ? '1 req' : `${item.requestCount} req`} />
+            </Stack>
+          </MenuItem>
+        ))}
+      </Menu>
 
       {fromBranchId === '' ? (
         <Alert severity={canBranchView ? 'info' : 'error'}>
@@ -1039,8 +1174,12 @@ export function TransfersPage() {
             <Stack spacing={1.25}>
               <Typography variant="body2"><b>ID:</b> {selected.id}</Typography>
               <Typography variant="body2"><b>Status:</b> {selected.status}</Typography>
-              <Typography variant="body2"><b>From:</b> {(selected as any).fromBranch?.name ?? selected.from_branch_id}</Typography>
-              <Typography variant="body2"><b>To:</b> {(selected as any).toBranch?.name ?? selected.to_branch_id}</Typography>
+              <Typography variant="body2">
+                <b>From:</b> {resolveBranchLabel(selected.from_branch_id, (selected as any).fromBranch?.name)}
+              </Typography>
+              <Typography variant="body2">
+                <b>To:</b> {resolveBranchLabel(selected.to_branch_id, (selected as any).toBranch?.name)}
+              </Typography>
               <Typography variant="body2"><b>Notes:</b> {selected.notes?.trim() ? selected.notes : '-'}</Typography>
 
               <Stack direction="row" spacing={1} sx={{ pt: 0.5, flexWrap: 'wrap' }}>

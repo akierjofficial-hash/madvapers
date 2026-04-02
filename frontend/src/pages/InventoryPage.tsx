@@ -28,7 +28,7 @@ import {
   useBranchesQuery,
   useInventoryQuery,
   useQuickPostAdjustmentMutation,
-  useCreateAdjustmentMutation, // ✅ NEW
+  useCreateAdjustmentMutation, // NEW
 } from '../api/queries';
 import { authStorage } from '../auth/authStorage';
 import { BranchSelect } from '../components/BranchSelect';
@@ -37,19 +37,27 @@ import { useAuth } from '../auth/AuthProvider';
 type SelectedItem = {
   inventory_id: number;
   branch_id: number;
+  product_id: number;
+  product_key: string;
   product_variant_id: number;
   sku: string;
   barcode: string;
   product: string;
   variant: string;
   brand: string;
+  default_cost: number;
+  default_price: number;
+  stock_value: number;
   qty: number;
 };
 
-type RecentScan = {
-  key: string;
-  at: number;
-  item: SelectedItem;
+type ProductGroup = {
+  product_id: number;
+  product_key: string;
+  product: string;
+  brand: string;
+  total_qty: number;
+  variants: SelectedItem[];
 };
 
 function playBeep(kind: 'ok' | 'error') {
@@ -78,6 +86,17 @@ function playBeep(kind: 'ok' | 'error') {
   } catch {
     // ignore audio failures
   }
+}
+
+function formatQty(value: number): string {
+  return Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
+}
+
+function formatMoney(value: number): string {
+  return `₱${Number(value ?? 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 export function InventoryPage() {
@@ -114,9 +133,6 @@ export function InventoryPage() {
   const [stockQty, setStockQty] = useState<string>('1');
   const [stockUnitCost, setStockUnitCost] = useState<string>('');
   const [stockNotes, setStockNotes] = useState<string>('');
-
-  // recent scans
-  const [recent, setRecent] = useState<RecentScan[]>([]);
 
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>(() => ({
     open: false,
@@ -165,19 +181,63 @@ export function InventoryPage() {
       const variant = r.variant;
       const product = variant?.product;
       const brand = product?.brand?.name ?? '-';
+      const productId = Number(product?.id ?? 0);
+      const productName = product?.name ?? '-';
+      const productKey =
+        productId > 0
+          ? `product:${productId}`
+          : `name:${String(productName).trim().toLowerCase()}|${String(brand).trim().toLowerCase()}`;
       return {
         inventory_id: r.id,
         branch_id: (branchId === '' ? 0 : branchId) as number,
+        product_id: productId,
+        product_key: productKey,
         product_variant_id: variant?.id ?? 0,
         sku: variant?.sku ?? '-',
         barcode: variant?.barcode ?? '-',
-        product: product?.name ?? '-',
+        product: productName,
         variant: variant?.variant_name ?? '-',
         brand,
+        default_cost: Number(variant?.default_cost ?? 0),
+        default_price: Number(variant?.default_price ?? 0),
+        stock_value: Number(r.qty_on_hand ?? 0) * Number(variant?.default_cost ?? 0),
         qty: Number(r.qty_on_hand ?? 0),
       } as SelectedItem;
     });
   }, [rows, branchId]);
+
+  const groupedProducts = useMemo<ProductGroup[]>(() => {
+    const groups = new Map<string, ProductGroup>();
+
+    for (const row of prettyRows) {
+      const existing = groups.get(row.product_key);
+      if (!existing) {
+        groups.set(row.product_key, {
+          product_id: row.product_id,
+          product_key: row.product_key,
+          product: row.product,
+          brand: row.brand,
+          total_qty: Number(row.qty ?? 0),
+          variants: [row],
+        });
+        continue;
+      }
+
+      existing.total_qty += Number(row.qty ?? 0);
+      existing.variants.push(row);
+    }
+
+    return Array.from(groups.values())
+      .map((group) => ({
+        ...group,
+        variants: [...group.variants].sort((a, b) => {
+          const byVariant = String(a.variant ?? '').localeCompare(String(b.variant ?? ''));
+          if (byVariant !== 0) return byVariant;
+          return String(a.sku ?? '').localeCompare(String(b.sku ?? ''));
+        }),
+      }))
+      .sort((a, b) => String(a.product ?? '').localeCompare(String(b.product ?? '')));
+  }, [prettyRows]);
 
   // Keep search focused for scanner workflow
   useEffect(() => {
@@ -186,20 +246,9 @@ export function InventoryPage() {
     return () => clearTimeout(t);
   }, [branchId]);
 
-  const addToRecent = (item: SelectedItem) => {
-    const key = `${item.branch_id}:${item.product_variant_id}`;
-    const rec: RecentScan = { key, at: Date.now(), item };
-
-    setRecent((prev) => {
-      const next = [rec, ...prev.filter((x) => x.key !== key)];
-      return next.slice(0, 10);
-    });
-  };
-
-  const openDetails = (item: SelectedItem, source: 'scan' | 'click' | 'recent' = 'click') => {
+  const openDetails = (item: SelectedItem, source: 'scan' | 'click' = 'click') => {
     setSelected(item);
-    addToRecent(item);
-    if (source === 'scan' || source === 'recent') playBeep('ok');
+    if (source === 'scan') playBeep('ok');
   };
 
   const closeDetails = () => setSelected(null);
@@ -280,7 +329,7 @@ export function InventoryPage() {
     }
   };
 
-  // ✅ NEW: Save Draft (does NOT affect inventory yet)
+  // NEW: Save Draft (does not affect inventory yet)
   const handleSaveDraftStock = async () => {
     if (!canSaveDraftStock) {
       setSnack({ open: true, message: 'Not authorized to create adjustments.', severity: 'error' });
@@ -407,78 +456,111 @@ export function InventoryPage() {
           sx={{ flex: 2, minWidth: { md: 260 } }}
         />
       </Stack>
-
-      {recent.length > 0 && (
-        <Paper variant="outlined" sx={{ p: 1.25 }}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 0.5 }}>
-            <Typography variant="caption" sx={{ opacity: 0.8 }}>
-              Recent scans
-            </Typography>
-            <Button size="small" onClick={() => setRecent([])} sx={{ minWidth: 0, px: 1, textTransform: 'none' }}>
-              Clear
-            </Button>
-          </Stack>
-
-          <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
-            {recent.map((r) => (
-              <Chip
-                key={r.key}
-                label={`${r.item.sku} • ${r.item.qty}`}
-                onClick={() => openDetails(r.item, 'recent')}
-                size="small"
-                sx={{ mb: 0.5 }}
-              />
-            ))}
-          </Stack>
-        </Paper>
-      )}
-
       {branchId === '' ? (
         <Alert severity={canBranchView ? 'info' : 'error'}>
           {canBranchView ? 'Select a branch to view inventory.' : 'No branch assigned to your account.'}
         </Alert>
       ) : invQuery.isLoading ? (
-        <Alert severity="info">Loading inventory…</Alert>
+        <Alert severity="info">Loading inventory...</Alert>
       ) : invQuery.isError ? (
         <Alert severity="error">Failed to load inventory.</Alert>
       ) : rows.length === 0 ? (
         <Alert severity="warning">No inventory found for this branch.</Alert>
       ) : isCompact ? (
         <Stack spacing={1.1}>
-          {prettyRows.map((r) => {
-            const selectedItem = selected?.inventory_id === r.inventory_id;
+          {groupedProducts.map((group) => {
+            const selectedItem = !!selected && group.variants.some((variant) => variant.inventory_id === selected.inventory_id);
             return (
               <Paper
-                key={r.inventory_id}
+                key={group.product_key}
                 variant="outlined"
-                onClick={() => openDetails(r, 'click')}
                 sx={{
-                  p: 1.2,
-                  borderRadius: 2,
-                  cursor: 'pointer',
-                  borderColor: selectedItem ? 'primary.main' : undefined,
-                  bgcolor: selectedItem ? 'action.hover' : undefined,
+                  p: 1.25,
+                  borderRadius: 2.5,
+                  borderColor: selectedItem ? 'primary.main' : 'divider',
+                  bgcolor: selectedItem ? 'action.hover' : 'background.paper',
+                  transition: 'all 0.18s ease',
                 }}
               >
-                <Stack spacing={0.65}>
+                <Stack spacing={1}>
                   <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
-                    <Typography sx={{ fontWeight: 700, minWidth: 0 }}>{r.product}</Typography>
-                    <Typography sx={{ fontWeight: 700, color: r.qty <= 0 ? 'error.main' : 'text.primary' }}>
-                      {Number(r.qty).toLocaleString(undefined, { maximumFractionDigits: 3 })}
-                    </Typography>
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography sx={{ fontWeight: 700 }} noWrap>
+                        {group.product}
+                      </Typography>
+                      <Stack direction="row" spacing={0.6} useFlexGap flexWrap="wrap" sx={{ mt: 0.4 }}>
+                        <Chip
+                          size="small"
+                          variant="outlined"
+                          label={group.brand}
+                          sx={{ height: 22 }}
+                        />
+                        <Chip
+                          size="small"
+                          color="primary"
+                          variant="outlined"
+                          label={`${group.variants.length} variants`}
+                          sx={{ height: 22 }}
+                        />
+                      </Stack>
+                    </Box>
+                    <Chip
+                      size="small"
+                      color={group.total_qty <= 0 ? 'error' : 'default'}
+                      label={`Total ${formatQty(group.total_qty)}`}
+                      sx={{ fontWeight: 700 }}
+                    />
                   </Stack>
-                  <Typography variant="body2" color="text.secondary">
-                    {r.variant}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
-                    SKU: {r.sku}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
-                    Barcode: {r.barcode}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Brand: {r.brand}
-                  </Typography>
+
+                  <Stack spacing={0.75}>
+                    {group.variants.map((variant) => {
+                      const variantSelected = selected?.inventory_id === variant.inventory_id;
+                      return (
+                        <Paper
+                          key={variant.inventory_id}
+                          variant="outlined"
+                          onClick={() => openDetails(variant, 'click')}
+                          sx={{
+                            p: 0.9,
+                            cursor: 'pointer',
+                            borderStyle: 'dashed',
+                            borderColor: variantSelected ? 'primary.main' : 'divider',
+                            bgcolor: variantSelected ? 'action.hover' : 'background.default',
+                            transition: 'all 0.18s ease',
+                            '&:hover': {
+                              borderColor: 'primary.light',
+                            },
+                          }}
+                        >
+                          <Stack spacing={0.4}>
+                            <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+                              <Typography variant="body2" sx={{ fontWeight: 700, minWidth: 0 }} noWrap>
+                                {variant.variant}
+                              </Typography>
+                              <Typography
+                                variant="body2"
+                                sx={{ fontWeight: 700, color: variant.qty <= 0 ? 'error.main' : 'text.primary' }}
+                              >
+                                {formatQty(variant.qty)}
+                              </Typography>
+                            </Stack>
+                            <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
+                              SKU: {variant.sku}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
+                              Barcode: {variant.barcode}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
+                              Supply Cost: {formatMoney(variant.default_cost)} | Sale Price: {formatMoney(variant.default_price)}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
+                              Stock value: {formatMoney(variant.stock_value)}
+                            </Typography>
+                          </Stack>
+                        </Paper>
+                      );
+                    })}
+                  </Stack>
                 </Stack>
               </Paper>
             );
@@ -489,31 +571,67 @@ export function InventoryPage() {
           <Table size="small" stickyHeader>
             <TableHead>
               <TableRow>
-                <TableCell>SKU</TableCell>
                 <TableCell>Product</TableCell>
-                <TableCell>Variant</TableCell>
                 <TableCell>Brand</TableCell>
-                <TableCell align="right">Qty on hand</TableCell>
+                <TableCell>Variant</TableCell>
+                <TableCell>SKU</TableCell>
+                <TableCell align="right">Supply Cost</TableCell>
+                <TableCell align="right">Sale Price</TableCell>
+                <TableCell align="right">Selected Qty</TableCell>
+                <TableCell align="right">Stock Value</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {prettyRows.map((r) => (
-                <TableRow
-                  key={r.inventory_id}
-                  hover
-                  onClick={() => openDetails(r, 'click')}
-                  sx={{
-                    cursor: 'pointer',
-                    bgcolor: selected?.inventory_id === r.inventory_id ? 'action.hover' : undefined,
-                  }}
-                >
-                  <TableCell>{r.sku}</TableCell>
-                  <TableCell>{r.product}</TableCell>
-                  <TableCell>{r.variant}</TableCell>
-                  <TableCell>{r.brand}</TableCell>
-                  <TableCell align="right">{Number(r.qty).toLocaleString(undefined, { maximumFractionDigits: 3 })}</TableCell>
-                </TableRow>
-              ))}
+              {groupedProducts.flatMap((group) =>
+                group.variants.map((variant, idx) => {
+                  const showGroupMeta = idx === 0;
+                  const variantSelected = selected?.inventory_id === variant.inventory_id;
+                  return (
+                    <TableRow
+                      key={`${group.product_key}:${variant.inventory_id}`}
+                      hover
+                      onClick={() => openDetails(variant, 'click')}
+                      sx={{
+                        cursor: 'pointer',
+                        bgcolor: variantSelected ? 'action.hover' : undefined,
+                      }}
+                    >
+                      <TableCell>
+                        {showGroupMeta ? (
+                          <Stack spacing={0.35}>
+                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                              {group.product}
+                            </Typography>
+                            {group.variants.length > 1 && (
+                              <Typography variant="caption" color="primary.main">
+                                {group.variants.length} variants
+                              </Typography>
+                            )}
+                          </Stack>
+                        ) : (
+                          <Typography variant="caption" color="text.secondary">
+                            {group.product}
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell>{group.brand}</TableCell>
+                      <TableCell>{variant.variant}</TableCell>
+                      <TableCell>{variant.sku}</TableCell>
+                      <TableCell align="right">{formatMoney(variant.default_cost)}</TableCell>
+                      <TableCell align="right">{formatMoney(variant.default_price)}</TableCell>
+                      <TableCell
+                        align="right"
+                        sx={{ color: variant.qty <= 0 ? 'error.main' : 'text.primary', fontWeight: 700 }}
+                      >
+                        {formatQty(variant.qty)}
+                      </TableCell>
+                      <TableCell align="right" sx={{ color: 'text.primary', fontWeight: showGroupMeta ? 700 : 400 }}>
+                        {formatMoney(variant.stock_value)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
             </TableBody>
           </Table>
         </Paper>
@@ -546,6 +664,15 @@ export function InventoryPage() {
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>
                 Brand: {selected.brand}
+              </Typography>
+              <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                Supply Cost: {formatMoney(selected.default_cost)}
+              </Typography>
+              <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                Sale Price: {formatMoney(selected.default_price)}
+              </Typography>
+              <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                Stock value: {formatMoney(selected.stock_value)}
               </Typography>
 
               <Box sx={{ py: 1 }}>
@@ -596,7 +723,7 @@ export function InventoryPage() {
             </Alert>
 
             <TextField
-              label="Qty Δ (+/-)"
+              label="Qty delta (+/-)"
               type="number"
               value={stockQty}
               onChange={(e) => setStockQty(e.target.value)}
@@ -610,7 +737,7 @@ export function InventoryPage() {
             />
             <TextField label="Notes (optional)" value={stockNotes} onChange={(e) => setStockNotes(e.target.value)} />
 
-            {busy && <Alert severity="info">Working…</Alert>}
+            {busy && <Alert severity="info">Working...</Alert>}
           </Stack>
         </DialogContent>
         <DialogActions>

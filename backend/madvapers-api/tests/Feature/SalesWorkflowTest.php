@@ -571,6 +571,86 @@ class SalesWorkflowTest extends TestCase
         ]);
     }
 
+    public function test_requester_cannot_approve_own_void_request(): void
+    {
+        $branch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();
+        $balance = InventoryBalance::query()
+            ->where('branch_id', $branch->id)
+            ->where('qty_on_hand', '>', 0)
+            ->orderBy('id')
+            ->firstOrFail();
+
+        $manager = $this->actingAsUser('manager@madvapers.local');
+        $sale = $this->postJson('/api/sales', [
+            'branch_id' => $branch->id,
+            'items' => [
+                [
+                    'product_variant_id' => $balance->product_variant_id,
+                    'qty' => 1,
+                    'unit_price' => 100,
+                ],
+            ],
+        ])->assertCreated()->json();
+
+        $saleId = (int) ($sale['id'] ?? 0);
+        $this->assertGreaterThan(0, $saleId);
+        $this->postJson("/api/sales/{$saleId}/post")->assertOk();
+        $this->postJson("/api/sales/{$saleId}/void-request", [
+            'notes' => 'Requesting manual void',
+        ])->assertOk();
+
+        $this->postJson("/api/sales/{$saleId}/void-approve")
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['void_request_status']);
+
+        $this->assertDatabaseHas('sales', [
+            'id' => $saleId,
+            'status' => 'POSTED',
+            'void_request_status' => 'PENDING',
+            'void_requested_by_user_id' => $manager->id,
+        ]);
+    }
+
+    public function test_requester_cannot_reject_own_void_request(): void
+    {
+        $branch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();
+        $balance = InventoryBalance::query()
+            ->where('branch_id', $branch->id)
+            ->where('qty_on_hand', '>', 0)
+            ->orderBy('id')
+            ->firstOrFail();
+
+        $manager = $this->actingAsUser('manager@madvapers.local');
+        $sale = $this->postJson('/api/sales', [
+            'branch_id' => $branch->id,
+            'items' => [
+                [
+                    'product_variant_id' => $balance->product_variant_id,
+                    'qty' => 1,
+                    'unit_price' => 100,
+                ],
+            ],
+        ])->assertCreated()->json();
+
+        $saleId = (int) ($sale['id'] ?? 0);
+        $this->assertGreaterThan(0, $saleId);
+        $this->postJson("/api/sales/{$saleId}/post")->assertOk();
+        $this->postJson("/api/sales/{$saleId}/void-request", [
+            'notes' => 'Requesting manual void',
+        ])->assertOk();
+
+        $this->postJson("/api/sales/{$saleId}/void-reject")
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['void_request_status']);
+
+        $this->assertDatabaseHas('sales', [
+            'id' => $saleId,
+            'status' => 'POSTED',
+            'void_request_status' => 'PENDING',
+            'void_requested_by_user_id' => $manager->id,
+        ]);
+    }
+
     public function test_cashier_cannot_approve_or_reject_void_request(): void
     {
         $branch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();

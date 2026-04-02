@@ -12,6 +12,7 @@ import {
   DialogTitle,
   Divider,
   Drawer,
+  Menu,
   MenuItem,
   Pagination,
   Paper,
@@ -42,6 +43,7 @@ import {
   useAddSalePaymentMutation,
   useBranchesQuery,
   useCreateSaleMutation,
+  useDashboardApprovalQueueQuery,
   usePostSaleMutation,
   useRejectSaleVoidRequestMutation,
   useRequestSaleVoidMutation,
@@ -262,6 +264,7 @@ export function SalesPage() {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const branchesQuery = useBranchesQuery(canBranchView);
+  const approvalQueueQuery = useDashboardApprovalQueueQuery({}, !isCashierRole && canSalesVoid && canSalesView);
 
   const [branchId, setBranchId] = useState<number | ''>(() => {
     const fromUrl = toInt(searchParams.get('branch_id'));
@@ -285,6 +288,7 @@ export function SalesPage() {
   const [openCreate, setOpenCreate] = useState(false);
   const [createBranchId, setCreateBranchId] = useState<number | ''>(branchId);
   const [notes, setNotes] = useState('');
+  const [sfCharge, setSfCharge] = useState('0');
   const [variantSearch, setVariantSearch] = useState('');
   const [variantSearchDebounced, setVariantSearchDebounced] = useState('');
   const [pickedVariant, setPickedVariant] = useState<any | null>(null);
@@ -306,6 +310,7 @@ export function SalesPage() {
   const [snack, setSnack] = useState<{ severity: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmActionState>(() => emptyConfirmActionState());
   const [confirmActionBusy, setConfirmActionBusy] = useState(false);
+  const [pendingVoidBranchAnchorEl, setPendingVoidBranchAnchorEl] = useState<HTMLElement | null>(null);
   const scanInputRef = useRef<HTMLInputElement | null>(null);
   const catalogSectionRef = useRef<HTMLDivElement | null>(null);
   const cartSectionRef = useRef<HTMLDivElement | null>(null);
@@ -457,14 +462,19 @@ export function SalesPage() {
   const showCartPanel = !isPhone || cashierMobileView === 'CART';
   const showQueuePanel = !isPhone || cashierMobileView === 'QUEUE';
   const showActivityPanel = !isPhone || cashierMobileView === 'ACTIVITY';
-
-  const draftGrandTotal = useMemo(
+  const normalizedSfCharge = Math.max(0, toNum(sfCharge));
+  const draftItemsTotal = useMemo(
     () =>
       draftItems.reduce(
         (sum, row) => sum + Math.max(0, row.qty * row.unit_price - row.line_discount + row.line_tax),
         0
       ),
     [draftItems]
+  );
+
+  const draftGrandTotal = useMemo(
+    () => draftItemsTotal + normalizedSfCharge,
+    [draftItemsTotal, normalizedSfCharge]
   );
   const draftQtyTotal = useMemo(
     () => draftItems.reduce((sum, row) => sum + row.qty, 0),
@@ -484,6 +494,7 @@ export function SalesPage() {
   );
 
   const selectedGrandTotal = toNum(selected?.grand_total);
+  const selectedSfCharge = toNum(selected?.sf_charge);
   const selectedPaidTotal = toNum(selected?.paid_total);
   const dueAmount = Math.max(0, selectedGrandTotal - selectedPaidTotal);
   const selectedVoidRequestStatus = String(selected?.void_request_status ?? '').toUpperCase();
@@ -520,12 +531,85 @@ export function SalesPage() {
     () => new Set(draftItems.map((row) => Number(row.product_variant_id))),
     [draftItems]
   );
+  const pendingVoidBranches = useMemo(() => {
+    const rows = approvalQueueQuery.data?.approval_queue?.void_requests ?? [];
+    const branchNameById = new Map<number, string>();
+    for (const branch of branchesQuery.data ?? []) {
+      if (Number.isFinite(branch.id) && branch.id > 0) {
+        branchNameById.set(branch.id, `${branch.code} - ${branch.name}`);
+      }
+    }
+
+    const grouped = new Map<
+      number,
+      {
+        branchId: number;
+        branchLabel: string;
+        requestCount: number;
+        latestRequestedAtTs: number;
+      }
+    >();
+
+    for (const row of rows) {
+      const voidStatus = String((row as any)?.void_request_status ?? '').toUpperCase();
+      if (voidStatus && voidStatus !== 'PENDING') continue;
+
+      const pendingBranchId = Number((row as any)?.branch_id ?? 0);
+      if (!Number.isFinite(pendingBranchId) || pendingBranchId <= 0) continue;
+
+      const branchName = String((row as any)?.branch_name ?? '').trim();
+      const branchLabel = branchName || branchNameById.get(pendingBranchId) || `Branch #${pendingBranchId}`;
+      const requestedAtRaw = Date.parse(String((row as any)?.void_requested_at ?? ''));
+      const requestedAtTs = Number.isFinite(requestedAtRaw) ? requestedAtRaw : 0;
+
+      const existing = grouped.get(pendingBranchId);
+      if (existing) {
+        existing.requestCount += 1;
+        existing.latestRequestedAtTs = Math.max(existing.latestRequestedAtTs, requestedAtTs);
+      } else {
+        grouped.set(pendingBranchId, {
+          branchId: pendingBranchId,
+          branchLabel,
+          requestCount: 1,
+          latestRequestedAtTs: requestedAtTs,
+        });
+      }
+    }
+
+    return Array.from(grouped.values()).sort(
+      (a, b) =>
+        b.latestRequestedAtTs - a.latestRequestedAtTs ||
+        b.requestCount - a.requestCount ||
+        a.branchLabel.localeCompare(b.branchLabel)
+    );
+  }, [approvalQueueQuery.data?.approval_queue?.void_requests, branchesQuery.data]);
+  const hasPendingVoidBranchAlerts = pendingVoidBranches.length > 0;
+  const pendingVoidBranchCountMap = useMemo(
+    () =>
+      pendingVoidBranches.reduce<Record<number, number>>((acc, item) => {
+        acc[item.branchId] = item.requestCount;
+        return acc;
+      }, {}),
+    [pendingVoidBranches]
+  );
+  const pendingVoidBranchDotTitle = useMemo(() => {
+    if (!hasPendingVoidBranchAlerts) return 'No pending void requests';
+    if (pendingVoidBranches.length === 1) {
+      return `Pending void request from ${pendingVoidBranches[0].branchLabel}`;
+    }
+    return `Pending void requests from ${pendingVoidBranches.length} branches`;
+  }, [hasPendingVoidBranchAlerts, pendingVoidBranches]);
 
   useEffect(() => {
     if (!isCashierRole) return;
     if (cashierCategoryOptions.includes(cashierCategory)) return;
     setCashierCategory('ALL');
   }, [cashierCategory, cashierCategoryOptions, isCashierRole]);
+
+  useEffect(() => {
+    if (hasPendingVoidBranchAlerts) return;
+    setPendingVoidBranchAnchorEl(null);
+  }, [hasPendingVoidBranchAlerts]);
 
   const openNewSale = (options?: { focusSearch?: boolean }) => {
     if (!canSalesCreate) {
@@ -536,6 +620,7 @@ export function SalesPage() {
     setOpenCreate(true);
     setCreateBranchId(branchId);
     setNotes('');
+    setSfCharge('0');
     setVariantSearch('');
     setVariantSearchDebounced('');
     setPickedVariant(null);
@@ -892,6 +977,7 @@ export function SalesPage() {
   const submitCreateSale = async () => {
     try {
       const b = typeof createBranchId === 'number' ? createBranchId : null;
+      const sfChargeValue = Number(sfCharge);
       if (!b) {
         setSnack({ severity: 'error', message: 'Please select a branch.' });
         return;
@@ -900,10 +986,15 @@ export function SalesPage() {
         setSnack({ severity: 'error', message: 'Add at least one item.' });
         return;
       }
+      if (!Number.isFinite(sfChargeValue) || sfChargeValue < 0) {
+        setSnack({ severity: 'error', message: 'SF charged must be a valid non-negative amount.' });
+        return;
+      }
 
       const payload = {
         branch_id: b,
         notes: notes.trim() || null,
+        sf_charge: Number(sfChargeValue.toFixed(2)),
         items: draftItems.map((row) => ({
           product_variant_id: row.product_variant_id,
           qty: row.qty,
@@ -1181,6 +1272,13 @@ export function SalesPage() {
     }
     setSelectedId(id);
   };
+  const jumpToPendingVoidBranch = (targetBranchId: number) => {
+    setBranchId(targetBranchId);
+    authStorage.setLastBranchId(targetBranchId);
+    setVoidRequestStatus('PENDING');
+    setPage(1);
+    setPendingVoidBranchAnchorEl(null);
+  };
 
   if (!canSalesView) {
     return <Alert severity="error">Not authorized to view sales.</Alert>;
@@ -1234,6 +1332,11 @@ export function SalesPage() {
                 authStorage.setLastBranchId(id);
                 setPage(1);
               }}
+              showAlertDot={!isCashierRole && canSalesVoid && hasPendingVoidBranchAlerts}
+              alertDotTitle={pendingVoidBranchDotTitle}
+              onAlertDotClick={(event) => setPendingVoidBranchAnchorEl(event.currentTarget)}
+              showBranchAlertDots={!isCashierRole && canSalesVoid}
+              alertCountsByBranchId={pendingVoidBranchCountMap}
             />
           ) : (
             <TextField
@@ -1318,6 +1421,34 @@ export function SalesPage() {
           </>
         ) : null}
       </Stack>
+
+      <Menu
+        anchorEl={pendingVoidBranchAnchorEl}
+        open={Boolean(pendingVoidBranchAnchorEl) && hasPendingVoidBranchAlerts}
+        onClose={() => setPendingVoidBranchAnchorEl(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        PaperProps={{ sx: { minWidth: 240 } }}
+      >
+        {pendingVoidBranches.map((item) => (
+          <MenuItem
+            key={item.branchId}
+            selected={branchId === item.branchId}
+            onClick={() => jumpToPendingVoidBranch(item.branchId)}
+          >
+            <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ width: '100%' }}>
+              <Typography variant="body2" sx={{ fontWeight: branchId === item.branchId ? 700 : 500 }}>
+                {item.branchLabel}
+              </Typography>
+              <Chip
+                size="small"
+                color="error"
+                label={item.requestCount === 1 ? '1 req' : `${item.requestCount} req`}
+              />
+            </Stack>
+          </MenuItem>
+        ))}
+      </Menu>
 
       {branchId === '' ? (
         <EmptyStateNotice
@@ -1656,6 +1787,12 @@ export function SalesPage() {
                       <Typography variant="body2">{money(draftTaxTotal)}</Typography>
                     </Stack>
                     <Stack direction="row" justifyContent="space-between">
+                      <Typography variant="body2" color="text.secondary">
+                        SF Charged
+                      </Typography>
+                      <Typography variant="body2">{money(normalizedSfCharge)}</Typography>
+                    </Stack>
+                    <Stack direction="row" justifyContent="space-between">
                       <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                         Total
                       </Typography>
@@ -1664,6 +1801,16 @@ export function SalesPage() {
                       </Typography>
                     </Stack>
                   </Stack>
+
+                  <TextField
+                    size="small"
+                    type="number"
+                    label="SF charged"
+                    value={sfCharge}
+                    onChange={(event) => setSfCharge(event.target.value)}
+                    inputProps={{ min: 0, step: '0.01' }}
+                    helperText="Shipping fee collected from customer for this sale."
+                  />
 
                   <TextField
                     size="small"
@@ -2240,7 +2387,7 @@ export function SalesPage() {
             <Paper variant="outlined" sx={{ p: 1 }}>
               <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
                 <Typography variant="body2">
-                  Draft items: <b>{draftItems.length}</b> | Grand total: <b>{money(draftGrandTotal)}</b>
+                  Draft items: <b>{draftItems.length}</b> | SF: <b>{money(normalizedSfCharge)}</b> | Grand total: <b>{money(draftGrandTotal)}</b>
                 </Typography>
                 <Button size="small" onClick={() => setDraftItems([])}>
                   Clear
@@ -2293,6 +2440,16 @@ export function SalesPage() {
                 </Table>
               )}
             </Paper>
+
+            <TextField
+              size="small"
+              type="number"
+              label="SF charged"
+              value={sfCharge}
+              onChange={(event) => setSfCharge(event.target.value)}
+              inputProps={{ min: 0, step: '0.01' }}
+              helperText="Shipping fee collected from customer for this sale."
+            />
 
             <TextField
               size="small"
@@ -2449,7 +2606,7 @@ export function SalesPage() {
                   )}
                   <Typography variant="body2">
                     <b>Subtotal:</b> {money(selected.subtotal)} | <b>Discount:</b> {money(selected.discount_total)} |{' '}
-                    <b>Tax:</b> {money(selected.tax_total)}
+                    <b>Tax:</b> {money(selected.tax_total)} | <b>SF:</b> {money(selectedSfCharge)}
                   </Typography>
                   <Typography variant="body2">
                     <b>Grand total:</b> {money(selected.grand_total)} | <b>Paid:</b> {money(selected.paid_total)} |{' '}

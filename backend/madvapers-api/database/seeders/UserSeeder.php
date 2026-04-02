@@ -26,8 +26,12 @@ class UserSeeder extends Seeder
 
     public function run(): void
     {
-        $bagacay = Branch::where('code', 'BAGACAY')->first();
-        $motong = Branch::where('code', 'MOTONG')->first();
+        $branches = Branch::query()
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->get();
+        $primaryBranch = $branches->get(0);
+        $secondaryBranch = $branches->get(1) ?? $primaryBranch;
         $password = $this->seedPassword();
 
         $roles = [
@@ -53,14 +57,11 @@ class UserSeeder extends Seeder
             $user->branches()->syncWithoutDetaching([$branch->id]);
         };
 
-        // Keep admin (main branch)
-        $make('admin@madvapers.local', 'Admin', $roles['ADMIN'], $bagacay);
-
         // Demo accounts
-        $make('owner@madvapers.local',   'Owner',   $roles['OWNER'],   $bagacay);
-        $make('manager@madvapers.local', 'Manager', $roles['MANAGER'], $bagacay);
-        $make('clerk@madvapers.local',   'Clerk',   $roles['CLERK'],   $motong);
-        $make('cashier@madvapers.local', 'Cashier', $roles['CASHIER'], $bagacay);
-        $make('auditor@madvapers.local', 'Auditor', $roles['AUDITOR'], $bagacay);
+        $make('owner@madvapers.local',   'Owner',   $roles['OWNER'],   $primaryBranch);
+        $make('manager@madvapers.local', 'Manager', $roles['MANAGER'], $primaryBranch);
+        $make('clerk@madvapers.local',   'Clerk',   $roles['CLERK'],   $secondaryBranch);
+        $make('cashier@madvapers.local', 'Cashier', $roles['CASHIER'], $primaryBranch);
+        $make('auditor@madvapers.local', 'Auditor', $roles['AUDITOR'], $primaryBranch);
     }
 }

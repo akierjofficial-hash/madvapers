@@ -24,7 +24,10 @@ class DemoCatalogSeeder extends Seeder
             return;
         }
 
-        $admin = User::query()->where('email', 'admin@madvapers.local')->first();
+        $admin = User::query()
+            ->whereIn('email', ['admin@madvapers.com', 'admin@madvapers.local'])
+            ->orderByRaw("CASE WHEN email = 'admin@madvapers.com' THEN 0 ELSE 1 END")
+            ->first();
         /** @var InventoryService $inventoryService */
         $inventoryService = app(InventoryService::class);
 

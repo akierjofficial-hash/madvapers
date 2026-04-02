@@ -39,7 +39,7 @@ import {
 } from '../api/queries';
 
 const STATUSES = ['', 'POSTED', 'VOIDED'] as const;
-const CATEGORIES = ['OPERATIONS', 'UTILITIES', 'RENT', 'SALARY', 'MAINTENANCE', 'MARKETING', 'OTHER'] as const;
+const DEFAULT_CATEGORIES = ['OPERATIONS', 'UTILITIES', 'RENT', 'SALARY', 'MAINTENANCE', 'MARKETING', 'SF_EXPENSE'] as const;
 
 function toInt(v: string | null): number | null {
   if (!v) return null;
@@ -50,6 +50,19 @@ function toInt(v: string | null): number | null {
 function toNum(v: unknown): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+function normalizeCategoryInput(value: string): string {
+  return String(value ?? '')
+    .trim()
+    .replace(/\s+/g, '_')
+    .toUpperCase();
+}
+
+function sanitizeCategoryForSelect(value: unknown): string {
+  const normalized = normalizeCategoryInput(String(value ?? ''));
+  if (!normalized || normalized === 'OTHER') return 'OPERATIONS';
+  return normalized;
 }
 
 function money(v: unknown): string {
@@ -137,16 +150,19 @@ export function ExpensesPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const expenseQuery = useExpenseQuery(selectedId ?? 0, !!selectedId && canExpenseView);
   const selected = expenseQuery.data ?? null;
+  const [categoryOptions, setCategoryOptions] = useState<string[]>(() => [...DEFAULT_CATEGORIES]);
 
   const [openCreate, setOpenCreate] = useState(false);
   const [createBranchId, setCreateBranchId] = useState<number | ''>(branchId);
   const [createCategory, setCreateCategory] = useState<string>('OPERATIONS');
+  const [createCategoryInput, setCreateCategoryInput] = useState<string>('');
   const [createAmount, setCreateAmount] = useState<string>('');
   const [createPaidAt, setCreatePaidAt] = useState<string>(toDateTimeInput(new Date().toISOString()));
   const [createNotes, setCreateNotes] = useState<string>('');
 
   const [isEditing, setIsEditing] = useState(false);
   const [editCategory, setEditCategory] = useState<string>('OPERATIONS');
+  const [editCategoryInput, setEditCategoryInput] = useState<string>('');
   const [editAmount, setEditAmount] = useState<string>('');
   const [editPaidAt, setEditPaidAt] = useState<string>('');
   const [editNotes, setEditNotes] = useState<string>('');
@@ -201,7 +217,7 @@ export function ExpensesPage() {
 
   useEffect(() => {
     if (!selected || !isEditing) return;
-    setEditCategory(String(selected.category ?? 'OPERATIONS'));
+    setEditCategory(sanitizeCategoryForSelect(selected.category));
     setEditAmount(String(toNum(selected.amount)));
     setEditPaidAt(toDateTimeInput(selected.paid_at));
     setEditNotes(String(selected.notes ?? ''));
@@ -225,13 +241,51 @@ export function ExpensesPage() {
   const rows = expensesQuery.data?.data ?? [];
   const totalPages = expensesQuery.data?.last_page ?? 1;
 
+  useEffect(() => {
+    const discovered = new Set<string>();
+    for (const row of rows) {
+      const normalized = normalizeCategoryInput(String((row as any)?.category ?? ''));
+      if (normalized && normalized !== 'OTHER') discovered.add(normalized);
+    }
+    const selectedCategory = normalizeCategoryInput(String(selected?.category ?? ''));
+    if (selectedCategory && selectedCategory !== 'OTHER') discovered.add(selectedCategory);
+
+    if (discovered.size === 0) return;
+
+    setCategoryOptions((prev) => {
+      const merged = new Set(prev);
+      for (const cat of discovered) merged.add(cat);
+      return Array.from(merged);
+    });
+  }, [rows, selected?.category]);
+
   const showSnack = (message: string, severity: 'success' | 'error' | 'info' = 'error') => {
     setSnack({ open: true, message, severity });
+  };
+
+  const addCategoryOption = (rawValue: string): string | null => {
+    const normalized = normalizeCategoryInput(rawValue);
+    if (!normalized) {
+      showSnack('Category name is required.');
+      return null;
+    }
+    if (normalized === 'OTHER') {
+      showSnack('OTHER category is disabled. Please use a specific category name.');
+      return null;
+    }
+    if (normalized.length > 80) {
+      showSnack('Category must be at most 80 characters.');
+      return null;
+    }
+
+    setCategoryOptions((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]));
+    return normalized;
   };
 
   const resetCreateForm = () => {
     setCreateBranchId(branchId);
     setCreateCategory('OPERATIONS');
+    setCreateCategoryInput('');
     setCreateAmount('');
     setCreatePaidAt(toDateTimeInput(new Date().toISOString()));
     setCreateNotes('');
@@ -250,7 +304,7 @@ export function ExpensesPage() {
     try {
       const b = typeof createBranchId === 'number' ? createBranchId : null;
       const amount = Number(createAmount);
-      const normalizedCategory = createCategory.trim().toUpperCase();
+      const normalizedCategory = normalizeCategoryInput(createCategory);
 
       if (!b) {
         showSnack('Please select a branch.');
@@ -258,6 +312,10 @@ export function ExpensesPage() {
       }
       if (!normalizedCategory) {
         showSnack('Category is required.');
+        return;
+      }
+      if (normalizedCategory === 'OTHER') {
+        showSnack('OTHER category is disabled. Please use a specific category name.');
         return;
       }
       if (!Number.isFinite(amount) || amount <= 0) {
@@ -293,7 +351,8 @@ export function ExpensesPage() {
       return;
     }
 
-    setEditCategory(String(selected.category ?? 'OPERATIONS'));
+    setEditCategory(sanitizeCategoryForSelect(selected.category));
+    setEditCategoryInput('');
     setEditAmount(String(toNum(selected.amount)));
     setEditPaidAt(toDateTimeInput(selected.paid_at));
     setEditNotes(String(selected.notes ?? ''));
@@ -304,10 +363,14 @@ export function ExpensesPage() {
     if (!selected) return;
 
     const amount = Number(editAmount);
-    const normalizedCategory = editCategory.trim().toUpperCase();
+    const normalizedCategory = normalizeCategoryInput(editCategory);
 
     if (!normalizedCategory) {
       showSnack('Category is required.');
+      return;
+    }
+    if (normalizedCategory === 'OTHER') {
+      showSnack('OTHER category is disabled. Please use a specific category name.');
       return;
     }
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -599,12 +662,35 @@ export function ExpensesPage() {
               value={createCategory}
               onChange={(event) => setCreateCategory(event.target.value)}
             >
-              {CATEGORIES.map((cat) => (
+              {categoryOptions.map((cat) => (
                 <MenuItem key={cat} value={cat}>
                   {cat}
                 </MenuItem>
               ))}
             </TextField>
+
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+              <TextField
+                size="small"
+                label="New Category Type"
+                placeholder="e.g. DELIVERY, PACKAGING"
+                value={createCategoryInput}
+                onChange={(event) => setCreateCategoryInput(event.target.value)}
+                fullWidth
+              />
+              <Button
+                variant="outlined"
+                onClick={() => {
+                  const normalized = addCategoryOption(createCategoryInput);
+                  if (!normalized) return;
+                  setCreateCategory(normalized);
+                  setCreateCategoryInput('');
+                  showSnack(`Category ${normalized} added.`, 'success');
+                }}
+              >
+                Add
+              </Button>
+            </Stack>
 
             <TextField
               size="small"
@@ -714,12 +800,34 @@ export function ExpensesPage() {
                       value={editCategory}
                       onChange={(event) => setEditCategory(event.target.value)}
                     >
-                      {CATEGORIES.map((cat) => (
+                      {categoryOptions.map((cat) => (
                         <MenuItem key={cat} value={cat}>
                           {cat}
                         </MenuItem>
                       ))}
                     </TextField>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                      <TextField
+                        size="small"
+                        label="New Category Type"
+                        placeholder="e.g. DELIVERY, PACKAGING"
+                        value={editCategoryInput}
+                        onChange={(event) => setEditCategoryInput(event.target.value)}
+                        fullWidth
+                      />
+                      <Button
+                        variant="outlined"
+                        onClick={() => {
+                          const normalized = addCategoryOption(editCategoryInput);
+                          if (!normalized) return;
+                          setEditCategory(normalized);
+                          setEditCategoryInput('');
+                          showSnack(`Category ${normalized} added.`, 'success');
+                        }}
+                      >
+                        Add
+                      </Button>
+                    </Stack>
                     <TextField
                       size="small"
                       label="Amount"

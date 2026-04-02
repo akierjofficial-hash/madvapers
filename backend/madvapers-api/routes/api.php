@@ -120,8 +120,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('/adjustments', [StockAdjustmentController::class, 'store'])->middleware('perm:ADJUSTMENT_CREATE');
     Route::get('/adjustments/{adjustment}', [StockAdjustmentController::class, 'show'])->middleware('perm:ADJUSTMENT_VIEW');
     Route::post('/adjustments/{adjustment}/submit', [StockAdjustmentController::class, 'submit'])->middleware('perm:ADJUSTMENT_SUBMIT');
-    Route::post('/adjustments/{adjustment}/approve', [StockAdjustmentController::class, 'approve'])->middleware('perm:ADJUSTMENT_APPROVE');
-    Route::post('/adjustments/{adjustment}/post', [StockAdjustmentController::class, 'post'])->middleware('perm:ADJUSTMENT_POST');
+    Route::post('/adjustments/{adjustment}/approve', [StockAdjustmentController::class, 'approve'])
+        ->middleware(['perm:ADJUSTMENT_APPROVE', 'throttle:sensitive-actions']);
+    Route::post('/adjustments/{adjustment}/post', [StockAdjustmentController::class, 'post'])
+        ->middleware(['perm:ADJUSTMENT_POST', 'throttle:sensitive-actions']);
 
     // Transfers
     Route::get('/transfers', [TransferController::class, 'index'])->middleware('perm:TRANSFER_VIEW');
@@ -129,10 +131,14 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('/transfers', [TransferController::class, 'store'])->middleware('perm:TRANSFER_CREATE');
     Route::put('/transfers/{transfer}', [TransferController::class, 'update'])->middleware('perm:TRANSFER_CREATE');
     Route::post('/transfers/{transfer}/request', [TransferController::class, 'requestTransfer'])->middleware('perm:TRANSFER_CREATE');
-    Route::post('/transfers/{transfer}/approve', [TransferController::class, 'approve'])->middleware('perm:TRANSFER_APPROVE');
-    Route::post('/transfers/{transfer}/dispatch', [TransferController::class, 'dispatch'])->middleware('perm:TRANSFER_DISPATCH');
-    Route::post('/transfers/{transfer}/receive', [TransferController::class, 'receive'])->middleware('perm:TRANSFER_RECEIVE');
-    Route::post('/transfers/{transfer}/cancel', [TransferController::class, 'cancel'])->middleware('perm:TRANSFER_CREATE');
+    Route::post('/transfers/{transfer}/approve', [TransferController::class, 'approve'])
+        ->middleware(['perm:TRANSFER_APPROVE', 'throttle:sensitive-actions']);
+    Route::post('/transfers/{transfer}/dispatch', [TransferController::class, 'dispatch'])
+        ->middleware(['perm:TRANSFER_DISPATCH', 'throttle:sensitive-actions']);
+    Route::post('/transfers/{transfer}/receive', [TransferController::class, 'receive'])
+        ->middleware(['perm:TRANSFER_RECEIVE', 'throttle:sensitive-actions']);
+    Route::post('/transfers/{transfer}/cancel', [TransferController::class, 'cancel'])
+        ->middleware(['perm:TRANSFER_CREATE', 'throttle:sensitive-actions']);
 
     // Suppliers (CRUD)
     Route::get('/suppliers', [SupplierController::class, 'index'])->middleware('perm:SUPPLIER_VIEW');
@@ -145,25 +151,34 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('/purchase-orders/{po}', [PurchaseOrderController::class, 'show'])->middleware('perm:PO_VIEW');
     Route::post('/purchase-orders', [PurchaseOrderController::class, 'store'])->middleware('perm:PO_CREATE');
     Route::post('/purchase-orders/{po}/submit', [PurchaseOrderController::class, 'submit'])->middleware('perm:PO_CREATE');
-    Route::post('/purchase-orders/{po}/approve', [PurchaseOrderController::class, 'approve'])->middleware('perm:PO_APPROVE');
-    Route::post('/purchase-orders/{po}/receive', [PurchaseOrderController::class, 'receive'])->middleware('perm:PO_RECEIVE');
-    Route::post('/purchase-orders/{po}/cancel', [PurchaseOrderController::class, 'cancel'])->middleware('perm:PO_CREATE');
+    Route::post('/purchase-orders/{po}/approve', [PurchaseOrderController::class, 'approve'])
+        ->middleware(['perm:PO_APPROVE', 'throttle:sensitive-actions']);
+    Route::post('/purchase-orders/{po}/receive', [PurchaseOrderController::class, 'receive'])
+        ->middleware(['perm:PO_RECEIVE', 'throttle:sensitive-actions']);
+    Route::post('/purchase-orders/{po}/cancel', [PurchaseOrderController::class, 'cancel'])
+        ->middleware(['perm:PO_CREATE', 'throttle:sensitive-actions']);
 
     // Sales / Cashier
     Route::get('/sales', [SalesController::class, 'index'])->middleware('perm:SALES_VIEW');
     Route::get('/sales/{sale}', [SalesController::class, 'show'])->middleware('perm:SALES_VIEW');
     Route::post('/sales', [SalesController::class, 'store'])->middleware('perm:SALES_CREATE');
     Route::post('/sales/{sale}/post', [SalesController::class, 'post'])->middleware('perm:SALES_POST');
-    Route::post('/sales/{sale}/void-request', [SalesController::class, 'requestVoid'])->middleware('perm:SALES_VOID_REQUEST');
-    Route::post('/sales/{sale}/void-approve', [SalesController::class, 'approveVoid'])->middleware('perm:SALES_VOID');
-    Route::post('/sales/{sale}/void-reject', [SalesController::class, 'rejectVoid'])->middleware('perm:SALES_VOID');
-    Route::post('/sales/{sale}/void', [SalesController::class, 'void'])->middleware('perm:SALES_VOID');
-    Route::post('/sales/{sale}/payments', [SalesController::class, 'addPayment'])->middleware('perm:SALES_PAYMENT');
+    Route::post('/sales/{sale}/void-request', [SalesController::class, 'requestVoid'])
+        ->middleware(['perm:SALES_VOID_REQUEST', 'throttle:sensitive-actions']);
+    Route::post('/sales/{sale}/void-approve', [SalesController::class, 'approveVoid'])
+        ->middleware(['perm:SALES_VOID', 'throttle:sensitive-actions']);
+    Route::post('/sales/{sale}/void-reject', [SalesController::class, 'rejectVoid'])
+        ->middleware(['perm:SALES_VOID', 'throttle:sensitive-actions']);
+    Route::post('/sales/{sale}/void', [SalesController::class, 'void'])
+        ->middleware(['perm:SALES_VOID', 'throttle:sensitive-actions']);
+    Route::post('/sales/{sale}/payments', [SalesController::class, 'addPayment'])
+        ->middleware(['perm:SALES_PAYMENT', 'throttle:sensitive-actions']);
 
     // Expenses
     Route::get('/expenses', [ExpenseController::class, 'index'])->middleware('perm:EXPENSE_VIEW');
     Route::get('/expenses/{expense}', [ExpenseController::class, 'show'])->middleware('perm:EXPENSE_VIEW');
     Route::post('/expenses', [ExpenseController::class, 'store'])->middleware('perm:EXPENSE_CREATE');
     Route::put('/expenses/{expense}', [ExpenseController::class, 'update'])->middleware('perm:EXPENSE_UPDATE');
-    Route::post('/expenses/{expense}/void', [ExpenseController::class, 'void'])->middleware('perm:EXPENSE_VOID');
+    Route::post('/expenses/{expense}/void', [ExpenseController::class, 'void'])
+        ->middleware(['perm:EXPENSE_VOID', 'throttle:sensitive-actions']);
 });

@@ -6,32 +6,45 @@ use Illuminate\Database\Seeder;
 use App\Models\User;
 use App\Models\Role;
 use App\Models\Branch;
-use Illuminate\Support\Str;
 
 class AdminSeeder extends Seeder
 {
+    private function seedEmail(): string
+    {
+        $fromEnv = trim((string) env('SEED_ADMIN_EMAIL', ''));
+        if ($fromEnv !== '') {
+            return $fromEnv;
+        }
+
+        return 'admin@madvapers.com';
+    }
+
     private function seedPassword(): string
     {
+        $fromAdminEnv = trim((string) env('SEED_ADMIN_PASSWORD', ''));
+        if ($fromAdminEnv !== '') {
+            return $fromAdminEnv;
+        }
+
         $fromEnv = trim((string) env('SEED_DEFAULT_PASSWORD', ''));
         if ($fromEnv !== '') {
             return $fromEnv;
         }
 
-        if (app()->environment('testing')) {
-            return 'password123';
-        }
-
-        return Str::random(32);
+        return 'admin123';
     }
 
     public function run(): void
     {
         $adminRole = Role::where('code', 'ADMIN')->first();
-        $mainBranch = Branch::where('code', 'BAGACAY')->first();
+        $mainBranch = Branch::query()
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->first();
         $password = $this->seedPassword();
 
         $admin = User::updateOrCreate(
-            ['email' => 'admin@madvapers.local'],
+            ['email' => $this->seedEmail()],
             ['name' => 'Admin', 'password' => bcrypt($password)]
         );
 

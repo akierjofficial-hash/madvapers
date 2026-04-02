@@ -43,14 +43,12 @@ import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
-import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { authStorage } from '../auth/authStorage';
 import { useDashboardApprovalQueueQuery, useDashboardSummaryQuery } from '../api/queries';
-import { subscribeApprovalQueueRealtime } from '../realtime/approvalQueueRealtime';
 
 type NavItem = {
   to: string;
@@ -58,18 +56,18 @@ type NavItem = {
   perm: string;
   icon: ReactNode;
   notificationCount?: number;
+  notificationSubtitle?: string;
   allowRoleCodes?: string[];
   requiresAnyPerms?: string[];
 };
 
 const drawerWidth = 248;
 const SECONDARY_NAV_PATHS = new Set(['/suppliers', '/branches', '/accounts', '/audit-logs', '/ledger']);
-const ADMIN_MOBILE_FIXED_PATHS = ['/dashboard', '/approvals', '/sales'] as const;
+const ADMIN_MOBILE_FIXED_PATHS = ['/dashboard', '/approvals', '/analytics'] as const;
 const ADMIN_MOBILE_MENU_VALUE = '__menu__';
 
 export function AppShell() {
   const theme = useTheme();
-  const queryClient = useQueryClient();
   const isDesktop = useMediaQuery(theme.breakpoints.up('lg'));
   const isPhone = useMediaQuery(theme.breakpoints.down('sm'));
   const location = useLocation();
@@ -149,6 +147,32 @@ export function AppShell() {
     readTotal(approvalQueueGlobalQuery.data),
     readTotal(approvalQueueBranchQuery.data)
   );
+  const pendingVoidRequestBranchSubtitle = useMemo(() => {
+    const rows = [
+      ...(approvalQueueGlobalQuery.data?.approval_queue?.void_requests ?? []),
+      ...(approvalQueueBranchQuery.data?.approval_queue?.void_requests ?? []),
+    ];
+
+    const labelSet = new Set<string>();
+    for (const row of rows) {
+      const status = String((row as any)?.void_request_status ?? '').toUpperCase();
+      if (status && status !== 'PENDING') continue;
+      const branchName = String((row as any)?.branch_name ?? '').trim();
+      const branchId = Number((row as any)?.branch_id ?? 0);
+      if (branchName) {
+        labelSet.add(branchName);
+        continue;
+      }
+      if (Number.isFinite(branchId) && branchId > 0) {
+        labelSet.add(`Branch #${branchId}`);
+      }
+    }
+
+    const labels = Array.from(labelSet);
+    if (labels.length === 0) return undefined;
+    if (labels.length <= 2) return `From: ${labels.join(', ')}`;
+    return `From: ${labels.slice(0, 2).join(', ')} +${labels.length - 2} more`;
+  }, [approvalQueueBranchQuery.data, approvalQueueGlobalQuery.data]);
 
   const navItems: NavItem[] = [
     { to: '/dashboard', label: 'Dashboard', perm: 'USER_VIEW', icon: <DashboardOutlinedIcon /> },
@@ -197,6 +221,7 @@ export function AppShell() {
       perm: 'SALES_VIEW',
       icon: <PointOfSaleOutlinedIcon />,
       notificationCount: pendingCounts.voidRequests,
+      notificationSubtitle: pendingCounts.voidRequests > 0 ? pendingVoidRequestBranchSubtitle : undefined,
     },
     { to: '/expenses', label: 'Expenses', perm: 'EXPENSE_VIEW', icon: <RequestQuoteOutlinedIcon /> },
     { to: '/suppliers', label: 'Suppliers', perm: 'SUPPLIER_VIEW', icon: <ApartmentOutlinedIcon /> },
@@ -288,21 +313,6 @@ export function AppShell() {
     selectedBranchId,
   ]);
 
-  useEffect(() => {
-    if (!canDashboardView) return;
-
-    const unsubscribe = subscribeApprovalQueueRealtime(() => {
-      // Sync all approval/snapshot widgets and page-level approval queue queries.
-      void queryClient.invalidateQueries({ queryKey: ['dashboardApprovalQueue'] });
-      void queryClient.invalidateQueries({ queryKey: ['dashboardSummary'] });
-      authStorage.pingApprovalQueue();
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [canDashboardView, queryClient]);
-
   const activeLabel = useMemo(() => {
     const hit = availableNav.find((item) => isRouteActive(item.to));
     return hit?.label ?? (isCashierRole ? 'Sales' : 'Dashboard');
@@ -391,7 +401,7 @@ export function AppShell() {
             sx={{
               mb: 0.25,
               borderRadius: 2,
-              minHeight: 40,
+              minHeight: item.notificationSubtitle ? 48 : 40,
               color: 'text.secondary',
               px: 1.1,
               '& .MuiListItemIcon-root': {
@@ -420,8 +430,32 @@ export function AppShell() {
             </ListItemIcon>
             <ListItemText
               primary={
-                <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={0.8}>
-                  <Box component="span">{item.label}</Box>
+                <Stack
+                  direction="row"
+                  alignItems={item.notificationSubtitle ? 'flex-start' : 'center'}
+                  justifyContent="space-between"
+                  spacing={0.8}
+                >
+                  <Box sx={{ minWidth: 0 }}>
+                    <Box component="span">{item.label}</Box>
+                    {item.notificationSubtitle ? (
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          display: 'block',
+                          mt: 0.1,
+                          color: 'text.secondary',
+                          lineHeight: 1.1,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          maxWidth: 140,
+                        }}
+                      >
+                        {item.notificationSubtitle}
+                      </Typography>
+                    ) : null}
+                  </Box>
                   {count > 0 ? (
                     <Box
                       component="span"
@@ -560,6 +594,7 @@ export function AppShell() {
       </Box>
     </Box>
   );
+  const showDesktopDrawer = isDesktop && !isCashierRole;
 
   return (
     <Box className="mobile-shell-root" sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
@@ -567,8 +602,8 @@ export function AppShell() {
         className="mobile-shell-topbar"
         position="fixed"
         sx={{
-          ml: { lg: `${drawerWidth}px` },
-          width: { lg: `calc(100% - ${drawerWidth}px)` },
+          ml: showDesktopDrawer ? { lg: `${drawerWidth}px` } : undefined,
+          width: showDesktopDrawer ? { lg: `calc(100% - ${drawerWidth}px)` } : undefined,
           backgroundColor: alpha('#ffffff', 0.9),
         }}
       >
@@ -624,7 +659,7 @@ export function AppShell() {
         </Toolbar>
       </AppBar>
 
-      {isDesktop && (
+      {showDesktopDrawer && (
         <Drawer
           variant="permanent"
           open
@@ -646,7 +681,7 @@ export function AppShell() {
         component="main"
         className="mobile-shell-main"
         sx={{
-          ml: { lg: `${drawerWidth}px` },
+          ml: showDesktopDrawer ? { lg: `${drawerWidth}px` } : undefined,
           pt: { xs: 10, md: 11 },
           px: { xs: 1.5, md: 3 },
           pb: { xs: 'calc(88px + env(safe-area-inset-bottom))', md: 3 },
@@ -687,7 +722,13 @@ export function AppShell() {
                   label={item.label}
                   icon={
                     (item.notificationCount ?? 0) > 0 ? (
-                      <Badge color="error" badgeContent={item.notificationCount} max={99} overlap="circular">
+                      <Badge
+                        color="error"
+                        variant={item.to === '/sales' ? 'dot' : undefined}
+                        badgeContent={item.to === '/sales' ? undefined : item.notificationCount}
+                        max={99}
+                        overlap="circular"
+                      >
                         <Box component="span" sx={{ display: 'inline-flex' }}>
                           {item.icon}
                         </Box>
@@ -767,7 +808,14 @@ export function AppShell() {
                       item.icon
                     )}
                   </ListItemIcon>
-                  <ListItemText primary={item.label} />
+                  <ListItemText
+                    primary={item.label}
+                    secondary={item.notificationSubtitle ?? undefined}
+                    secondaryTypographyProps={{
+                      noWrap: true,
+                      sx: { color: 'text.secondary' },
+                    }}
+                  />
                 </ListItemButton>
               );
             })}

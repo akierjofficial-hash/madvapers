@@ -49,5 +49,14 @@ class AppServiceProvider extends ServiceProvider
             $maxSubmissions = max(1, (int) env('REVIEW_SUBMIT_RATE_LIMIT_PER_HOUR', 8));
             return [Limit::perHour($maxSubmissions)->by($request->ip())];
         });
+
+        RateLimiter::for('sensitive-actions', function (Request $request) {
+            $maxRequests = max(1, (int) env('SENSITIVE_ACTIONS_RATE_LIMIT_PER_MINUTE', 30));
+            $userPart = $request->user()?->id ? 'user:' . $request->user()->id : 'guest';
+            $routePart = (string) ($request->route()?->uri() ?? 'unknown');
+            $key = $userPart . '|ip:' . $request->ip() . '|route:' . $routePart;
+
+            return [Limit::perMinute($maxRequests)->by($key)];
+        });
     }
 }

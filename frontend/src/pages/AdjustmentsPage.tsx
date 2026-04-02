@@ -9,6 +9,7 @@ import {
   DialogTitle,
   Divider,
   Drawer,
+  Menu,
   MenuItem,
   Pagination,
   Paper,
@@ -44,6 +45,7 @@ import {
   useApproveAdjustmentMutation,
   usePostAdjustmentMutation,
   useVariantsQuery,
+  useDashboardApprovalQueueQuery,
 } from '../api/queries';
 import type { StockAdjustment } from '../api/adjustments';
 
@@ -94,6 +96,7 @@ export function AdjustmentsPage() {
   const [seenSubmittedAdjustmentId, setSeenSubmittedAdjustmentId] = useState<number>(() =>
     authStorage.getSeenPending(user?.id).adjustments
   );
+  const [pendingAdjustmentBranchAnchorEl, setPendingAdjustmentBranchAnchorEl] = useState<HTMLElement | null>(null);
 
   const [selected, setSelected] = useState<StockAdjustment | null>(null);
   const [openCreate, setOpenCreate] = useState(false);
@@ -190,6 +193,7 @@ export function AdjustmentsPage() {
   const approveMut = useApproveAdjustmentMutation();
   const postMut = usePostAdjustmentMutation();
   const createMut = useCreateAdjustmentMutation();
+  const approvalQueueQuery = useDashboardApprovalQueueQuery({}, canView);
 
   useEffect(() => {
     if (!openCreate) return;
@@ -235,6 +239,88 @@ export function AdjustmentsPage() {
       };
     });
   }, [rows, seenSubmittedAdjustmentId]);
+  const pendingAdjustmentBranches = useMemo(() => {
+    const queueRows = approvalQueueQuery.data?.approval_queue?.adjustments ?? [];
+    const branchLabelById = new Map<number, string>();
+    for (const branch of branchesQuery.data ?? []) {
+      const id = Number(branch.id);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      branchLabelById.set(id, `${branch.code} - ${branch.name}`);
+    }
+
+    const grouped = new Map<
+      number,
+      {
+        branchId: number;
+        branchLabel: string;
+        requestCount: number;
+        latestRequestedAtTs: number;
+      }
+    >();
+
+    for (const row of queueRows) {
+      const statusText = String((row as any)?.status ?? '').toUpperCase();
+      if (statusText && statusText !== 'SUBMITTED') continue;
+
+      const queueBranchId = Number((row as any)?.branch_id ?? 0);
+      if (!Number.isFinite(queueBranchId) || queueBranchId <= 0) continue;
+
+      const queueBranchName = String((row as any)?.branch_name ?? '').trim();
+      const queueBranchLabel = queueBranchName || branchLabelById.get(queueBranchId) || `Branch #${queueBranchId}`;
+      const submittedAtRaw = Date.parse(String((row as any)?.created_at ?? ''));
+      const submittedAtTs = Number.isFinite(submittedAtRaw) ? submittedAtRaw : 0;
+
+      const existing = grouped.get(queueBranchId);
+      if (existing) {
+        existing.requestCount += 1;
+        existing.latestRequestedAtTs = Math.max(existing.latestRequestedAtTs, submittedAtTs);
+      } else {
+        grouped.set(queueBranchId, {
+          branchId: queueBranchId,
+          branchLabel: queueBranchLabel,
+          requestCount: 1,
+          latestRequestedAtTs: submittedAtTs,
+        });
+      }
+    }
+
+    return Array.from(grouped.values()).sort(
+      (a, b) =>
+        b.latestRequestedAtTs - a.latestRequestedAtTs ||
+        b.requestCount - a.requestCount ||
+        a.branchLabel.localeCompare(b.branchLabel)
+    );
+  }, [approvalQueueQuery.data?.approval_queue?.adjustments, branchesQuery.data]);
+  const hasPendingAdjustmentBranchAlerts = pendingAdjustmentBranches.length > 0;
+  const pendingAdjustmentBranchCountMap = useMemo(
+    () =>
+      pendingAdjustmentBranches.reduce<Record<number, number>>((acc, item) => {
+        acc[item.branchId] = item.requestCount;
+        return acc;
+      }, {}),
+    [pendingAdjustmentBranches]
+  );
+  const pendingAdjustmentDotTitle = useMemo(() => {
+    if (!hasPendingAdjustmentBranchAlerts) return 'No submitted adjustments';
+    if (pendingAdjustmentBranches.length === 1) {
+      return `Submitted adjustment from ${pendingAdjustmentBranches[0].branchLabel}`;
+    }
+    return `Submitted adjustments from ${pendingAdjustmentBranches.length} branches`;
+  }, [hasPendingAdjustmentBranchAlerts, pendingAdjustmentBranches]);
+
+  const jumpToPendingAdjustmentBranch = (nextBranchId: number) => {
+    setBranchId(nextBranchId);
+    authStorage.setLastBranchId(nextBranchId);
+    setStatus('SUBMITTED');
+    setPage(1);
+    setSelected(null);
+    setPendingAdjustmentBranchAnchorEl(null);
+  };
+
+  useEffect(() => {
+    if (hasPendingAdjustmentBranchAlerts) return;
+    setPendingAdjustmentBranchAnchorEl(null);
+  }, [hasPendingAdjustmentBranchAlerts]);
 
   const openAdjustmentRow = (row: { raw: StockAdjustment; id: number; status: string }) => {
     if (row.status === 'SUBMITTED') {
@@ -508,6 +594,11 @@ export function AdjustmentsPage() {
                 setPage(1);
                 setSelected(null);
               }}
+              showAlertDot={hasPendingAdjustmentBranchAlerts}
+              alertDotTitle={pendingAdjustmentDotTitle}
+              onAlertDotClick={(event) => setPendingAdjustmentBranchAnchorEl(event.currentTarget)}
+              showBranchAlertDots
+              alertCountsByBranchId={pendingAdjustmentBranchCountMap}
             />
           ) : (
             <TextField size="small" label="Branch" value={branchLabel} disabled fullWidth />
@@ -533,6 +624,30 @@ export function AdjustmentsPage() {
           ))}
         </TextField>
       </Stack>
+
+      <Menu
+        anchorEl={pendingAdjustmentBranchAnchorEl}
+        open={Boolean(pendingAdjustmentBranchAnchorEl) && hasPendingAdjustmentBranchAlerts}
+        onClose={() => setPendingAdjustmentBranchAnchorEl(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        PaperProps={{ sx: { minWidth: 260 } }}
+      >
+        {pendingAdjustmentBranches.map((item) => (
+          <MenuItem
+            key={item.branchId}
+            selected={branchId === item.branchId}
+            onClick={() => jumpToPendingAdjustmentBranch(item.branchId)}
+          >
+            <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ width: '100%' }}>
+              <Typography variant="body2" sx={{ fontWeight: branchId === item.branchId ? 700 : 500 }}>
+                {item.branchLabel}
+              </Typography>
+              <Chip size="small" color="error" label={item.requestCount === 1 ? '1 req' : `${item.requestCount} req`} />
+            </Stack>
+          </MenuItem>
+        ))}
+      </Menu>
 
       {branchId === '' ? (
         <Alert severity={canBranchView ? 'info' : 'error'}>

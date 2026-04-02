@@ -186,6 +186,12 @@ export function ApprovalsPage() {
     { branch_id: typeof branchId === 'number' ? branchId : undefined },
     canAnyApproval
   );
+  const approvalQueueGlobalQuery = useDashboardApprovalQueueQuery(
+    {},
+    canAnyApproval && typeof branchId === 'number'
+  );
+  const branchDotQueueData =
+    typeof branchId === 'number' ? approvalQueueGlobalQuery.data : approvalQueueQuery.data;
 
   // Keep global branch context in sync so sidebar badges follow the same queue scope.
   useEffect(() => {
@@ -213,6 +219,36 @@ export function ApprovalsPage() {
     queueCounts.transfers +
     queueCounts.purchase_orders +
     queueCounts.void_requests;
+  const branchAlertCountMap = useMemo(() => {
+    const counts: Record<number, number> = {};
+    const queue = branchDotQueueData?.approval_queue;
+    if (!queue) return counts;
+
+    const bump = (rawId: unknown) => {
+      const id = Number(rawId ?? 0);
+      if (!Number.isFinite(id) || id <= 0) return;
+      counts[id] = (counts[id] ?? 0) + 1;
+    };
+
+    for (const row of queue.adjustments ?? []) {
+      bump((row as any)?.branch_id);
+    }
+    for (const row of queue.transfers ?? []) {
+      bump((row as any)?.from_branch_id);
+    }
+    for (const row of queue.purchase_orders ?? []) {
+      bump((row as any)?.branch_id);
+    }
+    for (const row of queue.void_requests ?? []) {
+      const voidStatus = String((row as any)?.void_request_status ?? '').toUpperCase();
+      if (voidStatus && voidStatus !== 'PENDING') continue;
+      bump((row as any)?.branch_id);
+    }
+
+    return counts;
+  }, [branchDotQueueData?.approval_queue]);
+  const hasBranchAlertDots = Object.keys(branchAlertCountMap).length > 0;
+  const totalBranchAlertCount = Object.values(branchAlertCountMap).reduce((sum, count) => sum + Number(count ?? 0), 0);
 
   const showSnack = (message: string, severity: 'success' | 'error' | 'info') => {
     setSnack({ open: true, message, severity });
@@ -665,34 +701,77 @@ export function ApprovalsPage() {
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.1} alignItems={{ sm: 'center' }}>
             {canBranchView ? (
-              <FormControl size="small" sx={{ minWidth: 220 }}>
-                <InputLabel id="approvals-branch-label">Branch</InputLabel>
-                <Select
-                  labelId="approvals-branch-label"
-                  value={branchId}
-                  label="Branch"
-                  onChange={(event) => {
-                    const raw = event.target.value;
-                    if (raw === '') {
-                      setBranchId('');
-                      authStorage.clearLastBranchId();
-                      return;
-                    }
-                    const parsed = Number(raw);
-                    if (Number.isFinite(parsed) && parsed > 0) {
-                      setBranchId(parsed);
-                      authStorage.setLastBranchId(parsed);
-                    }
-                  }}
-                >
-                  <MenuItem value="">All branches</MenuItem>
-                  {(branchesQuery.data ?? []).map((branch) => (
-                    <MenuItem key={branch.id} value={branch.id}>
-                      {branch.code} - {branch.name}
+              <Box sx={{ position: 'relative', minWidth: 220 }}>
+                {hasBranchAlertDots && (
+                  <Box
+                    component="span"
+                    sx={{
+                      position: 'absolute',
+                      top: -4,
+                      right: -4,
+                      width: 10,
+                      height: 10,
+                      borderRadius: '50%',
+                      bgcolor: 'error.main',
+                      zIndex: 2,
+                    }}
+                  />
+                )}
+                <FormControl size="small" sx={{ minWidth: 220, width: '100%' }}>
+                  <InputLabel id="approvals-branch-label">Branch</InputLabel>
+                  <Select
+                    labelId="approvals-branch-label"
+                    value={branchId}
+                    label="Branch"
+                    onChange={(event) => {
+                      const raw = event.target.value;
+                      if (raw === '') {
+                        setBranchId('');
+                        authStorage.clearLastBranchId();
+                        return;
+                      }
+                      const parsed = Number(raw);
+                      if (Number.isFinite(parsed) && parsed > 0) {
+                        setBranchId(parsed);
+                        authStorage.setLastBranchId(parsed);
+                      }
+                    }}
+                  >
+                    <MenuItem value="">
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 1 }}>
+                        <span>All branches</span>
+                        {totalBranchAlertCount > 0 ? (
+                          <Chip size="small" color="error" label={totalBranchAlertCount > 99 ? '99+' : totalBranchAlertCount} />
+                        ) : null}
+                      </Box>
                     </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+                    {(branchesQuery.data ?? []).map((branch) => {
+                      const count = Number(branchAlertCountMap[branch.id] ?? 0);
+                      return (
+                        <MenuItem key={branch.id} value={branch.id}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 1 }}>
+                            <span>
+                              {branch.code} - {branch.name}
+                            </span>
+                            {count > 0 ? (
+                              <Box
+                                component="span"
+                                sx={{
+                                  width: 8,
+                                  height: 8,
+                                  borderRadius: '50%',
+                                  bgcolor: 'error.main',
+                                  flexShrink: 0,
+                                }}
+                              />
+                            ) : null}
+                          </Box>
+                        </MenuItem>
+                      );
+                    })}
+                  </Select>
+                </FormControl>
+              </Box>
             ) : (
               <Chip size="small" variant="outlined" label={user?.branch?.name ?? 'Assigned branch'} />
             )}

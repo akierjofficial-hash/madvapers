@@ -312,10 +312,13 @@ class DashboardController extends Controller
                 'cash_in' => 0.0,
                 'cogs' => 0.0,
                 'gross_profit' => 0.0,
+                'sf_charged_total' => 0.0,
                 'restock_spend' => 0.0,
                 'net_cashflow' => 0.0,
                 'net_income' => 0.0,
                 'expense_total' => 0.0,
+                'sf_expense_total' => 0.0,
+                'operating_expense_total' => 0.0,
                 'voided_sales_count' => 0,
                 'voided_sales_amount' => 0.0,
                 'voided_paid_amount' => 0.0,
@@ -328,6 +331,16 @@ class DashboardController extends Controller
                 ->whereBetween('posted_at', [$from, $to]),
             $branchIds
         )->sum('grand_total');
+
+        $sfChargedTotal = 0.0;
+        if (Schema::hasColumn('sales', 'sf_charge')) {
+            $sfChargedTotal = (float) $this->applyBranchFilter(
+                DB::table('sales')
+                    ->where('status', 'POSTED')
+                    ->whereBetween('posted_at', [$from, $to]),
+                $branchIds
+            )->sum('sf_charge');
+        }
 
         $cashIn = (float) $this->applyBranchFilter(
             DB::table('sale_payments as sp')
@@ -374,6 +387,7 @@ class DashboardController extends Controller
         $voidedPaidAmount = round((float) (clone $voidedSalesBase)->sum('paid_total'), 2);
 
         $expenseTotal = 0.0;
+        $sfExpenseTotal = 0.0;
         if (Schema::hasTable('expenses')) {
             $expenseTotal = (float) $this->applyBranchFilter(
                 DB::table('expenses')
@@ -381,21 +395,35 @@ class DashboardController extends Controller
                     ->whereBetween('paid_at', [$from, $to]),
                 $branchIds
             )->sum('amount');
+
+            $sfExpenseTotal = (float) $this->applyBranchFilter(
+                DB::table('expenses')
+                    ->where('status', 'POSTED')
+                    ->where('category', 'SF_EXPENSE')
+                    ->whereBetween('paid_at', [$from, $to]),
+                $branchIds
+            )->sum('amount');
         }
 
         $expenseTotal = round($expenseTotal, 2);
+        $sfChargedTotal = round($sfChargedTotal, 2);
+        $sfExpenseTotal = round($sfExpenseTotal, 2);
+        $operatingExpenseTotal = round(max(0, $expenseTotal - $sfExpenseTotal), 2);
         $grossProfit = round($revenue - $cogs, 2);
         $netCashflow = round($cashIn - $restockSpend - $expenseTotal, 2);
-        $netIncome = round($grossProfit - $expenseTotal, 2);
+        $netIncome = round($grossProfit - $sfExpenseTotal - $operatingExpenseTotal, 2);
 
         return [
             'revenue' => $revenue,
             'cash_in' => $cashIn,
             'cogs' => $cogs,
             'gross_profit' => $grossProfit,
+            'sf_charged_total' => $sfChargedTotal,
             'restock_spend' => $restockSpend,
             'net_cashflow' => $netCashflow,
             'expense_total' => $expenseTotal,
+            'sf_expense_total' => $sfExpenseTotal,
+            'operating_expense_total' => $operatingExpenseTotal,
             'net_income' => $netIncome,
             'voided_sales_count' => $voidedSalesCount,
             'voided_sales_amount' => $voidedSalesAmount,

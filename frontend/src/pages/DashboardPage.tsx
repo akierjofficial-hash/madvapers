@@ -46,6 +46,7 @@ import { authStorage } from '../auth/authStorage';
 import { useBranchesQuery, useDashboardKpiDetailsQuery, useDashboardSummaryQuery } from '../api/queries';
 import type {
   DashboardAdjustmentQueueItem,
+  DashboardAlert,
   DashboardKpiDetailType,
   DashboardPurchaseOrderQueueItem,
   DashboardSaleVoidRequestQueueItem,
@@ -65,6 +66,31 @@ const QUICK_ACTION_PERMISSION: Record<string, string> = {
   '/ledger': 'LEDGER_VIEW',
 };
 
+const MOBILE_ACTION_ACCENT: Record<string, { bg: string; hover: string; text: string }> = {
+  '/purchase-orders': { bg: '#4338CA', hover: '#3730A3', text: '#ffffff' },
+  '/sales': { bg: '#059669', hover: '#047857', text: '#ffffff' },
+  '/expenses': { bg: '#B91C1C', hover: '#991B1B', text: '#ffffff' },
+};
+
+function getMobileActionAccent(path: string, label: string): { bg: string; hover: string; text: string } {
+  const byPath = MOBILE_ACTION_ACCENT[path];
+  if (byPath) return byPath;
+
+  const pathLower = String(path ?? '').toLowerCase();
+  const labelLower = String(label ?? '').toLowerCase();
+
+  if (pathLower.includes('purchase') || labelLower.includes('purchase')) {
+    return { bg: '#4338CA', hover: '#3730A3', text: '#ffffff' };
+  }
+  if (pathLower.includes('sale') || labelLower.includes('sale')) {
+    return { bg: '#059669', hover: '#047857', text: '#ffffff' };
+  }
+  if (pathLower.includes('expense') || labelLower.includes('expense')) {
+    return { bg: '#B91C1C', hover: '#991B1B', text: '#ffffff' };
+  }
+  return { bg: '#64748B', hover: '#475569', text: '#ffffff' };
+}
+
 const QUEUE_TABS = [
   { key: 'adjustments', label: 'Adjustments' },
   { key: 'transfers', label: 'Transfers' },
@@ -74,6 +100,7 @@ const QUEUE_TABS = [
 
 type QueueTabKey = (typeof QUEUE_TABS)[number]['key'];
 type BranchHealthDetailTab = 'low' | 'out' | 'open';
+type AlertDetailFilter = 'ALL' | 'NEGATIVE_STOCK' | 'OVERDUE_TRANSFERS' | 'STALE_PO_DRAFTS';
 
 type KpiCardKey =
   | 'low-stock'
@@ -301,6 +328,7 @@ export function DashboardPage() {
   const [kpiDetailsSearchDebounced, setKpiDetailsSearchDebounced] = useState('');
   const [activeBranchHealthId, setActiveBranchHealthId] = useState<number | null>(null);
   const [branchHealthDetailTab, setBranchHealthDetailTab] = useState<BranchHealthDetailTab>('low');
+  const [activeAlertFilter, setActiveAlertFilter] = useState<AlertDetailFilter | null>(null);
   const [rangeAnchorEl, setRangeAnchorEl] = useState<HTMLElement | null>(null);
 
   const branchesQuery = useBranchesQuery(canBranchView);
@@ -363,9 +391,12 @@ export function DashboardPage() {
     cash_in: 0,
     cogs: 0,
     gross_profit: 0,
+    sf_charged_total: 0,
     restock_spend: 0,
     net_cashflow: 0,
     expense_total: 0,
+    sf_expense_total: 0,
+    operating_expense_total: 0,
     net_income: 0,
     voided_sales_count: 0,
     voided_sales_amount: 0,
@@ -681,6 +712,33 @@ export function DashboardPage() {
     });
     return map;
   }, [alerts]);
+
+  const actionableAlerts = useMemo(() => {
+    return alerts.filter((alert) => {
+      const count = Number(alert.count ?? 0);
+      return alert.code !== 'NO_CRITICAL_ALERTS' && alert.severity !== 'success' && count > 0;
+    });
+  }, [alerts]);
+
+  const alertDetailsTitle = useMemo(() => {
+    switch (activeAlertFilter) {
+      case 'NEGATIVE_STOCK':
+        return 'Negative Stock Alerts';
+      case 'OVERDUE_TRANSFERS':
+        return 'Overdue Transfer Alerts';
+      case 'STALE_PO_DRAFTS':
+        return 'Stale PO Draft Alerts';
+      case 'ALL':
+      default:
+        return 'Active Alerts';
+    }
+  }, [activeAlertFilter]);
+
+  const alertDetailsRows = useMemo(() => {
+    if (!activeAlertFilter) return [] as DashboardAlert[];
+    if (activeAlertFilter === 'ALL') return actionableAlerts;
+    return actionableAlerts.filter((alert) => alert.code === activeAlertFilter);
+  }, [activeAlertFilter, actionableAlerts]);
 
   const queueCounts = {
     adjustments: queueAdjustments.length,
@@ -1040,6 +1098,7 @@ export function DashboardPage() {
                 spacing={0.75}
                 sx={{
                   mt: 1,
+                  display: { xs: 'none', sm: 'flex' },
                   '& .MuiChip-root': {
                     maxWidth: '100%',
                     justifyContent: 'flex-start',
@@ -1087,14 +1146,20 @@ export function DashboardPage() {
                 gap: 1,
                 gridTemplateColumns: {
                   xs: 'repeat(2, minmax(0, 1fr))',
-                  sm: 'repeat(3, minmax(0, 1fr))',
+                  sm: 'repeat(2, minmax(0, 1fr))',
                   lg: 'repeat(4, auto)',
                 },
                 '& .MuiButton-root': {
-                  minHeight: 38,
-                  fontSize: { xs: '0.84rem', sm: '0.86rem' },
-                  px: { xs: 1.2, sm: 1.5 },
+                  minHeight: { xs: 54, sm: 44, lg: 38 },
+                  fontSize: { xs: '0.9rem', sm: '0.88rem', lg: '0.86rem' },
+                  fontWeight: { xs: 700, lg: 600 },
+                  px: { xs: 1.1, sm: 1.35 },
                   minWidth: 0,
+                  borderRadius: { xs: 2, lg: 1.4 },
+                  whiteSpace: { xs: 'normal', lg: 'nowrap' },
+                  lineHeight: { xs: 1.12, lg: 1.2 },
+                  textAlign: 'center',
+                  justifyContent: 'center',
                 },
               }}
             >
@@ -1104,22 +1169,42 @@ export function DashboardPage() {
                   variant="contained"
                   color="warning"
                   onClick={() => navigate('/approvals')}
-                  sx={{ whiteSpace: 'nowrap', gridColumn: { xs: '1 / -1', lg: 'auto' } }}
+                  sx={{
+                    bgcolor: { xs: '#F97316', lg: undefined },
+                    color: { xs: '#ffffff', lg: undefined },
+                    borderColor: { xs: alpha('#F97316', 0.55), lg: undefined },
+                    '&:hover': {
+                      bgcolor: { xs: '#EA580C', lg: undefined },
+                      borderColor: { xs: alpha('#EA580C', 0.65), lg: undefined },
+                    },
+                  }}
                 >
                   Open Approval Center
                 </Button>
               )}
-              {filteredQuickActions.slice(0, 3).map((action) => (
-                <Button
-                  key={action.path}
-                  size="small"
-                  variant="outlined"
-                  onClick={() => navigate(action.path)}
-                  sx={{ whiteSpace: 'nowrap' }}
-                >
-                  {action.label}
-                </Button>
-              ))}
+              {filteredQuickActions.slice(0, 3).map((action) => {
+                const mobileAccent = getMobileActionAccent(action.path, action.label);
+                return (
+                  <Button
+                    key={action.path}
+                    size="small"
+                    variant="outlined"
+                    onClick={() => navigate(action.path)}
+                    sx={{
+                      whiteSpace: 'nowrap',
+                      bgcolor: { xs: mobileAccent?.bg ?? '#E2E8F0', lg: 'transparent' },
+                      color: { xs: mobileAccent?.text ?? '#0f172a', lg: 'inherit' },
+                      borderColor: { xs: alpha(mobileAccent?.bg ?? '#64748B', 0.35), lg: undefined },
+                      '&:hover': {
+                        bgcolor: { xs: mobileAccent?.hover ?? '#CBD5E1', lg: undefined },
+                        borderColor: { xs: alpha(mobileAccent?.bg ?? '#64748B', 0.5), lg: undefined },
+                      },
+                    }}
+                  >
+                    {action.label}
+                  </Button>
+                );
+              })}
             </Box>
           </Stack>
 
@@ -1128,7 +1213,7 @@ export function DashboardPage() {
               display: 'grid',
               gap: 1.25,
               gridTemplateColumns: {
-                xs: '1fr',
+                xs: 'repeat(2, minmax(0, 1fr))',
                 sm: 'repeat(2, minmax(0, 1fr))',
                 lg: canBranchView ? '2fr 1fr 1fr auto' : '2fr 1fr auto',
               },
@@ -1136,7 +1221,7 @@ export function DashboardPage() {
             }}
           >
             {canBranchView ? (
-              <FormControl size="small" fullWidth>
+              <FormControl size="small" fullWidth sx={{ gridColumn: { xs: '1 / -1', lg: 'auto' } }}>
                 <InputLabel id="dashboard-branch-label">Branch</InputLabel>
                 <Select
                   labelId="dashboard-branch-label"
@@ -1165,7 +1250,14 @@ export function DashboardPage() {
                 </Select>
               </FormControl>
             ) : (
-              <TextField size="small" label="Branch" value={branchLabel} disabled fullWidth />
+              <TextField
+                size="small"
+                label="Branch"
+                value={branchLabel}
+                disabled
+                fullWidth
+                sx={{ gridColumn: { xs: '1 / -1', lg: 'auto' } }}
+              />
             )}
 
             <TextField
@@ -1190,6 +1282,7 @@ export function DashboardPage() {
               spacing={1}
               justifyContent={{ xs: 'stretch', lg: 'flex-end' }}
               sx={{
+                gridColumn: { xs: '1 / -1', lg: 'auto' },
                 width: { xs: '100%', lg: 'auto' },
                 '& .MuiButton-root': {
                   flex: { xs: '1 1 0', lg: '0 0 auto' },
@@ -1363,26 +1456,35 @@ export function DashboardPage() {
             icon={<WarningAmberRoundedIcon sx={{ fontSize: 16 }} />}
           />
           <Stack spacing={1}>
-            <MetricLine label="Active Alerts" value={Number(alerts.length ?? 0).toLocaleString()} tone="#475569" />
+            <MetricLine
+              label="Active Alerts"
+              value={Number(actionableAlerts.length ?? 0).toLocaleString()}
+              tone="#475569"
+              onClick={() => setActiveAlertFilter('ALL')}
+            />
             <MetricLine
               label="Negative Stock"
               value={Number(alertCountByCode.get('NEGATIVE_STOCK') ?? 0).toLocaleString()}
               tone="#9a3412"
+              onClick={() => setActiveAlertFilter('NEGATIVE_STOCK')}
             />
             <MetricLine
               label="Overdue Transfers"
               value={Number(alertCountByCode.get('OVERDUE_TRANSFERS') ?? 0).toLocaleString()}
               tone="#7f1d1d"
+              onClick={() => setActiveAlertFilter('OVERDUE_TRANSFERS')}
             />
             <MetricLine
               label="Stale PO Drafts"
               value={Number(alertCountByCode.get('STALE_PO_DRAFTS') ?? 0).toLocaleString()}
               tone="#334155"
+              onClick={() => setActiveAlertFilter('STALE_PO_DRAFTS')}
             />
             <MetricLine
               label="Pending Void Requests"
               value={Number(summary?.kpis.pending_void_requests ?? 0).toLocaleString()}
               tone="#7f1d1d"
+              onClick={() => openSalesVoidRequests()}
             />
           </Stack>
         </Paper>
@@ -1398,7 +1500,7 @@ export function DashboardPage() {
           sx={{
             display: 'grid',
             gap: 1,
-            gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)', xl: 'repeat(8, 1fr)' },
+            gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)', xl: 'repeat(10, 1fr)' },
           }}
         >
           <MetricTile
@@ -1412,7 +1514,7 @@ export function DashboardPage() {
             label="Revenue"
             value={money(finance.revenue)}
             accent="#334155"
-            hint="Posted sales amount"
+            hint="Sales amount + SF charged"
             icon={<TaskAltOutlinedIcon sx={{ fontSize: 14 }} />}
           />
           <MetricTile
@@ -1430,6 +1532,13 @@ export function DashboardPage() {
             icon={<AutoGraphOutlinedIcon sx={{ fontSize: 14 }} />}
           />
           <MetricTile
+            label="SF Charged"
+            value={money(finance.sf_charged_total)}
+            accent="#2563eb"
+            hint="Shipping fee charged to customer"
+            icon={<TaskAltOutlinedIcon sx={{ fontSize: 14 }} />}
+          />
+          <MetricTile
             label="Restock Spend"
             value={money(finance.restock_spend)}
             accent="#9a3412"
@@ -1437,17 +1546,31 @@ export function DashboardPage() {
             icon={<SwapHorizOutlinedIcon sx={{ fontSize: 14 }} />}
           />
           <MetricTile
+            label="SF Expense"
+            value={money(finance.sf_expense_total)}
+            accent="#7f1d1d"
+            hint="Shipping fee paid by shop"
+            icon={<WarningAmberRoundedIcon sx={{ fontSize: 14 }} />}
+          />
+          <MetricTile
+            label="Other Expenses"
+            value={money(finance.operating_expense_total)}
+            accent="#7f1d1d"
+            hint="Operating expenses (excl. SF)"
+            icon={<WarningAmberRoundedIcon sx={{ fontSize: 14 }} />}
+          />
+          <MetricTile
             label="Expense Total"
             value={money(finance.expense_total)}
             accent="#7f1d1d"
-            hint="Posted operating expenses"
+            hint="SF expense + other expenses"
             icon={<WarningAmberRoundedIcon sx={{ fontSize: 14 }} />}
           />
           <MetricTile
             label="Net Income"
             value={money(finance.net_income)}
             accent={finance.net_income >= 0 ? '#334155' : '#7f1d1d'}
-            hint="Gross profit - expenses"
+            hint="Gross profit - SF expense - other expenses"
             icon={<AutoGraphOutlinedIcon sx={{ fontSize: 14 }} />}
           />
           <MetricTile
@@ -2034,6 +2157,49 @@ export function DashboardPage() {
           <Button onClick={() => setActiveKpiKey(null)}>Close</Button>
         </DialogActions>
       </Dialog>
+
+      <Dialog open={Boolean(activeAlertFilter)} onClose={() => setActiveAlertFilter(null)} fullWidth maxWidth="sm">
+        <DialogTitle>{alertDetailsTitle}</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={1}>
+            {alertDetailsRows.length === 0 ? (
+              <Alert severity="info">No alerts found for this category.</Alert>
+            ) : (
+              alertDetailsRows.map((alert) => (
+                <Alert
+                  key={`${alert.code}-${alert.title}`}
+                  severity={alert.severity}
+                  action={
+                    alert.path ? (
+                      <Button
+                        size="small"
+                        color="inherit"
+                        onClick={() => {
+                          setActiveAlertFilter(null);
+                          navigate(alert.path!);
+                        }}
+                        sx={{ minWidth: 0, px: 1 }}
+                      >
+                        Open
+                      </Button>
+                    ) : undefined
+                  }
+                >
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    {alert.title}
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', opacity: 0.9 }}>
+                    {alert.message}
+                  </Typography>
+                </Alert>
+              ))
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setActiveAlertFilter(null)}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   );
 }
@@ -2170,19 +2336,40 @@ function MetricLine({
   label,
   value,
   tone,
+  onClick,
 }: {
   label: string;
   value: string;
   tone: string;
+  onClick?: () => void;
 }) {
+  const clickable = typeof onClick === 'function';
   return (
     <Box
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (!clickable) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick?.();
+        }
+      }}
       sx={{
         border: `1px solid ${SURFACE_BORDER}`,
         borderRadius: 1.2,
         px: 1,
         py: 0.75,
         borderLeft: `2px solid ${alpha(tone, 0.4)}`,
+        cursor: clickable ? 'pointer' : 'default',
+        transition: 'all 0.18s ease',
+        '&:hover': clickable
+          ? {
+              borderColor: alpha(tone, 0.48),
+              bgcolor: alpha(tone, 0.05),
+            }
+          : undefined,
       }}
     >
       <Stack direction="row" justifyContent="space-between" alignItems="center">

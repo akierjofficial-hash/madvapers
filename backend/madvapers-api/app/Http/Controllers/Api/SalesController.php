@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Events\ApprovalQueueUpdated;
 use App\Http\Controllers\Api\Concerns\EnforcesBranchAccess;
 use App\Http\Controllers\Controller;
 use App\Models\InventoryBalance;
@@ -95,6 +94,7 @@ class SalesController extends Controller
         $data = $request->validate([
             'branch_id' => ['required', 'integer', 'exists:branches,id'],
             'notes' => ['nullable', 'string'],
+            'sf_charge' => ['nullable', 'numeric', 'gte:0'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_variant_id' => ['required', 'integer', 'exists:product_variants,id'],
             'items.*.qty' => ['required', 'numeric', 'gt:0'],
@@ -117,6 +117,7 @@ class SalesController extends Controller
                 'subtotal' => 0,
                 'discount_total' => 0,
                 'tax_total' => 0,
+                'sf_charge' => round((float) ($data['sf_charge'] ?? 0), 2),
                 'grand_total' => 0,
                 'paid_total' => 0,
                 'change_given' => 0,
@@ -430,8 +431,6 @@ class SalesController extends Controller
                     'notes' => $locked->void_request_notes,
                 ],
             ]);
-            $this->broadcastApprovalQueueUpdate('void_requested', $locked);
-
             return response()->json([
                 'status' => 'ok',
                 'sale' => $locked->fresh()->load([
@@ -463,6 +462,7 @@ class SalesController extends Controller
                     'void_request_status' => ['No pending void request to approve.'],
                 ]);
             }
+            $this->assertVoidDecisionByDifferentUser($request, $locked, 'approve');
 
             $this->performVoid($request, $locked, $inventoryService, $data['notes'] ?? null);
 
@@ -478,8 +478,6 @@ class SalesController extends Controller
                     'notes' => $data['notes'] ?? null,
                 ],
             ]);
-            $this->broadcastApprovalQueueUpdate('void_approved', $locked);
-
             return response()->json([
                 'status' => 'ok',
                 'sale' => $locked->fresh()->load([
@@ -517,6 +515,7 @@ class SalesController extends Controller
                     'void_request_status' => ['No pending void request to reject.'],
                 ]);
             }
+            $this->assertVoidDecisionByDifferentUser($request, $locked, 'reject');
 
             $locked->void_request_status = 'REJECTED';
             $locked->void_rejected_at = now();
@@ -538,8 +537,6 @@ class SalesController extends Controller
                     'notes' => $locked->void_rejection_notes,
                 ],
             ]);
-            $this->broadcastApprovalQueueUpdate('void_rejected', $locked);
-
             return response()->json([
                 'status' => 'ok',
                 'sale' => $locked->fresh()->load([
@@ -567,8 +564,6 @@ class SalesController extends Controller
             $this->enforceBranchAccessOrFail($request, (int) $locked->branch_id);
 
             $this->performVoid($request, $locked, $inventoryService, $data['notes'] ?? null);
-            $this->broadcastApprovalQueueUpdate('void_direct', $locked);
-
             return response()->json([
                 'status' => 'ok',
                 'sale' => $locked->fresh()->load([
@@ -722,6 +717,10 @@ class SalesController extends Controller
             ]);
         }
 
+        if (strtoupper((string) ($locked->void_request_status ?? '')) === 'PENDING') {
+            $this->assertVoidDecisionByDifferentUser($request, $locked, 'approve');
+        }
+
         $saleLedgers = StockLedger::query()
             ->where('movement_type', 'SALE')
             ->where('ref_type', 'sales')
@@ -796,6 +795,22 @@ class SalesController extends Controller
         ]);
     }
 
+    private function assertVoidDecisionByDifferentUser(Request $request, Sale $sale, string $action): void
+    {
+        $actorId = (int) ($request->user()?->id ?? 0);
+        $requesterId = (int) ($sale->void_requested_by_user_id ?? 0);
+
+        if ($actorId <= 0 || $requesterId <= 0 || $actorId !== $requesterId) {
+            return;
+        }
+
+        $verb = $action === 'reject' ? 'reject' : 'approve';
+
+        throw ValidationException::withMessages([
+            'void_request_status' => ["You cannot {$verb} your own void request. Please ask another approver."],
+        ]);
+    }
+
     private function lockSale(int $saleId): Sale
     {
         return Sale::query()
@@ -805,6 +820,9 @@ class SalesController extends Controller
 
     private function recalculateSaleTotals(int $saleId): void
     {
+        $sfCharge = (float) (Sale::query()->whereKey($saleId)->value('sf_charge') ?? 0);
+        $sfCharge = max(0, $sfCharge);
+
         $itemRows = SaleItem::query()
             ->where('sale_id', $saleId)
             ->get(['qty', 'unit_price', 'line_discount', 'line_tax', 'line_total']);
@@ -825,6 +843,7 @@ class SalesController extends Controller
             $taxTotal += $lineTax;
             $grandTotal += (float) ($item->line_total ?? 0);
         }
+        $grandTotal += $sfCharge;
 
         Sale::query()->whereKey($saleId)->update([
             'subtotal' => round($subtotal, 2),
@@ -855,18 +874,4 @@ class SalesController extends Controller
         $sale->save();
     }
 
-    private function broadcastApprovalQueueUpdate(string $action, Sale $sale): void
-    {
-        DB::afterCommit(function () use ($action, $sale) {
-            try {
-                event(new ApprovalQueueUpdated(
-                    action: $action,
-                    branchId: (int) $sale->branch_id,
-                    saleId: (int) $sale->id
-                ));
-            } catch (\Throwable $e) {
-                report($e);
-            }
-        });
-    }
 }

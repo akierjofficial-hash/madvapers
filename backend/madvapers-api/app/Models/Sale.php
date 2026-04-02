@@ -18,6 +18,7 @@ class Sale extends Model
         'subtotal',
         'discount_total',
         'tax_total',
+        'sf_charge',
         'grand_total',
         'paid_total',
         'change_given',
@@ -36,6 +37,13 @@ class Sale extends Model
     ];
 
     protected $casts = [
+        'subtotal' => 'float',
+        'discount_total' => 'float',
+        'tax_total' => 'float',
+        'sf_charge' => 'float',
+        'grand_total' => 'float',
+        'paid_total' => 'float',
+        'change_given' => 'float',
         'posted_at' => 'datetime',
         'voided_at' => 'datetime',
         'void_requested_at' => 'datetime',

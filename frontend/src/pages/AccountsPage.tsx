@@ -146,6 +146,8 @@ export function AccountsPage() {
   const rows = usersQuery.data?.data ?? [];
   const totalPages = usersQuery.data?.last_page ?? 1;
   const roleCodeById = new Map((rolesQuery.data ?? []).map((r) => [r.id, (r.code ?? '').toUpperCase()]));
+  const branchNameById = new Map((branchesQuery.data ?? []).map((b) => [b.id, b.name]));
+  const totalAvailableBranches = (branchesQuery.data ?? []).length;
   const createRoleCode = typeof createRoleId === 'number' ? roleCodeById.get(createRoleId) ?? '' : '';
   const editRoleCode = typeof editRoleId === 'number' ? roleCodeById.get(editRoleId) ?? '' : '';
   const createRequiresBranch =
@@ -154,6 +156,49 @@ export function AccountsPage() {
   const toggleBranch = (current: number[], branchId: number, checked: boolean) => {
     if (checked) return Array.from(new Set([...current, branchId]));
     return current.filter((id) => id !== branchId);
+  };
+
+  const getUserBranchNames = (target: User): string[] => {
+    const bucket = new Map<number, string>();
+
+    (target.branches ?? []).forEach((branch) => {
+      if (!branch || typeof branch.id !== 'number') return;
+      const name = String(branch.name ?? branch.code ?? `Branch #${branch.id}`).trim();
+      if (!name) return;
+      bucket.set(branch.id, name);
+    });
+
+    (target.branch_ids ?? []).forEach((branchId) => {
+      if (typeof branchId !== 'number' || !Number.isFinite(branchId)) return;
+      if (bucket.has(branchId)) return;
+      const fallbackName = branchNameById.get(branchId) ?? `Branch #${branchId}`;
+      bucket.set(branchId, fallbackName);
+    });
+
+    if (bucket.size === 0 && typeof target.branch_id === 'number') {
+      const fallbackName =
+        String(target.branch?.name ?? '').trim() ||
+        branchNameById.get(target.branch_id) ||
+        `Branch #${target.branch_id}`;
+      bucket.set(target.branch_id, fallbackName);
+    }
+
+    return Array.from(bucket.values());
+  };
+
+  const getUserBranchLabel = (target: User, mode: 'full' | 'compact' = 'full'): string => {
+    const names = getUserBranchNames(target);
+    if (names.length === 0) return '-';
+
+    if (totalAvailableBranches > 0 && names.length >= totalAvailableBranches) {
+      return mode === 'compact' ? 'All branches' : `All branches (${names.length})`;
+    }
+
+    if (mode === 'compact' && names.length > 2) {
+      return `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
+    }
+
+    return names.join(', ');
   };
 
   const resetCreateForm = () => {
@@ -535,7 +580,7 @@ export function AccountsPage() {
                     Role: {row.role?.name ?? row.role?.code ?? '-'}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Branch: {row.branch?.name ?? '-'} • ID {row.id}
+                    Branches: {getUserBranchLabel(row, 'compact')} | ID {row.id}
                   </Typography>
                   <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ pt: 0.3 }}>
                     {canUpdate && (
@@ -585,7 +630,7 @@ export function AccountsPage() {
                 <TableCell>Name</TableCell>
                 <TableCell>Email</TableCell>
                 <TableCell>Role</TableCell>
-                <TableCell>Branch</TableCell>
+                <TableCell>Branches</TableCell>
                 <TableCell width={120}>Status</TableCell>
                 <TableCell align="right" width={320}>
                   Actions
@@ -601,7 +646,7 @@ export function AccountsPage() {
                     <TableCell>{row.name}</TableCell>
                     <TableCell>{row.email}</TableCell>
                     <TableCell>{row.role?.name ?? row.role?.code ?? '-'}</TableCell>
-                    <TableCell>{row.branch?.name ?? '-'}</TableCell>
+                    <TableCell>{getUserBranchLabel(row)}</TableCell>
                     <TableCell>{isActive ? 'Active' : 'Inactive'}</TableCell>
                     <TableCell align="right">
                       <Stack direction="row" spacing={1} justifyContent="flex-end">

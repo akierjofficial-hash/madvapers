@@ -7,9 +7,9 @@ use App\Models\Branch;
 
 class BranchSeeder extends Seeder
 {
-    public function run(): void
+    private function defaultTestingBranches(): array
     {
-        $branches = [
+        return [
             [
                 'code' => 'BAGACAY',
                 'name' => 'Bagacay Branch (Main Branch)',
@@ -35,6 +35,60 @@ class BranchSeeder extends Seeder
                 'is_active' => true,
             ],
         ];
+    }
+
+    private function configuredBranches(): array
+    {
+        $raw = trim((string) env('SEED_BRANCHES_JSON', ''));
+        if ($raw === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            $this->command?->warn('SEED_BRANCHES_JSON is invalid JSON. Skipping branch seed.');
+            return [];
+        }
+
+        $rowsByCode = [];
+        foreach ($decoded as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $code = strtoupper(trim((string) ($row['code'] ?? '')));
+            $name = trim((string) ($row['name'] ?? ''));
+            if ($code === '' || $name === '') {
+                continue;
+            }
+
+            $rowsByCode[$code] = [
+                'code' => $code,
+                'name' => $name,
+                'address' => isset($row['address']) ? (string) $row['address'] : null,
+                'locator' => isset($row['locator']) ? (string) $row['locator'] : null,
+                'cellphone_no' => isset($row['cellphone_no']) ? (string) $row['cellphone_no'] : null,
+                'is_active' => array_key_exists('is_active', $row)
+                    ? (bool) $row['is_active']
+                    : true,
+            ];
+        }
+
+        return array_values($rowsByCode);
+    }
+
+    public function run(): void
+    {
+        $branches = $this->configuredBranches();
+        if (empty($branches) && app()->environment('testing')) {
+            // Keep deterministic branch fixtures for automated tests.
+            $branches = $this->defaultTestingBranches();
+        }
+
+        if (empty($branches)) {
+            $this->command?->warn('No branches seeded. Set SEED_BRANCHES_JSON to seed branches.');
+            return;
+        }
 
         $branchCodes = array_map(fn ($b) => $b['code'], $branches);
 
@@ -42,9 +96,14 @@ class BranchSeeder extends Seeder
             Branch::updateOrCreate(['code' => $b['code']], $b);
         }
 
-        // Keep only these branches active for branch pickers.
-        Branch::query()
-            ->whereNotIn('code', $branchCodes)
-            ->update(['is_active' => false]);
+        $deactivateUnlisted = filter_var(
+            (string) env('SEED_DEACTIVATE_UNLISTED_BRANCHES', 'false'),
+            FILTER_VALIDATE_BOOLEAN
+        );
+        if ($deactivateUnlisted) {
+            Branch::query()
+                ->whereNotIn('code', $branchCodes)
+                ->update(['is_active' => false]);
+        }
     }
 }

@@ -44,6 +44,7 @@ export type Sale = {
   subtotal: string | number;
   discount_total: string | number;
   tax_total: string | number;
+  sf_charge?: string | number;
   grand_total: string | number;
   paid_total: string | number;
   change_given: string | number;
@@ -89,6 +90,7 @@ export type SalesQuery = {
 export type CreateSaleInput = {
   branch_id: number;
   notes?: string | null;
+  sf_charge?: number;
   items: Array<{
     product_variant_id: number;
     qty: number;

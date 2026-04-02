@@ -189,9 +189,12 @@ const EMPTY_FINANCE = {
   cash_in: 0,
   cogs: 0,
   gross_profit: 0,
+  sf_charged_total: 0,
   restock_spend: 0,
   net_cashflow: 0,
   expense_total: 0,
+  sf_expense_total: 0,
+  operating_expense_total: 0,
   net_income: 0,
   voided_sales_count: 0,
   voided_sales_amount: 0,
@@ -296,19 +299,37 @@ export function AnalyticsPage() {
       ? branchesQuery.data?.find((b) => b.id === branchId)?.name ?? `Branch #${branchId}`
       : 'All branches';
 
-  const handleExportExcel = async () => {
+  const handleExportExcel = async (mode: 'monthly' | 'today' = 'monthly') => {
     if (!canReportExport) return;
+    const isToday = mode === 'today';
 
     try {
       setExportError(null);
       setIsExporting(true);
+
+      const sourceSummary =
+        (isToday
+          ? todaySummaryQuery.data ?? (await todaySummaryQuery.refetch()).data
+          : summaryQuery.data ?? (await summaryQuery.refetch()).data) ?? null;
+
+      if (!sourceSummary) {
+        throw new Error('No report data available for export.');
+      }
+
+      const exportRange = isToday
+        ? { from: todayDate, to: todayDate, label: `Today (${todayLabel})` }
+        : range;
+      const exportFinance = sourceSummary.finance ?? EMPTY_FINANCE;
+      const exportVoidedByBranch = sourceSummary.voided_sales_by_branch ?? [];
+      const exportTopSelling = sourceSummary.top_selling_products ?? [];
+      const exportTrends = sourceSummary.trends ?? [];
 
       const exceljs = await import('exceljs');
       const workbook = new exceljs.Workbook();
       workbook.creator = 'Mad Vapers';
       workbook.created = new Date();
 
-      const ws = workbook.addWorksheet('Monthly Report');
+      const ws = workbook.addWorksheet(isToday ? 'Today Report' : 'Monthly Report');
       ws.columns = [
         { width: 7 },
         { width: 16 },
@@ -358,16 +379,16 @@ export function AnalyticsPage() {
       };
 
       ws.mergeCells('A1:I1');
-      ws.getCell('A1').value = 'Monthly Analytics Report';
+      ws.getCell('A1').value = isToday ? "Today's Analytics Report" : 'Monthly Analytics Report';
       ws.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FF0F172A' } };
       ws.getCell('A1').alignment = { vertical: 'middle', horizontal: 'left' };
 
-      ws.getCell('A2').value = 'Month';
-      ws.getCell('B2').value = range.label;
+      ws.getCell('A2').value = isToday ? 'Date' : 'Month';
+      ws.getCell('B2').value = isToday ? todayLabel : exportRange.label;
       ws.getCell('A3').value = 'Branch';
       ws.getCell('B3').value = branchLabel;
       ws.getCell('A4').value = 'Coverage';
-      ws.getCell('B4').value = `${range.from} to ${range.to}`;
+      ws.getCell('B4').value = `${exportRange.from} to ${exportRange.to}`;
       ['A2', 'A3', 'A4'].forEach((cell) => {
         ws.getCell(cell).font = { bold: true };
       });
@@ -389,14 +410,17 @@ export function AnalyticsPage() {
       row += 1;
 
       const financeRows: Array<{ label: string; value: number; numFmt: string }> = [
-        { label: 'Revenue', value: finance.revenue, numFmt: '#,##0.00' },
-        { label: 'Cash In', value: finance.cash_in, numFmt: '#,##0.00' },
-        { label: 'COGS', value: finance.cogs, numFmt: '#,##0.00' },
-        { label: 'Gross Profit', value: finance.gross_profit, numFmt: '#,##0.00' },
-        { label: 'Expense Total', value: finance.expense_total, numFmt: '#,##0.00' },
-        { label: 'Restock Spend', value: finance.restock_spend, numFmt: '#,##0.00' },
-        { label: 'Net Income', value: finance.net_income, numFmt: '#,##0.00' },
-        { label: 'Net Cashflow', value: finance.net_cashflow, numFmt: '#,##0.00' },
+        { label: 'Revenue', value: exportFinance.revenue, numFmt: '#,##0.00' },
+        { label: 'Cash In', value: exportFinance.cash_in, numFmt: '#,##0.00' },
+        { label: 'COGS', value: exportFinance.cogs, numFmt: '#,##0.00' },
+        { label: 'Gross Profit', value: exportFinance.gross_profit, numFmt: '#,##0.00' },
+        { label: 'SF Charged', value: exportFinance.sf_charged_total, numFmt: '#,##0.00' },
+        { label: 'SF Expense', value: exportFinance.sf_expense_total, numFmt: '#,##0.00' },
+        { label: 'Other Expenses', value: exportFinance.operating_expense_total, numFmt: '#,##0.00' },
+        { label: 'Expense Total', value: exportFinance.expense_total, numFmt: '#,##0.00' },
+        { label: 'Restock Spend', value: exportFinance.restock_spend, numFmt: '#,##0.00' },
+        { label: 'Net Income', value: exportFinance.net_income, numFmt: '#,##0.00' },
+        { label: 'Net Cashflow', value: exportFinance.net_cashflow, numFmt: '#,##0.00' },
       ];
       financeRows.forEach(({ label, value, numFmt }) => {
         ws.getCell(`A${row}`).value = label;
@@ -426,9 +450,9 @@ export function AnalyticsPage() {
       row += 1;
 
       const voidRows: Array<{ label: string; value: number; numFmt: string }> = [
-        { label: 'Voided Sales Count', value: finance.voided_sales_count, numFmt: '#,##0' },
-        { label: 'Voided Sales Amount', value: finance.voided_sales_amount, numFmt: '#,##0.00' },
-        { label: 'Voided Paid Amount', value: finance.voided_paid_amount, numFmt: '#,##0.00' },
+        { label: 'Voided Sales Count', value: exportFinance.voided_sales_count, numFmt: '#,##0' },
+        { label: 'Voided Sales Amount', value: exportFinance.voided_sales_amount, numFmt: '#,##0.00' },
+        { label: 'Voided Paid Amount', value: exportFinance.voided_paid_amount, numFmt: '#,##0.00' },
       ];
       voidRows.forEach(({ label, value, numFmt }) => {
         ws.getCell(`A${row}`).value = label;
@@ -459,7 +483,7 @@ export function AnalyticsPage() {
       }
       row += 1;
 
-      if (voidedByBranch.length === 0) {
+      if (exportVoidedByBranch.length === 0) {
         ws.mergeCells(`A${row}:E${row}`);
         ws.getCell(`A${row}`).value = 'No voided sales by branch for this period.';
         ws.getCell(`A${row}`).alignment = { horizontal: 'left', vertical: 'middle' };
@@ -468,7 +492,7 @@ export function AnalyticsPage() {
         }
         row += 1;
       } else {
-        voidedByBranch.forEach((item) => {
+        exportVoidedByBranch.forEach((item) => {
           ws.getCell(row, 1).value = item.branch_code ?? '-';
           ws.getCell(row, 2).value = item.branch_name ?? '-';
           ws.getCell(row, 3).value = Number(item.voided_sales_count ?? 0);
@@ -497,14 +521,14 @@ export function AnalyticsPage() {
       styleHeaderRow(row);
       row += 1;
 
-      if (topSelling.length === 0) {
+      if (exportTopSelling.length === 0) {
         ws.mergeCells(`A${row}:I${row}`);
         ws.getCell(`A${row}`).value = 'No posted sales available for this period.';
         ws.getCell(`A${row}`).alignment = { horizontal: 'left', vertical: 'middle' };
         ws.getCell(`A${row}`).border = tableBorder;
         row += 1;
       } else {
-        topSelling.forEach((item, idx) => {
+        exportTopSelling.forEach((item, idx) => {
           ws.getCell(row, 1).value = idx + 1;
           ws.getCell(row, 2).value = item.sku ?? '-';
           ws.getCell(row, 3).value = item.product_name ?? '-';
@@ -528,20 +552,20 @@ export function AnalyticsPage() {
       styleSectionTitle(row);
       row += 1;
 
-      const trendHeader = ['Date', 'Inbound Qty', 'Outbound Qty', 'Adjustments', 'Transfers', 'PO Created', 'PO Received'];
+      const trendHeader = ['Date', 'Stock In (Qty)', 'Stock Out (Qty)', 'Adjustments', 'Transfers', 'PO Created', 'PO Received'];
       trendHeader.forEach((label, idx) => {
         ws.getCell(row, idx + 1).value = label;
       });
       styleHeaderRow(row);
       row += 1;
 
-      if (trends.length === 0) {
+      if (exportTrends.length === 0) {
         ws.mergeCells(`A${row}:I${row}`);
         ws.getCell(`A${row}`).value = 'No trend data available for this period.';
         ws.getCell(`A${row}`).alignment = { horizontal: 'left', vertical: 'middle' };
         ws.getCell(`A${row}`).border = tableBorder;
       } else {
-        trends.forEach((point) => {
+        exportTrends.forEach((point) => {
           ws.getCell(row, 1).value = point.date;
           ws.getCell(row, 2).value = Number(point.in_qty ?? 0);
           ws.getCell(row, 3).value = Number(point.out_qty ?? 0);
@@ -586,12 +610,12 @@ export function AnalyticsPage() {
       summaryWs.getRow(1).height = 28;
 
       summaryWs.mergeCells('A2:F2');
-      summaryWs.getCell('A2').value = `${range.label} | ${branchLabel}`;
+      summaryWs.getCell('A2').value = `${exportRange.label} | ${branchLabel}`;
       summaryWs.getCell('A2').alignment = { horizontal: 'center', vertical: 'middle' };
       summaryWs.getCell('A2').font = { size: 11, color: { argb: 'FF334155' } };
 
       summaryWs.getCell('A4').value = 'Coverage';
-      summaryWs.getCell('B4').value = `${range.from} to ${range.to}`;
+      summaryWs.getCell('B4').value = `${exportRange.from} to ${exportRange.to}`;
       summaryWs.getCell('D4').value = 'Generated';
       summaryWs.getCell('E4').value = new Date().toLocaleString();
       ['A4', 'D4'].forEach((cell) => {
@@ -610,10 +634,12 @@ export function AnalyticsPage() {
       summaryRow += 1;
 
       const summaryMetrics: Array<[string, number, string, number]> = [
-        ['Revenue', finance.revenue, 'Cash In', finance.cash_in],
-        ['COGS', finance.cogs, 'Gross Profit', finance.gross_profit],
-        ['Expense Total', finance.expense_total, 'Restock Spend', finance.restock_spend],
-        ['Net Income', finance.net_income, 'Net Cashflow', finance.net_cashflow],
+        ['Revenue', exportFinance.revenue, 'Cash In', exportFinance.cash_in],
+        ['COGS', exportFinance.cogs, 'Gross Profit', exportFinance.gross_profit],
+        ['SF Charged', exportFinance.sf_charged_total, 'Restock Spend', exportFinance.restock_spend],
+        ['SF Expense', exportFinance.sf_expense_total, 'Other Expenses', exportFinance.operating_expense_total],
+        ['Expense Total', exportFinance.expense_total, 'Net Income', exportFinance.net_income],
+        ['Net Cashflow', exportFinance.net_cashflow, 'Voided Sales', exportFinance.voided_sales_amount],
       ];
 
       summaryMetrics.forEach(([leftLabel, leftValue, rightLabel, rightValue]) => {
@@ -644,9 +670,9 @@ export function AnalyticsPage() {
       summaryRow += 1;
 
       const voidMetrics: Array<[string, number, string]> = [
-        ['Voided Sales Count', finance.voided_sales_count, '#,##0'],
-        ['Voided Sales Amount', finance.voided_sales_amount, '#,##0.00'],
-        ['Voided Paid Amount', finance.voided_paid_amount, '#,##0.00'],
+        ['Voided Sales Count', exportFinance.voided_sales_count, '#,##0'],
+        ['Voided Sales Amount', exportFinance.voided_sales_amount, '#,##0.00'],
+        ['Voided Paid Amount', exportFinance.voided_paid_amount, '#,##0.00'],
       ];
       voidMetrics.forEach(([label, value, numFmt]) => {
         summaryWs.getCell(summaryRow, 1).value = label;
@@ -682,7 +708,7 @@ export function AnalyticsPage() {
       });
       summaryRow += 1;
 
-      const topVoidedBranches = voidedByBranch.slice(0, 6);
+      const topVoidedBranches = exportVoidedByBranch.slice(0, 6);
       if (topVoidedBranches.length === 0) {
         summaryWs.mergeCells(`A${summaryRow}:F${summaryRow}`);
         summaryWs.getCell(`A${summaryRow}`).value = 'No voided sales by branch for this period.';
@@ -732,7 +758,7 @@ export function AnalyticsPage() {
       });
       summaryRow += 1;
 
-      const topFive = topSelling.slice(0, 5);
+      const topFive = exportTopSelling.slice(0, 5);
       if (topFive.length === 0) {
         summaryWs.mergeCells(`A${summaryRow}:F${summaryRow}`);
         summaryWs.getCell(`A${summaryRow}`).value = 'No posted sales available for this period.';
@@ -770,9 +796,9 @@ export function AnalyticsPage() {
       }
       summaryRow += 1;
 
-      const collectionRate = finance.revenue > 0 ? finance.cash_in / finance.revenue : 0;
-      const grossMargin = finance.revenue > 0 ? finance.gross_profit / finance.revenue : 0;
-      const netMargin = finance.revenue > 0 ? finance.net_income / finance.revenue : 0;
+      const collectionRate = exportFinance.revenue > 0 ? exportFinance.cash_in / exportFinance.revenue : 0;
+      const grossMargin = exportFinance.revenue > 0 ? exportFinance.gross_profit / exportFinance.revenue : 0;
+      const netMargin = exportFinance.revenue > 0 ? exportFinance.net_income / exportFinance.revenue : 0;
       const ratioRows: Array<[string, number]> = [
         ['Collection Rate (Cash In / Revenue)', collectionRate],
         ['Gross Margin (Gross Profit / Revenue)', grossMargin],
@@ -805,13 +831,17 @@ export function AnalyticsPage() {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `monthly-analytics-${month}${typeof branchId === 'number' ? `-branch-${branchId}` : ''}.xlsx`;
+      anchor.download = `${isToday ? 'today-analytics' : 'monthly-analytics'}-${isToday ? todayDate : month}${typeof branchId === 'number' ? `-branch-${branchId}` : ''}.xlsx`;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
       URL.revokeObjectURL(url);
     } catch (error) {
-      setExportError('Failed to export Excel report. Please try again.');
+      setExportError(
+        isToday
+          ? "Failed to export today's Excel report. Please try again."
+          : 'Failed to export Excel report. Please try again.'
+      );
       console.error(error);
     } finally {
       setIsExporting(false);
@@ -916,14 +946,32 @@ export function AnalyticsPage() {
           gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(5, 1fr)' },
         }}
       >
-        <MetricCard label="Revenue" value={money(finance.revenue)} hint="Posted sales amount" tone="#0ea5e9" />
+        <MetricCard label="Revenue" value={money(finance.revenue)} hint="Sales + SF charged" tone="#0ea5e9" />
+        <MetricCard
+          label="SF Charged"
+          value={money(finance.sf_charged_total)}
+          hint="Shipping fee charged to customer"
+          tone="#2563eb"
+        />
         <MetricCard label="Cash In" value={money(finance.cash_in)} hint="Collected payments" tone="#16a34a" />
         <MetricCard label="COGS" value={money(finance.cogs)} hint="Cost of sold goods" tone="#f97316" />
         <MetricCard label="Gross Profit" value={money(finance.gross_profit)} hint="Revenue - COGS" tone="#22c55e" />
         <MetricCard
+          label="SF Expense"
+          value={money(finance.sf_expense_total)}
+          hint="Shipping fee paid by shop"
+          tone="#e11d48"
+        />
+        <MetricCard
+          label="Other Expenses"
+          value={money(finance.operating_expense_total)}
+          hint="Operating expenses (excl. SF)"
+          tone="#fb7185"
+        />
+        <MetricCard
           label="Expense Total"
           value={money(finance.expense_total)}
-          hint="Posted operating expenses"
+          hint="SF expense + other expenses"
           tone="#fb7185"
         />
         <MetricCard
@@ -935,7 +983,7 @@ export function AnalyticsPage() {
         <MetricCard
           label="Net Income"
           value={money(finance.net_income)}
-          hint="Gross profit - expenses"
+          hint="Gross profit - SF expense - other expenses"
           tone={finance.net_income >= 0 ? '#0284c7' : '#dc2626'}
         />
         <MetricCard
@@ -957,7 +1005,7 @@ export function AnalyticsPage() {
           Voided / Refund Summary
         </Typography>
         <Typography variant="caption" color="text.secondary">
-          Tracks checkout reversals posted in the selected month.
+          Tracks checkout reversals posted in the selected period.
         </Typography>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 1 }}>
           <Chip
@@ -1074,7 +1122,7 @@ export function AnalyticsPage() {
             Stock Movement Trend
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            Daily inbound vs outbound quantities for the selected month
+            Daily stock in vs stock out quantities for the selected period
           </Typography>
 
           {trends.length === 0 ? (
@@ -1113,8 +1161,8 @@ export function AnalyticsPage() {
           )}
 
           <Stack direction="row" spacing={0.8} sx={{ mt: 1 }}>
-            <Chip size="small" label={`Inbound: ${numberFmt(movementTotals.inQty)}`} sx={{ bgcolor: '#dcfce7' }} />
-            <Chip size="small" label={`Outbound: ${numberFmt(movementTotals.outQty)}`} sx={{ bgcolor: '#fee2e2' }} />
+            <Chip size="small" label={`Stock In (Qty): ${numberFmt(movementTotals.inQty)}`} sx={{ bgcolor: '#dcfce7' }} />
+            <Chip size="small" label={`Stock Out (Qty): ${numberFmt(movementTotals.outQty)}`} sx={{ bgcolor: '#fee2e2' }} />
             <Chip
               size="small"
               label={`Adjustments: ${numberFmt(movementTotals.adjustments)}`}
@@ -1164,7 +1212,7 @@ export function AnalyticsPage() {
           Top Selling Products
         </Typography>
         <Typography variant="caption" color="text.secondary">
-          Ranked by sold quantity from posted sales in the selected month
+          Ranked by sold quantity from posted sales in the selected period
         </Typography>
 
         {topSelling.length === 0 ? (
@@ -1306,19 +1354,37 @@ export function AnalyticsPage() {
                 gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' },
               }}
             >
-              <MetricCard label="Revenue" value={money(todayFinance.revenue)} hint="Posted sales today" tone="#0ea5e9" />
+              <MetricCard label="Revenue" value={money(todayFinance.revenue)} hint="Sales + SF charged today" tone="#0ea5e9" />
+              <MetricCard
+                label="SF Charged"
+                value={money(todayFinance.sf_charged_total)}
+                hint="Shipping fee charged today"
+                tone="#2563eb"
+              />
               <MetricCard label="Cash In" value={money(todayFinance.cash_in)} hint="Payments collected today" tone="#16a34a" />
               <MetricCard label="COGS" value={money(todayFinance.cogs)} hint="Cost of sold goods today" tone="#f97316" />
               <MetricCard
+                label="SF Expense"
+                value={money(todayFinance.sf_expense_total)}
+                hint="Shipping fee paid by shop today"
+                tone="#e11d48"
+              />
+              <MetricCard
+                label="Other Expenses"
+                value={money(todayFinance.operating_expense_total)}
+                hint="Operating expenses posted today (excl. SF)"
+                tone="#fb7185"
+              />
+              <MetricCard
                 label="Expense Total"
                 value={money(todayFinance.expense_total)}
-                hint="Operating expenses posted today"
+                hint="SF expense + other expenses posted today"
                 tone="#fb7185"
               />
               <MetricCard
                 label="Net Income"
                 value={money(todayFinance.net_income)}
-                hint="Gross profit - expenses"
+                hint="Gross profit - SF expense - other expenses"
                 tone={todayFinance.net_income >= 0 ? '#0284c7' : '#dc2626'}
               />
               <MetricCard
@@ -1343,6 +1409,13 @@ export function AnalyticsPage() {
           )}
         </DialogContent>
         <DialogActions>
+          <Button
+            variant="outlined"
+            onClick={() => void handleExportExcel('today')}
+            disabled={!canReportExport || todaySummaryQuery.isFetching || isExporting}
+          >
+            {isExporting ? 'Exporting...' : 'Export Today'}
+          </Button>
           <Button onClick={() => setOpenTodayReport(false)}>Close</Button>
         </DialogActions>
       </Dialog>

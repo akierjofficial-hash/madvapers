@@ -45,7 +45,7 @@ class TransferController extends Controller
             (int) $transfer->to_branch_id
         );
 
-        return $transfer->load(['items.variant', 'fromBranch', 'toBranch']);
+        return $transfer->load(['items.variant.product', 'fromBranch', 'toBranch']);
     }
 
     public function store(Request $request)
@@ -97,7 +97,7 @@ class TransferController extends Controller
                 ]
             );
 
-            return $transfer->load(['items.variant', 'fromBranch', 'toBranch']);
+            return $transfer->load(['items.variant.product', 'fromBranch', 'toBranch']);
         });
     }
 
@@ -168,7 +168,7 @@ class TransferController extends Controller
                 ]
             );
 
-            return $locked->load(['items.variant', 'fromBranch', 'toBranch']);
+            return $locked->load(['items.variant.product', 'fromBranch', 'toBranch']);
         });
     }
 
@@ -210,7 +210,7 @@ class TransferController extends Controller
 
             return response()->json([
                 'status' => 'ok',
-                'transfer' => $locked->fresh()->load(['items.variant','fromBranch','toBranch']),
+                'transfer' => $locked->fresh()->load(['items.variant.product','fromBranch','toBranch']),
             ]);
         });
     }
@@ -246,7 +246,7 @@ class TransferController extends Controller
 
             return response()->json([
                 'status' => 'ok',
-                'transfer' => $locked->fresh()->load(['items.variant','fromBranch','toBranch']),
+                'transfer' => $locked->fresh()->load(['items.variant.product','fromBranch','toBranch']),
             ]);
         });
     }
@@ -334,7 +334,7 @@ class TransferController extends Controller
 
             return response()->json([
                 'status' => 'ok',
-                'transfer' => $locked->fresh()->load(['items.variant','fromBranch','toBranch']),
+                'transfer' => $locked->fresh()->load(['items.variant.product','fromBranch','toBranch']),
             ]);
         });
     }
@@ -393,7 +393,7 @@ class TransferController extends Controller
 
             return response()->json([
                 'status' => 'ok',
-                'transfer' => $locked->fresh()->load(['items.variant','fromBranch','toBranch']),
+                'transfer' => $locked->fresh()->load(['items.variant.product','fromBranch','toBranch']),
             ]);
         });
     }
@@ -434,7 +434,7 @@ class TransferController extends Controller
 
             return response()->json([
                 'status' => 'ok',
-                'transfer' => $locked->fresh()->load(['items.variant','fromBranch','toBranch']),
+                'transfer' => $locked->fresh()->load(['items.variant.product','fromBranch','toBranch']),
             ]);
         });
     }

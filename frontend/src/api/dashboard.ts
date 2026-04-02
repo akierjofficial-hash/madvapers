@@ -173,9 +173,12 @@ export type DashboardFinance = {
   cash_in: number;
   cogs: number;
   gross_profit: number;
+  sf_charged_total: number;
   restock_spend: number;
   net_cashflow: number;
   expense_total: number;
+  sf_expense_total: number;
+  operating_expense_total: number;
   net_income: number;
   voided_sales_count: number;
   voided_sales_amount: number;
