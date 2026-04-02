@@ -94,7 +94,17 @@ class AuthController extends Controller
             $request->session()->regenerate();
         }
 
-        return response()->json($this->authPayload($user));
+        // Token auth fallback for cross-domain SPA deployments (e.g. separate
+        // frontend/backend Railway subdomains where third-party cookies may be blocked).
+        $token = $user->createToken('spa')->plainTextToken;
+
+        return response()->json(array_merge(
+            $this->authPayload($user),
+            [
+                'access_token' => $token,
+                'token_type' => 'Bearer',
+            ]
+        ));
     }
 
     public function csrfToken(Request $request)

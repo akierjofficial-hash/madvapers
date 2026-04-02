@@ -1,4 +1,5 @@
-import { api, ensureCsrfCookie } from '../lib/http';
+import { api } from '../lib/http';
+import { tokenStorage } from '../auth/tokenStorage';
 import type { User } from '../types/models';
 
 export type LoginInput = {
@@ -9,6 +10,8 @@ export type LoginInput = {
 export type LoginResponse = {
   user: User;
   permissions: string[];
+  access_token?: string;
+  token_type?: string;
 };
 
 export type MeResponse = {
@@ -17,8 +20,11 @@ export type MeResponse = {
 };
 
 export async function login(payload: LoginInput): Promise<LoginResponse> {
-  await ensureCsrfCookie({ force: true });
   const { data } = await api.post<LoginResponse>('/auth/login', payload);
+  const token = String(data?.access_token ?? '').trim();
+  if (token) {
+    tokenStorage.set(token);
+  }
   return data;
 }
 
@@ -28,7 +34,11 @@ export async function me(): Promise<MeResponse> {
 }
 
 export async function logout(): Promise<{ status: string }> {
-  await ensureCsrfCookie();
-  const { data } = await api.post<{ status: string }>('/auth/logout');
-  return data;
+  try {
+    const { data } = await api.post<{ status: string }>('/auth/logout');
+    return data;
+  } finally {
+    tokenStorage.clear();
+    delete api.defaults.headers.common.Authorization;
+  }
 }

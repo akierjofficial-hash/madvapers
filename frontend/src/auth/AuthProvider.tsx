@@ -9,6 +9,7 @@ import React, {
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { authStorage } from './authStorage';
+import { tokenStorage } from './tokenStorage';
 import { useMeQuery, qk } from '../api/queries';
 import { logout as apiLogout } from '../api/auth';
 import type { User } from '../types/models';
@@ -39,6 +40,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const clearClientSession = useCallback(() => {
     authStorage.clearLastBranchId();
+    tokenStorage.clear();
     qc.clear();
   }, [qc]);
 

@@ -1,4 +1,5 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import { tokenStorage } from '../auth/tokenStorage';
 
 function isLocalLikeHost(host: string): boolean {
   const value = String(host ?? '').trim().toLowerCase();
@@ -78,6 +79,15 @@ export const api = axios.create({
   headers: {
     Accept: 'application/json',
   },
+});
+
+api.interceptors.request.use((config) => {
+  const token = tokenStorage.get();
+  if (token) {
+    config.headers = config.headers ?? {};
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 type RetriableConfig = InternalAxiosRequestConfig & { _csrfRetried?: boolean };

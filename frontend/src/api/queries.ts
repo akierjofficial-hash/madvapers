@@ -220,6 +220,7 @@ export function useMeQuery(enabled?: boolean) {
     queryFn: me,
     enabled: enabled ?? true,
     staleTime: 60_000,
+    retry: false,
   });
 }
 
