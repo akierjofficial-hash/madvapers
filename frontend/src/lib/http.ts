@@ -48,6 +48,19 @@ export async function ensureCsrfCookie(): Promise<void> {
     withCredentials: true,
     headers: { Accept: 'application/json' },
   });
+
+  // On cross-domain deployments (e.g. separate Railway frontend/backend subdomains),
+  // the SPA can't read backend host-only cookies. Fetch a plain CSRF token value
+  // from API and attach it as X-CSRF-TOKEN for subsequent mutation requests.
+  const { data } = await axios.get<{ csrf_token?: string }>(`${API_BASE_URL}/auth/csrf-token`, {
+    withCredentials: true,
+    headers: { Accept: 'application/json' },
+  });
+
+  const csrfToken = String(data?.csrf_token ?? '').trim();
+  if (csrfToken) {
+    api.defaults.headers.common['X-CSRF-TOKEN'] = csrfToken;
+  }
 }
 
 export const api = axios.create({
