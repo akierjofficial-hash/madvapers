@@ -10,6 +10,32 @@ use Illuminate\Support\Str;
 
 class UserSeeder extends Seeder
 {
+    /**
+     * Keep demo role accounts out of non-testing environments by default.
+     */
+    private function shouldSeedRoleUsers(): bool
+    {
+        if (app()->environment('testing')) {
+            return true;
+        }
+
+        return filter_var((string) env('SEED_ROLE_USERS', 'false'), FILTER_VALIDATE_BOOLEAN);
+    }
+
+    /**
+     * @return string[]
+     */
+    private function demoRoleEmails(): array
+    {
+        return [
+            'owner@madvapers.local',
+            'manager@madvapers.local',
+            'clerk@madvapers.local',
+            'cashier@madvapers.local',
+            'auditor@madvapers.local',
+        ];
+    }
+
     private function seedPassword(): string
     {
         $fromEnv = trim((string) env('SEED_DEFAULT_PASSWORD', ''));
@@ -26,6 +52,12 @@ class UserSeeder extends Seeder
 
     public function run(): void
     {
+        if (!$this->shouldSeedRoleUsers()) {
+            // Enforce "admin-only" default seeding posture.
+            User::query()->whereIn('email', $this->demoRoleEmails())->delete();
+            return;
+        }
+
         $branches = Branch::query()
             ->where('is_active', true)
             ->orderBy('id')
@@ -57,10 +89,10 @@ class UserSeeder extends Seeder
             $user->branches()->syncWithoutDetaching([$branch->id]);
         };
 
-        // Demo accounts
-        $make('owner@madvapers.local',   'Owner',   $roles['OWNER'],   $primaryBranch);
+        // Optional demo role accounts (testing by default, opt-in elsewhere).
+        $make('owner@madvapers.local', 'Owner', $roles['OWNER'], $primaryBranch);
         $make('manager@madvapers.local', 'Manager', $roles['MANAGER'], $primaryBranch);
-        $make('clerk@madvapers.local',   'Clerk',   $roles['CLERK'],   $secondaryBranch);
+        $make('clerk@madvapers.local', 'Clerk', $roles['CLERK'], $secondaryBranch);
         $make('cashier@madvapers.local', 'Cashier', $roles['CASHIER'], $primaryBranch);
         $make('auditor@madvapers.local', 'Auditor', $roles['AUDITOR'], $primaryBranch);
     }

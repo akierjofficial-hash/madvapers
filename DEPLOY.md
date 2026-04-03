@@ -44,6 +44,9 @@ SANCTUM_STATEFUL_DOMAINS=
 
 SESSION_SECURE_COOKIE=true
 SESSION_SAME_SITE=lax
+
+# Keep non-admin demo users disabled in production
+SEED_ROLE_USERS=false
 ```
 
 Example:
@@ -57,6 +60,7 @@ LOGIN_ALLOWED_ORIGINS=https://madvapers-frontend.up.railway.app
 SANCTUM_STATEFUL_DOMAINS=
 SESSION_SECURE_COOKIE=true
 SESSION_SAME_SITE=lax
+SEED_ROLE_USERS=false
 ```
 
 ## 3) Why This Fixes "CSRF Token Invalid"
@@ -69,6 +73,7 @@ In token mode, authenticated API calls use `Authorization: Bearer <token>` inste
 - Keep `APP_DEBUG=false` in production.
 - Keep `CORS_ALLOWED_ORIGINS` strict (exact frontend origin only).
 - Keep `LOGIN_ALLOWED_ORIGINS` strict for `/api/auth/login` requests.
+- Keep `SEED_ROLE_USERS=false` so only admin account is seeded by default.
 - Never commit cookie jar files (`tmp_*cookies*.txt`, `*.cookiejar`).
 - If sensitive artifacts were pushed before, rotate sessions/tokens.
 - Use HTTPS for frontend and backend.
