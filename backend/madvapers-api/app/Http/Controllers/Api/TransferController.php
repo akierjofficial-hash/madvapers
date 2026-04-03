@@ -21,7 +21,7 @@ class TransferController extends Controller
     {
         $q = Transfer::query()->with(['items', 'fromBranch', 'toBranch']);
 
-        // Non-admin/owner users can only see transfers touching their assigned branch.
+        // Non-admin users can only see transfers touching their assigned branch.
         $this->scopeTransfersToAssignedBranch($request, $q);
 
         if ($request->filled('from_branch_id')) {
@@ -60,7 +60,7 @@ class TransferController extends Controller
             'items.*.unit_cost'         => ['nullable', 'numeric', 'gte:0'],
         ]);
 
-        // Non-admin/owner users can only originate transfers from their own branch.
+        // Non-admin users can only originate transfers from their own branch.
         $this->enforceTransferFromBranchAccessOrFail($request, (int) $data['from_branch_id']);
 
         return DB::transaction(function () use ($data, $request) {

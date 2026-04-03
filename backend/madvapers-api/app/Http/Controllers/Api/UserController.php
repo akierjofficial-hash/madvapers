@@ -12,7 +12,7 @@ use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
-    private const FULL_ACCESS_ROLE_CODES = ['OWNER', 'ADMIN'];
+    private const FULL_ACCESS_ROLE_CODES = ['ADMIN'];
 
     private function normalizeBranchIds(array $branchIds): array
     {

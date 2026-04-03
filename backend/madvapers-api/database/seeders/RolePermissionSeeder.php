@@ -88,19 +88,32 @@ class RolePermissionSeeder extends Seeder
             Permission::updateOrCreate(['code' => $p['code']], ['name' => $p['name']]);
         }
 
-        // Roles
+        // Roles (current model: Admin, Inventory Clerk, Cashier)
         $roles = [
-            ['code' => 'OWNER', 'name' => 'Owner'],
             ['code' => 'ADMIN', 'name' => 'Admin'],
-            ['code' => 'MANAGER', 'name' => 'Branch Manager'],
             ['code' => 'CLERK', 'name' => 'Inventory Clerk'],
             ['code' => 'CASHIER', 'name' => 'Cashier'],
-            ['code' => 'AUDITOR', 'name' => 'Auditor'],
         ];
 
         foreach ($roles as $r) {
             Role::updateOrCreate(['code' => $r['code']], ['name' => $r['name']]);
         }
+
+        // Migrate legacy role assignments before removing old roles.
+        $adminRole = Role::where('code', 'ADMIN')->firstOrFail();
+        $clerkRole = Role::where('code', 'CLERK')->firstOrFail();
+
+        $ownerRole = Role::where('code', 'OWNER')->first();
+        if ($ownerRole) {
+            $ownerRole->users()->update(['role_id' => $adminRole->id]);
+        }
+
+        $managerRole = Role::where('code', 'MANAGER')->first();
+        if ($managerRole) {
+            $managerRole->users()->update(['role_id' => $clerkRole->id]);
+        }
+
+        Role::whereIn('code', ['OWNER', 'MANAGER', 'AUDITOR'])->delete();
 
         // Helper to attach permissions by codes
         $attach = function (string $roleCode, array $permCodes) {
@@ -109,38 +122,22 @@ class RolePermissionSeeder extends Seeder
             $role->permissions()->sync($permIds);
         };
 
-        // OWNER & ADMIN: all permissions
-        $attach('OWNER', Permission::pluck('code')->all());
+        // ADMIN: all permissions
         $attach('ADMIN', Permission::pluck('code')->all());
 
-        // MANAGER
-        $attach('MANAGER', [
-            'BRANCH_VIEW',
-            'PRODUCT_VIEW', 'PRICE_VIEW',
-            'INVENTORY_VIEW', 'LEDGER_VIEW',
-            'PO_VIEW', 'PO_CREATE', 'PO_APPROVE', 'PO_RECEIVE',
-            'SALES_VIEW', 'SALES_CREATE', 'SALES_POST', 'SALES_VOID_REQUEST', 'SALES_VOID', 'SALES_PAYMENT',
-            'EXPENSE_VIEW', 'EXPENSE_CREATE', 'EXPENSE_UPDATE', 'EXPENSE_VOID',
-            'SUPPLIER_VIEW', 'SUPPLIER_MANAGE',
-            'TRANSFER_VIEW', 'TRANSFER_CREATE', 'TRANSFER_APPROVE', 'TRANSFER_DISPATCH', 'TRANSFER_RECEIVE',
-            'ADJUSTMENT_VIEW', 'ADJUSTMENT_CREATE', 'ADJUSTMENT_SUBMIT', 'ADJUSTMENT_APPROVE', 'ADJUSTMENT_POST',
-            'COUNT_VIEW', 'COUNT_CREATE', 'COUNT_APPROVE', 'COUNT_POST',
-            'REPORT_VIEW', 'REPORT_EXPORT',
-        ]);
-
-        // CLERK
+        // CLERK: manager-like operations without approval powers
         $attach('CLERK', [
             'BRANCH_VIEW',
-            'PRODUCT_VIEW', 'PRICE_VIEW',
+            'PRODUCT_VIEW', 'PRODUCT_CREATE', 'PRODUCT_UPDATE', 'PRICE_VIEW',
             'INVENTORY_VIEW', 'LEDGER_VIEW',
             'PO_VIEW', 'PO_CREATE', 'PO_RECEIVE',
             'SALES_VIEW', 'SALES_CREATE', 'SALES_POST', 'SALES_VOID_REQUEST', 'SALES_PAYMENT',
-            'EXPENSE_VIEW', 'EXPENSE_CREATE', 'EXPENSE_UPDATE',
+            'EXPENSE_VIEW', 'EXPENSE_CREATE', 'EXPENSE_UPDATE', 'EXPENSE_VOID',
             'SUPPLIER_VIEW', 'SUPPLIER_MANAGE',
             'TRANSFER_VIEW', 'TRANSFER_CREATE', 'TRANSFER_DISPATCH', 'TRANSFER_RECEIVE',
-            'ADJUSTMENT_VIEW', 'ADJUSTMENT_CREATE', 'ADJUSTMENT_SUBMIT',
-            'COUNT_VIEW', 'COUNT_CREATE',
-            'REPORT_VIEW',
+            'ADJUSTMENT_VIEW', 'ADJUSTMENT_CREATE', 'ADJUSTMENT_SUBMIT', 'ADJUSTMENT_POST',
+            'COUNT_VIEW', 'COUNT_CREATE', 'COUNT_POST',
+            'REPORT_VIEW', 'REPORT_EXPORT',
         ]);
 
         // CASHIER
@@ -149,20 +146,5 @@ class RolePermissionSeeder extends Seeder
             'SALES_VIEW', 'SALES_CREATE', 'SALES_POST', 'SALES_VOID_REQUEST', 'SALES_PAYMENT',
         ]);
 
-        // AUDITOR (read-only)
-        $attach('AUDITOR', [
-            'AUDIT_VIEW',
-            'BRANCH_VIEW',
-            'PRODUCT_VIEW', 'PRICE_VIEW',
-            'INVENTORY_VIEW', 'LEDGER_VIEW',
-            'PO_VIEW',
-            'SALES_VIEW',
-            'EXPENSE_VIEW',
-            'SUPPLIER_VIEW',
-            'TRANSFER_VIEW',
-            'ADJUSTMENT_VIEW',
-            'COUNT_VIEW',
-            'REPORT_VIEW', 'REPORT_EXPORT',
-        ]);
     }
 }

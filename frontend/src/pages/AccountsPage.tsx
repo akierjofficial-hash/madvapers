@@ -151,8 +151,8 @@ export function AccountsPage() {
   const createRoleCode = typeof createRoleId === 'number' ? roleCodeById.get(createRoleId) ?? '' : '';
   const editRoleCode = typeof editRoleId === 'number' ? roleCodeById.get(editRoleId) ?? '' : '';
   const createRequiresBranch =
-    typeof createRoleId === 'number' && !['ADMIN', 'OWNER'].includes(createRoleCode);
-  const editRequiresBranch = typeof editRoleId === 'number' && !['ADMIN', 'OWNER'].includes(editRoleCode);
+    typeof createRoleId === 'number' && !['ADMIN'].includes(createRoleCode);
+  const editRequiresBranch = typeof editRoleId === 'number' && !['ADMIN'].includes(editRoleCode);
   const toggleBranch = (current: number[], branchId: number, checked: boolean) => {
     if (checked) return Array.from(new Set([...current, branchId]));
     return current.filter((id) => id !== branchId);
@@ -772,7 +772,7 @@ export function AccountsPage() {
               <Typography variant="caption" sx={{ opacity: 0.75 }}>
                 {createRequiresBranch
                   ? 'Select one or more branches. First selected branch is used as the default branch.'
-                  : 'Optional for admin/owner.'}
+                  : 'Optional for admin.'}
               </Typography>
             </Stack>
             <FormControlLabel
@@ -863,7 +863,7 @@ export function AccountsPage() {
               <Typography variant="caption" sx={{ opacity: 0.75 }}>
                 {editRequiresBranch
                   ? 'Select one or more branches. First selected branch is used as the default branch.'
-                  : 'Optional for admin/owner.'}
+                  : 'Optional for admin.'}
               </Typography>
             </Stack>
             <FormControlLabel

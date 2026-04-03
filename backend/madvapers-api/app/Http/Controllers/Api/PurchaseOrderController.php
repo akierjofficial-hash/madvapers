@@ -25,7 +25,7 @@ class PurchaseOrderController extends Controller
         ->withSum('items as total_qty_ordered', 'qty_ordered')
         ->orderByDesc('id');
 
-    // Non-admin/owner users are always scoped to their assigned branch.
+    // Non-admin users are always scoped to their assigned branch.
     $this->scopeToAssignedBranch($request, $q);
 
     if ($request->filled('branch_id')) {

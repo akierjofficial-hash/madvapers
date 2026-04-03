@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -17,6 +18,49 @@ class ProductController extends Controller
         $normalized = trim($normalized, '_');
 
         return $normalized !== '' ? $normalized : 'DEVICE';
+    }
+
+    private function normalizeProductName(string $value): string
+    {
+        $normalized = trim($value);
+        $normalized = preg_replace('/\s+/', ' ', $normalized) ?? '';
+
+        return $normalized;
+    }
+
+    private function duplicateProductExists(int $brandId, string $name, ?int $ignoreId = null): bool
+    {
+        $q = Product::query()
+            ->where('brand_id', $brandId)
+            ->where('name', $name);
+
+        if ($ignoreId !== null) {
+            $q->where('id', '!=', $ignoreId);
+        }
+
+        return $q->exists();
+    }
+
+    private function duplicateProductResponse(string $name)
+    {
+        return response()->json([
+            'message' => sprintf('Product "%s" already exists for this brand.', $name),
+            'errors' => [
+                'name' => ['Product name must be unique per brand.'],
+            ],
+        ], 422);
+    }
+
+    private function isDuplicateBrandNameConstraint(QueryException $exception): bool
+    {
+        $sqlState = (string) ($exception->errorInfo[0] ?? $exception->getCode() ?? '');
+        if ($sqlState !== '23505') {
+            return false;
+        }
+
+        $details = strtolower((string) ($exception->errorInfo[2] ?? $exception->getMessage()));
+
+        return str_contains($details, 'products_brand_id_name_unique');
     }
 
     public function index(Request $request)
@@ -68,8 +112,22 @@ class ProductController extends Controller
             'is_active' => ['boolean'],
         ]);
 
+        $data['name'] = $this->normalizeProductName((string) $data['name']);
         $data['product_type'] = $this->normalizeProductType((string) $data['product_type']);
-        $product = Product::create($data);
+
+        if ($this->duplicateProductExists((int) $data['brand_id'], (string) $data['name'])) {
+            return $this->duplicateProductResponse((string) $data['name']);
+        }
+
+        try {
+            $product = Product::create($data);
+        } catch (QueryException $exception) {
+            if ($this->isDuplicateBrandNameConstraint($exception)) {
+                return $this->duplicateProductResponse((string) $data['name']);
+            }
+
+            throw $exception;
+        }
 
         return response()->json($product->load(['brand', 'category']), 201);
     }
@@ -90,11 +148,30 @@ class ProductController extends Controller
             'base_price' => ['sometimes', 'nullable', 'numeric', 'min:0'],
         ]);
 
+        if (array_key_exists('name', $data)) {
+            $data['name'] = $this->normalizeProductName((string) $data['name']);
+        }
+
         if (array_key_exists('product_type', $data)) {
             $data['product_type'] = $this->normalizeProductType((string) $data['product_type']);
         }
 
-        $product->update($data);
+        $targetBrandId = (int) ($data['brand_id'] ?? $product->brand_id);
+        $targetName = (string) ($data['name'] ?? $product->name);
+
+        if ($targetBrandId > 0 && $targetName !== '' && $this->duplicateProductExists($targetBrandId, $targetName, (int) $product->id)) {
+            return $this->duplicateProductResponse($targetName);
+        }
+
+        try {
+            $product->update($data);
+        } catch (QueryException $exception) {
+            if ($this->isDuplicateBrandNameConstraint($exception)) {
+                return $this->duplicateProductResponse($targetName);
+            }
+
+            throw $exception;
+        }
 
         return $product->load(['brand', 'category']);
     }

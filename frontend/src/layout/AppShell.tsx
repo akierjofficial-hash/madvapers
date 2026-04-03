@@ -189,7 +189,7 @@ export function AppShell() {
       label: 'Analytics',
       perm: 'USER_VIEW',
       icon: <QueryStatsOutlinedIcon />,
-      allowRoleCodes: ['ADMIN', 'OWNER'],
+      allowRoleCodes: ['ADMIN'],
     },
     { to: '/inventory', label: 'Inventory', perm: 'INVENTORY_VIEW', icon: <Inventory2OutlinedIcon /> },
     { to: '/products', label: 'Products', perm: 'PRODUCT_VIEW', icon: <StorefrontOutlinedIcon /> },

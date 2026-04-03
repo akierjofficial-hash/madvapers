@@ -21,7 +21,10 @@ class ProductTypeFlexibilityTest extends TestCase
 
     private function actingAsAdmin(): void
     {
-        $admin = User::where('email', 'admin@madvapers.local')->firstOrFail();
+        $admin = User::query()
+            ->whereIn('email', ['admin@madvapers.com', 'admin@madvapers.local'])
+            ->orderByRaw("CASE WHEN email = 'admin@madvapers.com' THEN 0 ELSE 1 END")
+            ->firstOrFail();
         Sanctum::actingAs($admin);
     }
 
@@ -71,5 +74,52 @@ class ProductTypeFlexibilityTest extends TestCase
             'id' => $product->id,
             'product_type' => 'LIQ_POD',
         ]);
+    }
+
+    public function test_duplicate_product_name_per_brand_returns_422_on_create(): void
+    {
+        $this->actingAsAdmin();
+        $brand = $this->makeBrand();
+
+        Product::create([
+            'name' => 'X-SLIMBAR',
+            'brand_id' => $brand->id,
+            'product_type' => 'DISPOSABLE',
+            'is_active' => true,
+        ]);
+
+        $this->postJson('/api/products', [
+            'name' => 'X-SLIMBAR',
+            'brand_id' => $brand->id,
+            'product_type' => 'DISPOSABLE',
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Product "X-SLIMBAR" already exists for this brand.');
+    }
+
+    public function test_duplicate_product_name_per_brand_returns_422_on_update(): void
+    {
+        $this->actingAsAdmin();
+        $brand = $this->makeBrand();
+
+        $existing = Product::create([
+            'name' => 'X-SLIMBAR',
+            'brand_id' => $brand->id,
+            'product_type' => 'DISPOSABLE',
+            'is_active' => true,
+        ]);
+
+        $other = Product::create([
+            'name' => 'X-ULTRA',
+            'brand_id' => $brand->id,
+            'product_type' => 'DISPOSABLE',
+            'is_active' => true,
+        ]);
+
+        $this->putJson("/api/products/{$other->id}", [
+            'name' => $existing->name,
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Product "X-SLIMBAR" already exists for this brand.');
     }
 }

@@ -13,7 +13,7 @@ trait EnforcesBranchAccess
     protected function isPrivilegedUser(?User $user): bool
     {
         $roleCode = strtoupper((string) ($user?->role?->code ?? ''));
-        return in_array($roleCode, ['OWNER', 'ADMIN'], true);
+        return in_array($roleCode, ['ADMIN'], true);
     }
 
     protected function assignedBranchIds(Request $request): array

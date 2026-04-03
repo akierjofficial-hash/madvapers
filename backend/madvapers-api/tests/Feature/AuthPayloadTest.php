@@ -11,6 +11,31 @@ class AuthPayloadTest extends TestCase
 {
     use RefreshDatabase;
 
+    private function seededAdminEmail(): string
+    {
+        $fromEnv = trim((string) env('SEED_ADMIN_EMAIL', ''));
+        if ($fromEnv !== '') {
+            return $fromEnv;
+        }
+
+        return 'admin@madvapers.com';
+    }
+
+    private function seededAdminPassword(): string
+    {
+        $fromAdminEnv = trim((string) env('SEED_ADMIN_PASSWORD', ''));
+        if ($fromAdminEnv !== '') {
+            return $fromAdminEnv;
+        }
+
+        $fromEnv = trim((string) env('SEED_DEFAULT_PASSWORD', ''));
+        if ($fromEnv !== '') {
+            return $fromEnv;
+        }
+
+        return 'admin123';
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -19,9 +44,11 @@ class AuthPayloadTest extends TestCase
 
     public function test_login_returns_permissions_and_role(): void
     {
+        $adminEmail = $this->seededAdminEmail();
+
         $res = $this->postJson('/api/auth/login', [
-            'email' => 'admin@madvapers.local',
-            'password' => 'password123',
+            'email' => $adminEmail,
+            'password' => $this->seededAdminPassword(),
         ]);
 
         $res->assertOk()
@@ -29,7 +56,7 @@ class AuthPayloadTest extends TestCase
                 'user' => ['id','email','role' => ['code']],
                 'permissions',
             ])
-            ->assertJsonPath('user.email', 'admin@madvapers.local');
+            ->assertJsonPath('user.email', $adminEmail);
 
         $perms = $res->json('permissions', []);
         $this->assertContains('INVENTORY_VIEW', $perms);
@@ -61,7 +88,7 @@ class AuthPayloadTest extends TestCase
 
     public function test_logout_does_not_crash_for_cookie_or_transient_auth(): void
     {
-        $admin = User::where('email', 'admin@madvapers.local')->firstOrFail();
+        $admin = User::where('email', $this->seededAdminEmail())->firstOrFail();
         Sanctum::actingAs($admin);
 
         $res = $this->postJson('/api/auth/logout');

@@ -21,7 +21,7 @@ class InventoryController extends Controller
             ->with(['branch', 'variant.product.brand', 'variant.product.category'])
             ->orderBy('id', 'desc');
 
-        // Non-admin/owner users are always scoped to their assigned branch.
+        // Non-admin users are always scoped to their assigned branch.
         $this->scopeToAssignedBranch($request, $q);
 
         if ($request->filled('branch_id')) {

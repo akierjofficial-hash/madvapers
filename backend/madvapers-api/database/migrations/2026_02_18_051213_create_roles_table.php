@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('roles', function (Blueprint $table) {
     $table->id();
-    $table->string('name', 50)->unique();     // Owner/Admin, Branch Manager, Cashier, Inventory Clerk, Auditor
-    $table->string('code', 50)->unique();     // ADMIN, MANAGER, CASHIER, CLERK, AUDITOR
+    $table->string('name', 50)->unique();     // Admin, Inventory Clerk, Cashier
+    $table->string('code', 50)->unique();     // ADMIN, CLERK, CASHIER
     $table->timestamps();
 });
 

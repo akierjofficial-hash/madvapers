@@ -14,12 +14,6 @@ export function HomeRedirect() {
   if (role === 'CASHIER' && can('SALES_VIEW')) {
     return <Navigate to="/sales" replace />;
   }
-  if (role === 'AUDITOR' && can('AUDIT_VIEW')) {
-    return <Navigate to="/audit-logs" replace />;
-  }
-  if (role === 'AUDITOR' && can('LEDGER_VIEW')) {
-    return <Navigate to="/ledger" replace />;
-  }
 
   // Default priority by capability
   if (can('USER_VIEW')) return <Navigate to="/dashboard" replace />;

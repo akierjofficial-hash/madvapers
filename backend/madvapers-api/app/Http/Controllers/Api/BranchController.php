@@ -22,7 +22,7 @@ class BranchController extends Controller
             $q->where('is_active', true);
         }
 
-        // Non-admin/owner users only see their assigned branch.
+        // Non-admin users only see their assigned branch.
         $this->scopeToAssignedBranch($request, $q, 'id');
 
         return $q->get();

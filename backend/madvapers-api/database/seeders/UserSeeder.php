@@ -67,12 +67,8 @@ class UserSeeder extends Seeder
         $password = $this->seedPassword();
 
         $roles = [
-            'OWNER'   => Role::where('code', 'OWNER')->first(),
-            'ADMIN'   => Role::where('code', 'ADMIN')->first(),
-            'MANAGER' => Role::where('code', 'MANAGER')->first(),
-            'CLERK'   => Role::where('code', 'CLERK')->first(),
+            'CLERK' => Role::where('code', 'CLERK')->first(),
             'CASHIER' => Role::where('code', 'CASHIER')->first(),
-            'AUDITOR' => Role::where('code', 'AUDITOR')->first(),
         ];
 
         $make = function (string $email, string $name, ?Role $role, ?Branch $branch) use ($password) {
@@ -90,10 +86,7 @@ class UserSeeder extends Seeder
         };
 
         // Optional demo role accounts (testing by default, opt-in elsewhere).
-        $make('owner@madvapers.local', 'Owner', $roles['OWNER'], $primaryBranch);
-        $make('manager@madvapers.local', 'Manager', $roles['MANAGER'], $primaryBranch);
         $make('clerk@madvapers.local', 'Clerk', $roles['CLERK'], $secondaryBranch);
         $make('cashier@madvapers.local', 'Cashier', $roles['CASHIER'], $primaryBranch);
-        $make('auditor@madvapers.local', 'Auditor', $roles['AUDITOR'], $primaryBranch);
     }
 }

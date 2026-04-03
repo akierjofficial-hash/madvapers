@@ -42,7 +42,7 @@ export function AppRouter() {
           <Route
             path="/analytics"
             element={
-              <RequirePermission perm="USER_VIEW" allowRoleCodes={['ADMIN', 'OWNER']}>
+              <RequirePermission perm="USER_VIEW" allowRoleCodes={['ADMIN']}>
                 <AnalyticsPage />
               </RequirePermission>
             }
