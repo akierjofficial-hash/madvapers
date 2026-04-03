@@ -15,6 +15,7 @@ export type CreateVariantInput = {
   sku: string;
   barcode?: string | null;
   variant_name: string;
+  flavor?: string | null;
   default_price: number;
 };
 
@@ -22,6 +23,7 @@ export type UpdateVariantInput = {
   sku?: string;
   barcode?: string | null;
   variant_name?: string;
+  flavor?: string | null;
   default_price?: number;
   default_cost?: number | null;
 };

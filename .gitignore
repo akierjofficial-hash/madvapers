@@ -27,3 +27,7 @@ madvapers/
 # local temp artifacts
 tmp/
 tmp_loader_ref/
+tmp_cookies.txt
+tmp_rf_cookies.txt
+tmp*cookies*.txt
+*.cookiejar

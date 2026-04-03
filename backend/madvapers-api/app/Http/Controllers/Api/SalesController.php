@@ -346,21 +346,36 @@ class SalesController extends Controller
                 $refreshed = $refreshed->fresh();
             }
 
+            $saleAudit = $this->buildSalePaymentAuditMeta($refreshed);
+            $paymentAmount = round((float) $payment->amount, 2);
+            $paidTotal = round((float) ($refreshed->paid_total ?? 0), 2);
+            $grandTotal = round((float) ($refreshed->grand_total ?? 0), 2);
+
             AuditTrail::record([
                 'event_type' => 'SALE_PAYMENT_ADDED',
                 'entity_type' => 'sale',
                 'entity_id' => (int) $locked->id,
                 'branch_id' => (int) $locked->branch_id,
                 'user_id' => $request->user()?->id,
-                'summary' => 'Sale payment added',
+                'summary' => sprintf(
+                    'Sale payment %.2f (paid %.2f/%.2f, qty %.3f)',
+                    $paymentAmount,
+                    $paidTotal,
+                    $grandTotal,
+                    (float) ($saleAudit['sale_total_qty'] ?? 0)
+                ),
                 'meta' => [
                     'sale_number' => (string) ($locked->sale_number ?? ''),
                     'payment_id' => (int) $payment->id,
                     'method' => (string) $payment->method,
-                    'amount' => (float) $payment->amount,
+                    'amount' => $paymentAmount,
                     'client_txn_id' => $payment->client_txn_id,
                     'payment_status' => (string) ($refreshed->payment_status ?? ''),
-                    'paid_total' => (float) ($refreshed->paid_total ?? 0),
+                    'paid_total' => $paidTotal,
+                    'sale_grand_total' => $grandTotal,
+                    'sale_total_qty' => (float) ($saleAudit['sale_total_qty'] ?? 0),
+                    'sale_item_count' => (int) ($saleAudit['sale_item_count'] ?? 0),
+                    'items_sold' => $saleAudit['items_sold'] ?? [],
                 ],
             ]);
 
@@ -872,6 +887,54 @@ class SalesController extends Controller
         $sale->change_given = round($changeGiven, 2);
         $sale->payment_status = $paymentStatus;
         $sale->save();
+    }
+
+    /**
+     * @return array{
+     *   sale_total_qty:float,
+     *   sale_item_count:int,
+     *   items_sold:array<int, array{
+     *     product_variant_id:int,
+     *     sku:string,
+     *     product_name:string,
+     *     variant_name:string,
+     *     flavor:string,
+     *     qty:float,
+     *     unit_price:float,
+     *     line_total:float
+     *   }>
+     * }
+     */
+    private function buildSalePaymentAuditMeta(Sale $sale): array
+    {
+        $sale->loadMissing(['items.variant.product']);
+
+        $itemsSold = [];
+        $totalQty = 0.0;
+
+        foreach ($sale->items as $item) {
+            $qty = round((float) ($item->qty ?? 0), 3);
+            $unitPrice = round((float) ($item->unit_price ?? 0), 2);
+            $lineTotal = round((float) ($item->line_total ?? 0), 2);
+
+            $totalQty += $qty;
+            $itemsSold[] = [
+                'product_variant_id' => (int) ($item->product_variant_id ?? 0),
+                'sku' => (string) ($item->variant?->sku ?? ''),
+                'product_name' => (string) ($item->variant?->product?->name ?? ''),
+                'variant_name' => (string) ($item->variant?->variant_name ?? ''),
+                'flavor' => (string) ($item->variant?->flavor ?? ''),
+                'qty' => $qty,
+                'unit_price' => $unitPrice,
+                'line_total' => $lineTotal,
+            ];
+        }
+
+        return [
+            'sale_total_qty' => round($totalQty, 3),
+            'sale_item_count' => count($itemsSold),
+            'items_sold' => $itemsSold,
+        ];
     }
 
 }

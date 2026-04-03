@@ -57,6 +57,7 @@ export type ProductVariant = {
   sku: string;
   barcode?: string | null;
   variant_name?: string | null;
+  flavor?: string | null;
   default_cost?: string | number | null;
   default_price?: string | number | null;
   product?: Product | null;

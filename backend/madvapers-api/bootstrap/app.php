@@ -24,6 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'perm' => \App\Http\Middleware\RequirePermission::class,
+            'trusted.origin' => \App\Http\Middleware\EnsureTrustedFrontendOrigin::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

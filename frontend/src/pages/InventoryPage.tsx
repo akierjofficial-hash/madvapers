@@ -44,6 +44,7 @@ type SelectedItem = {
   barcode: string;
   product: string;
   variant: string;
+  flavor: string;
   brand: string;
   default_cost: number;
   default_price: number;
@@ -197,6 +198,7 @@ export function InventoryPage() {
         barcode: variant?.barcode ?? '-',
         product: productName,
         variant: variant?.variant_name ?? '-',
+        flavor: variant?.flavor ?? '-',
         brand,
         default_cost: Number(variant?.default_cost ?? 0),
         default_price: Number(variant?.default_price ?? 0),
@@ -548,6 +550,9 @@ export function InventoryPage() {
                               SKU: {variant.sku}
                             </Typography>
                             <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
+                              Flavor: {variant.flavor}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
                               Barcode: {variant.barcode}
                             </Typography>
                             <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
@@ -574,6 +579,7 @@ export function InventoryPage() {
                 <TableCell>Product</TableCell>
                 <TableCell>Brand</TableCell>
                 <TableCell>Variant</TableCell>
+                <TableCell>Flavor</TableCell>
                 <TableCell>SKU</TableCell>
                 <TableCell align="right">Supply Cost</TableCell>
                 <TableCell align="right">Sale Price</TableCell>
@@ -616,6 +622,7 @@ export function InventoryPage() {
                       </TableCell>
                       <TableCell>{group.brand}</TableCell>
                       <TableCell>{variant.variant}</TableCell>
+                      <TableCell>{variant.flavor}</TableCell>
                       <TableCell>{variant.sku}</TableCell>
                       <TableCell align="right">{formatMoney(variant.default_cost)}</TableCell>
                       <TableCell align="right">{formatMoney(variant.default_price)}</TableCell>
@@ -655,6 +662,9 @@ export function InventoryPage() {
               <Typography variant="subtitle2">{selected.product}</Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>
                 Variant: {selected.variant}
+              </Typography>
+              <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                Flavor: {selected.flavor}
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>
                 SKU: {selected.sku}

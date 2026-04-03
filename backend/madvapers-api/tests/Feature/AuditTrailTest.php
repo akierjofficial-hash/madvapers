@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditEvent;
 use App\Models\Branch;
 use App\Models\InventoryBalance;
 use App\Models\User;
@@ -126,6 +127,27 @@ class AuditTrailTest extends TestCase
             'user_id' => $manager->id,
         ]);
 
+        $paymentAudit = AuditEvent::query()
+            ->where('event_type', 'SALE_PAYMENT_ADDED')
+            ->where('entity_type', 'sale')
+            ->where('entity_id', $saleId)
+            ->latest('id')
+            ->first();
+        $this->assertNotNull($paymentAudit);
+
+        $paymentMeta = (array) ($paymentAudit?->meta ?? []);
+        $this->assertSame(150.0, (float) ($paymentMeta['amount'] ?? 0));
+        $this->assertSame(150.0, (float) ($paymentMeta['sale_grand_total'] ?? 0));
+        $this->assertSame(1.0, (float) ($paymentMeta['sale_total_qty'] ?? 0));
+        $this->assertSame(1, (int) ($paymentMeta['sale_item_count'] ?? 0));
+        $this->assertIsArray($paymentMeta['items_sold'] ?? null);
+        $this->assertNotEmpty($paymentMeta['items_sold'] ?? []);
+        $this->assertSame(
+            (int) $balance->product_variant_id,
+            (int) (($paymentMeta['items_sold'][0]['product_variant_id'] ?? 0))
+        );
+        $this->assertStringContainsString('150.00', (string) ($paymentAudit?->summary ?? ''));
+
         $this->assertDatabaseHas('audit_events', [
             'event_type' => 'SALE_VOID_REQUESTED',
             'entity_type' => 'sale',
@@ -161,4 +183,3 @@ class AuditTrailTest extends TestCase
             ->assertJsonPath('message', 'Forbidden branch access.');
     }
 }
-

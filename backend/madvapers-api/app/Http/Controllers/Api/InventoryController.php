@@ -35,7 +35,8 @@ class InventoryController extends Controller
             $q->whereHas('variant', function ($v) use ($term, $like) {
                 $v->where('sku', $like, $term)
                   ->orWhere('barcode', $like, $term)
-                  ->orWhere('variant_name', $like, $term);
+                  ->orWhere('variant_name', $like, $term)
+                  ->orWhere('flavor', $like, $term);
             });
         }
 

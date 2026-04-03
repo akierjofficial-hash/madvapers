@@ -1,6 +1,8 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { tokenStorage } from '../auth/tokenStorage';
 
+type AuthStrategy = 'hybrid' | 'token' | 'cookie';
+
 function isLocalLikeHost(host: string): boolean {
   const value = String(host ?? '').trim().toLowerCase();
   if (!value) return false;
@@ -30,6 +32,15 @@ function normalizeApiBaseUrlForLocalCookieAuth(rawBaseUrl: string): string {
 }
 
 const RAW_API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api';
+const RAW_AUTH_STRATEGY = String(import.meta.env.VITE_AUTH_STRATEGY ?? 'hybrid').trim().toLowerCase();
+
+function resolveAuthStrategy(input: string): AuthStrategy {
+  if (input === 'token' || input === 'cookie') return input;
+  return 'hybrid';
+}
+
+const AUTH_STRATEGY = resolveAuthStrategy(RAW_AUTH_STRATEGY);
+export const USE_COOKIE_AUTH = AUTH_STRATEGY !== 'token';
 
 export const API_BASE_URL = normalizeApiBaseUrlForLocalCookieAuth(RAW_API_BASE_URL);
 
@@ -45,6 +56,10 @@ function deriveApiOrigin(baseUrl: string): string {
 export const API_ORIGIN = deriveApiOrigin(API_BASE_URL);
 
 export async function ensureCsrfCookie(options?: { force?: boolean }): Promise<void> {
+  if (!USE_COOKIE_AUTH) {
+    return;
+  }
+
   const force = options?.force === true;
   const existing = String(api.defaults.headers.common['X-CSRF-TOKEN'] ?? '').trim();
   if (!force && existing) {
@@ -72,8 +87,8 @@ export async function ensureCsrfCookie(options?: { force?: boolean }): Promise<v
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
-  withCredentials: true,
-  withXSRFToken: true,
+  withCredentials: USE_COOKIE_AUTH,
+  withXSRFToken: USE_COOKIE_AUTH,
   xsrfCookieName: 'XSRF-TOKEN',
   xsrfHeaderName: 'X-XSRF-TOKEN',
   headers: {
@@ -104,7 +119,7 @@ api.interceptors.response.use(
     const config = err.config as RetriableConfig | undefined;
 
     // Recover once from missing/expired CSRF cookie.
-    if (status === 419 && config && isMutationMethod(config.method) && !config._csrfRetried) {
+    if (USE_COOKIE_AUTH && status === 419 && config && isMutationMethod(config.method) && !config._csrfRetried) {
       config._csrfRetried = true;
       await ensureCsrfCookie({ force: true });
       return api.request(config);

@@ -110,9 +110,11 @@ export function VariantsPage() {
   const [productId, setProductId] = useState<number | ''>('');
   const [sku, setSku] = useState('');
   const [variantName, setVariantName] = useState('');
+  const [variantFlavor, setVariantFlavor] = useState('');
   const [defaultPrice, setDefaultPrice] = useState('');
   const [editSku, setEditSku] = useState('');
   const [editVariantName, setEditVariantName] = useState('');
+  const [editVariantFlavor, setEditVariantFlavor] = useState('');
   const [editDefaultPrice, setEditDefaultPrice] = useState('');
 
   const [stockOpen, setStockOpen] = useState(false);
@@ -180,6 +182,7 @@ export function VariantsPage() {
       product: v.product?.name ?? '-',
       productType: (v.product?.product_type ?? '-').replace(/_/g, ' '),
       variant: v.variant_name ?? '-',
+      flavor: v.flavor ?? '-',
       defaultCost: v.default_cost,
       price: v.default_price,
       brand: v.product?.brand?.name ?? '-',
@@ -191,6 +194,7 @@ export function VariantsPage() {
     setProductId('');
     setSku('');
     setVariantName('');
+    setVariantFlavor('');
     setDefaultPrice('');
   };
 
@@ -247,6 +251,7 @@ export function VariantsPage() {
         product_id: productId,
         sku: sku.trim(),
         variant_name: variantName.trim(),
+        flavor: variantFlavor.trim() || null,
         default_price: parsedDefaultPrice,
       });
       setSnack({ open: true, message: 'Variant created.', severity: 'success' });
@@ -276,6 +281,7 @@ export function VariantsPage() {
     setEditingVariantId(target.id);
     setEditSku(target.sku ?? '');
     setEditVariantName(target.variant_name ?? '');
+    setEditVariantFlavor(target.flavor ?? '');
     setEditDefaultPrice(target.default_price == null ? '' : String(target.default_price));
     setOpenEdit(true);
   };
@@ -285,6 +291,7 @@ export function VariantsPage() {
     setEditingVariantId(null);
     setEditSku('');
     setEditVariantName('');
+    setEditVariantFlavor('');
     setEditDefaultPrice('');
   };
 
@@ -321,6 +328,7 @@ export function VariantsPage() {
         input: {
           sku: editSku.trim(),
           variant_name: editVariantName.trim(),
+          flavor: editVariantFlavor.trim() || null,
           default_price: parsedEditDefaultPrice,
         },
       });
@@ -555,7 +563,7 @@ export function VariantsPage() {
 
       <TextField
         size="small"
-        label="Search SKU / variant"
+        label="Search SKU / variant / flavor"
         value={search}
         onChange={(e) => {
           setSearch(e.target.value);
@@ -594,6 +602,9 @@ export function VariantsPage() {
                 </Stack>
                 <Typography variant="body2" color="text.secondary">
                   {row.product} • {row.variant}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Flavor: {row.flavor}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                   {row.productType} • {row.brand}
@@ -685,6 +696,7 @@ export function VariantsPage() {
                 <TableCell>Product</TableCell>
                 <TableCell>Type</TableCell>
                 <TableCell>Variant</TableCell>
+                <TableCell>Flavor</TableCell>
                 <TableCell align="right" width={120}>Price</TableCell>
                 <TableCell>Brand</TableCell>
                 {(canUpdate || canDisable || canDelete || canQuickAdjustStock) && (
@@ -700,6 +712,7 @@ export function VariantsPage() {
                   <TableCell>{row.product}</TableCell>
                   <TableCell>{row.productType}</TableCell>
                   <TableCell>{row.variant}</TableCell>
+                  <TableCell>{row.flavor}</TableCell>
                   <TableCell align="right">{formatMoney(row.price)}</TableCell>
                   <TableCell>{row.brand}</TableCell>
                   {(canUpdate || canDisable || canDelete || canQuickAdjustStock) && (
@@ -849,6 +862,14 @@ export function VariantsPage() {
                 />
 
                 <TextField
+                  label="Flavor"
+                  value={variantFlavor}
+                  onChange={(e) => setVariantFlavor(e.target.value)}
+                  helperText="Optional but recommended for stock tracking by flavor."
+                  disabled={!canCreate}
+                />
+
+                <TextField
                   label="Price *"
                   type="number"
                   value={defaultPrice}
@@ -899,6 +920,13 @@ export function VariantsPage() {
               label="Variant Name *"
               value={editVariantName}
               onChange={(e) => setEditVariantName(e.target.value)}
+              disabled={!canUpdate || updateVariant.isPending}
+            />
+
+            <TextField
+              label="Flavor"
+              value={editVariantFlavor}
+              onChange={(e) => setEditVariantFlavor(e.target.value)}
               disabled={!canUpdate || updateVariant.isPending}
             />
 

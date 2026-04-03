@@ -2037,7 +2037,13 @@ export function SalesPage() {
                 <Button
                   size="small"
                   variant="contained"
-                  onClick={submitCreateSale}
+                  onClick={() => {
+                    if (cashierMobileView !== 'CART') {
+                      openCashierMobilePanel('CART');
+                      return;
+                    }
+                    void submitCreateSale();
+                  }}
                   disabled={createMut.isPending || draftItems.length === 0}
                   sx={{
                     minHeight: 50,
@@ -2046,7 +2052,13 @@ export function SalesPage() {
                     fontWeight: 700,
                   }}
                 >
-                  {createMut.isPending ? 'Saving...' : canSalesPost ? 'Checkout' : 'Save Draft'}
+                  {createMut.isPending
+                    ? 'Saving...'
+                    : cashierMobileView === 'CART'
+                    ? canSalesPost
+                      ? 'Checkout'
+                      : 'Save Draft'
+                    : 'Go to Cart'}
                 </Button>
               </Stack>
             </Paper>
