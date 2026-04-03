@@ -307,22 +307,23 @@ export function AnalyticsPage() {
       setExportError(null);
       setIsExporting(true);
 
-      const sourceSummary =
-        (isToday
-          ? todaySummaryQuery.data ?? (await todaySummaryQuery.refetch()).data
-          : summaryQuery.data ?? (await summaryQuery.refetch()).data) ?? null;
-
+      let sourceSummary = isToday ? todaySummaryQuery.data ?? null : summaryQuery.data ?? null;
       if (!sourceSummary) {
-        throw new Error('No report data available for export.');
+        try {
+          sourceSummary =
+            (isToday ? (await todaySummaryQuery.refetch()).data : (await summaryQuery.refetch()).data) ?? null;
+        } catch {
+          sourceSummary = null;
+        }
       }
 
       const exportRange = isToday
         ? { from: todayDate, to: todayDate, label: `Today (${todayLabel})` }
         : range;
-      const exportFinance = sourceSummary.finance ?? EMPTY_FINANCE;
-      const exportVoidedByBranch = sourceSummary.voided_sales_by_branch ?? [];
-      const exportTopSelling = sourceSummary.top_selling_products ?? [];
-      const exportTrends = sourceSummary.trends ?? [];
+      const exportFinance = sourceSummary?.finance ?? EMPTY_FINANCE;
+      const exportVoidedByBranch = sourceSummary?.voided_sales_by_branch ?? [];
+      const exportTopSelling = sourceSummary?.top_selling_products ?? [];
+      const exportTrends = sourceSummary?.trends ?? [];
 
       const exceljs = await import('exceljs');
       const workbook = new exceljs.Workbook();
