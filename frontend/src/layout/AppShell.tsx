@@ -46,6 +46,7 @@ import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined';
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -109,10 +110,17 @@ export function AppShell() {
   const isAdminRole = roleCode === 'ADMIN';
   const isCashierRole = roleCode === 'CASHIER';
   const canOfferInstall = !isStandaloneMode && !!installPromptEvent;
-  const supportsBrowserNotification = typeof window !== 'undefined' && 'Notification' in window;
+  const supportsNotificationApi = typeof window !== 'undefined' && 'Notification' in window;
+  const isSecureNotificationContext = typeof window !== 'undefined' && window.isSecureContext;
+  const supportsBrowserNotification = supportsNotificationApi && isSecureNotificationContext;
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() =>
-    supportsBrowserNotification ? Notification.permission : 'default'
+    supportsNotificationApi ? Notification.permission : 'default'
   );
+  const [notificationSnack, setNotificationSnack] = useState<{
+    open: boolean;
+    message: string;
+    severity: 'info' | 'success' | 'warning' | 'error';
+  }>({ open: false, message: '', severity: 'info' });
 
   const readCount = (
     data: any,
@@ -366,14 +374,52 @@ export function AppShell() {
   ]);
 
   useEffect(() => {
-    if (!supportsBrowserNotification) return;
+    if (!supportsNotificationApi) return;
     setNotificationPermission(Notification.permission);
-  }, [supportsBrowserNotification]);
+  }, [supportsNotificationApi]);
 
   const enableAdminPhoneNotifications = async () => {
-    if (!isAdminRole || !supportsBrowserNotification) return;
-    const permission = await Notification.requestPermission();
-    setNotificationPermission(permission);
+    if (!isAdminRole) return;
+    if (!supportsNotificationApi) {
+      setNotificationSnack({
+        open: true,
+        severity: 'error',
+        message: 'This browser does not support notifications.',
+      });
+      return;
+    }
+    if (!isSecureNotificationContext) {
+      setNotificationSnack({
+        open: true,
+        severity: 'warning',
+        message: 'Notifications require HTTPS on deployment.',
+      });
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+      if (permission === 'granted') {
+        setNotificationSnack({
+          open: true,
+          severity: 'success',
+          message: 'Alerts enabled. You will receive admin approval notifications.',
+        });
+      } else if (permission === 'denied') {
+        setNotificationSnack({
+          open: true,
+          severity: 'warning',
+          message: 'Notifications are blocked. Enable them in browser settings.',
+        });
+      }
+    } catch {
+      setNotificationSnack({
+        open: true,
+        severity: 'error',
+        message: 'Unable to request notification permission on this device.',
+      });
+    }
   };
 
   useEffect(() => {
@@ -794,16 +840,29 @@ export function AppShell() {
                 sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
               />
             )}
-            {isAdminRole && supportsBrowserNotification && notificationPermission !== 'granted' && (
-              <Button
-                color="inherit"
-                variant="outlined"
-                onClick={() => void enableAdminPhoneNotifications()}
-                size="small"
-                sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
-              >
-                Enable Alerts
-              </Button>
+            {isAdminRole && notificationPermission !== 'granted' && (
+              <>
+                <Button
+                  color="inherit"
+                  variant="outlined"
+                  onClick={() => void enableAdminPhoneNotifications()}
+                  size="small"
+                  sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
+                >
+                  Enable Alerts
+                </Button>
+                <Tooltip title="Enable Alerts">
+                  <span>
+                    <IconButton
+                      color="inherit"
+                      onClick={() => void enableAdminPhoneNotifications()}
+                      sx={{ display: { xs: 'inline-flex', sm: 'none' } }}
+                    >
+                      <NotificationsActiveOutlinedIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </>
             )}
             {canOfferInstall && (
               <Button
@@ -966,6 +1025,24 @@ export function AppShell() {
           </Box>
           <Divider />
           <List sx={{ px: 1, pt: 0.7, pb: 1.2, maxHeight: '70vh', overflowY: 'auto' }}>
+            {isAdminRole && notificationPermission !== 'granted' && (
+              <ListItemButton
+                onClick={() => void enableAdminPhoneNotifications()}
+                sx={{ borderRadius: 2, mb: 0.4, minHeight: 44 }}
+              >
+                <ListItemIcon sx={{ minWidth: 34 }}>
+                  <NotificationsActiveOutlinedIcon />
+                </ListItemIcon>
+                <ListItemText
+                  primary="Enable Alerts"
+                  secondary={supportsBrowserNotification ? 'Allow approval notifications' : 'Requires HTTPS on deployment'}
+                  secondaryTypographyProps={{
+                    noWrap: true,
+                    sx: { color: 'text.secondary' },
+                  }}
+                />
+              </ListItemButton>
+            )}
             {mobileMenuNav.map((item) => {
               const count = Math.max(0, Number(item.notificationCount ?? 0));
               return (
@@ -1009,6 +1086,25 @@ export function AppShell() {
           </List>
         </Drawer>
       )}
+
+      <Snackbar
+        open={notificationSnack.open}
+        autoHideDuration={3600}
+        onClose={(_, reason) => {
+          if (reason === 'clickaway') return;
+          setNotificationSnack((prev) => ({ ...prev, open: false }));
+        }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ pb: { xs: 'calc(90px + env(safe-area-inset-bottom))', md: 2 } }}
+      >
+        <Alert
+          onClose={() => setNotificationSnack((prev) => ({ ...prev, open: false }))}
+          severity={notificationSnack.severity}
+          sx={{ width: '100%' }}
+        >
+          {notificationSnack.message}
+        </Alert>
+      </Snackbar>
 
       <Snackbar
         open={installPromptOpen && canOfferInstall}
