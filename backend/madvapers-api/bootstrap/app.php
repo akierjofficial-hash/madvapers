@@ -20,6 +20,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // avoids cross-subdomain SPA login failures on shared hosting domains.
         $middleware->validateCsrfTokens(except: [
             'api/auth/login',
+            // Push subscription endpoints are authenticated via Bearer token
+            // in production token mode, where CSRF cookies are intentionally not used.
+            'api/push-subscriptions',
         ]);
 
         $middleware->alias([

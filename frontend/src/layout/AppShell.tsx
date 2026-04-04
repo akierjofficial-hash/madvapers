@@ -82,6 +82,35 @@ type DeferredInstallPromptEvent = Event & {
   }>;
 };
 
+function resolvePushSubscribeErrorMessage(error: any): string {
+  const status = Number(error?.response?.status ?? 0);
+  const apiMessage = String(error?.response?.data?.message ?? '').trim();
+
+  if (status === 401) return 'Session expired. Log in again then enable alerts.';
+  if (status === 419) return 'Session/CSRF expired. Log out, log back in, then enable alerts again.';
+  if (status === 403) return apiMessage || 'Only admin accounts can enable push alerts.';
+  if (status === 404) return 'Push API route is missing on backend deployment.';
+  if (status === 422) return apiMessage || 'Push subscription payload was rejected by backend.';
+  if (status >= 500) return 'Backend push setup failed. Check WEB_PUSH env and migrations.';
+  if (apiMessage) return apiMessage;
+
+  const name = String(error?.name ?? '').toLowerCase();
+  const message = String(error?.message ?? '').toLowerCase();
+  const merged = `${name} ${message}`;
+
+  if (merged.includes('applicationserverkey') || merged.includes('invalidaccess')) {
+    return 'Invalid VAPID key on frontend. Check VITE_WEB_PUSH_PUBLIC_KEY.';
+  }
+  if (merged.includes('notallowed') || merged.includes('permission')) {
+    return 'Notifications are blocked. Enable them in browser/site settings.';
+  }
+  if (merged.includes('network') || !error?.response) {
+    return 'Network/HTTPS issue while subscribing this device.';
+  }
+
+  return 'Unable to subscribe this device for push notifications.';
+}
+
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const normalized = base64String
     .replace(/-/g, '+')
@@ -480,15 +509,10 @@ export function AppShell() {
     } catch (error: any) {
       setIsPushSubscriptionActive(false);
       if (showErrors) {
-        const maybeName = String(error?.name ?? '');
-        const maybeMessage = String(error?.message ?? '');
-        const isBlocked = maybeName === 'NotAllowedError' || maybeMessage.toLowerCase().includes('permission');
         setNotificationSnack({
           open: true,
-          severity: isBlocked ? 'warning' : 'error',
-          message: isBlocked
-            ? 'Notifications are blocked. Enable them in browser/site settings.'
-            : 'Unable to subscribe this device for push notifications.',
+          severity: 'error',
+          message: resolvePushSubscribeErrorMessage(error),
         });
       }
       return false;
