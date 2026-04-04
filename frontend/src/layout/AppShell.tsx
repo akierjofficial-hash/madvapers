@@ -425,10 +425,20 @@ export function AppShell() {
   useEffect(() => {
     if (!isAdminRole || !supportsBrowserNotification || notificationPermission !== 'granted') return;
 
-    const baselineRaw = sessionStorage.getItem(ADMIN_APPROVAL_NOTIFY_BASELINE_KEY);
-    const baseline = baselineRaw !== null ? Number(baselineRaw) : NaN;
+    let baseline = Number.NaN;
+    try {
+      const baselineRaw = sessionStorage.getItem(ADMIN_APPROVAL_NOTIFY_BASELINE_KEY);
+      baseline = baselineRaw !== null ? Number(baselineRaw) : Number.NaN;
+    } catch {
+      baseline = Number.NaN;
+    }
+
     if (!Number.isFinite(baseline)) {
-      sessionStorage.setItem(ADMIN_APPROVAL_NOTIFY_BASELINE_KEY, String(approvalsBadgeCount));
+      try {
+        sessionStorage.setItem(ADMIN_APPROVAL_NOTIFY_BASELINE_KEY, String(approvalsBadgeCount));
+      } catch {
+        // Ignore storage failures in restricted browser contexts.
+      }
       return;
     }
 
@@ -438,21 +448,34 @@ export function AppShell() {
         ? '1 new approval request.'
         : `${newCount} new approval requests.`;
 
-      const notification = new Notification('Mad Vapers Approvals', {
-        body: `${message} ${approvalsBadgeCount} pending total.`,
-        icon: '/icons/pwa-192x192.png',
-        badge: '/icons/pwa-192x192.png',
-        tag: 'mv-approvals',
-      });
+      try {
+        const notification = new Notification('Mad Vapers Approvals', {
+          body: `${message} ${approvalsBadgeCount} pending total.`,
+          icon: '/icons/pwa-192x192.png',
+          badge: '/icons/pwa-192x192.png',
+          tag: 'mv-approvals',
+        });
 
-      notification.onclick = () => {
-        notification.close();
-        window.focus();
-        navigate('/approvals');
-      };
+        notification.onclick = () => {
+          notification.close();
+          window.focus();
+          navigate('/approvals');
+        };
+      } catch {
+        // Avoid hard crashes in PWA/browser variants that reject constructor usage.
+        setNotificationSnack({
+          open: true,
+          severity: 'warning',
+          message: 'Approval alert detected, but this device blocked popup notifications.',
+        });
+      }
     }
 
-    sessionStorage.setItem(ADMIN_APPROVAL_NOTIFY_BASELINE_KEY, String(approvalsBadgeCount));
+    try {
+      sessionStorage.setItem(ADMIN_APPROVAL_NOTIFY_BASELINE_KEY, String(approvalsBadgeCount));
+    } catch {
+      // Ignore storage failures in restricted browser contexts.
+    }
   }, [
     approvalsBadgeCount,
     isAdminRole,
