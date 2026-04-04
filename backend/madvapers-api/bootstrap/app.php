@@ -16,13 +16,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // Enable Sanctum first-party SPA cookie authentication on API routes.
         $middleware->statefulApi();
 
-        // Login endpoint is credential-based and rate-limited; excluding CSRF here
-        // avoids cross-subdomain SPA login failures on shared hosting domains.
+        // API routes are authenticated by Sanctum/Bearer tokens and permission middleware.
+        // In production token mode, CSRF cookies are not used, so exclude API paths
+        // from CSRF validation to prevent random 419 failures on POST/PUT/DELETE.
         $middleware->validateCsrfTokens(except: [
-            'api/auth/login',
-            // Push subscription endpoints are authenticated via Bearer token
-            // in production token mode, where CSRF cookies are intentionally not used.
-            'api/push-subscriptions',
+            'api/*',
         ]);
 
         $middleware->alias([
