@@ -111,6 +111,7 @@ export function TransfersPage() {
   const canTransferDispatch = can('TRANSFER_DISPATCH');
   const canTransferReceive = can('TRANSFER_RECEIVE');
   const canLedgerView = can('LEDGER_VIEW');
+  const canDashboardView = can('USER_VIEW');
   const canMutateTransfers =
     canTransferCreate || canTransferApprove || canTransferDispatch || canTransferReceive;
 
@@ -174,6 +175,7 @@ export function TransfersPage() {
 
   // Draft items (multi-item support)
   const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
+  const [createErrorMessage, setCreateErrorMessage] = useState<string>('');
   const [snack, setSnack] = useState<{
     open: boolean;
     message: string;
@@ -207,7 +209,7 @@ export function TransfersPage() {
     openCreate && canTransferCreate && variantSearchDebounced.length >= 2
   );
   const variantOptions: any[] = variantLookupQuery.data?.data ?? [];
-  const approvalQueueQuery = useDashboardApprovalQueueQuery({}, canTransferView);
+  const approvalQueueQuery = useDashboardApprovalQueueQuery({}, canDashboardView);
 
   const pickVariant = (v: any) => {
     const id = Number(v?.id);
@@ -554,6 +556,7 @@ export function TransfersPage() {
     setCreateQty('1');
     setPickedVariant(null);
     setDraftItems([]);
+    setCreateErrorMessage('');
 
     setOpenCreate(true);
   };
@@ -581,6 +584,7 @@ export function TransfersPage() {
     }
 
     try {
+      setCreateErrorMessage('');
       const created = await createMut.mutateAsync({
         from_branch_id: fromId,
         to_branch_id: toId,
@@ -593,6 +597,7 @@ export function TransfersPage() {
       showSnack(`Transfer #${created.id} created.`, 'success');
     } catch (e: any) {
       const msg = e?.response?.data?.message || 'Failed to create transfer.';
+      setCreateErrorMessage(msg);
       showSnack(msg);
     }
   };
@@ -1148,7 +1153,11 @@ export function TransfersPage() {
               disabled={!canTransferCreate}
             />
 
-            {createMut.isError && <Alert severity="error">Failed to create transfer.</Alert>}
+            {createMut.isError && (
+              <Alert severity="error">
+                {createErrorMessage || 'Failed to create transfer.'}
+              </Alert>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions sx={requestDialogActionsSx}>
