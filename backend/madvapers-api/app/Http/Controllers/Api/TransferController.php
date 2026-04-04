@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Api\Concerns\EnforcesBranchAccess;
+use App\Models\Branch;
 use App\Models\Transfer;
 use App\Models\TransferItem;
 use App\Models\InventoryBalance;
@@ -16,6 +17,40 @@ use Illuminate\Validation\ValidationException;
 class TransferController extends Controller
 {
     use EnforcesBranchAccess;
+
+    public function branchOptions(Request $request)
+    {
+        $user = $request->user();
+
+        $activeBranches = Branch::query()
+            ->where('is_active', true)
+            ->orderBy('code')
+            ->get(['id', 'code', 'name', 'is_active']);
+
+        if ($this->isPrivilegedUser($user)) {
+            return response()->json([
+                'from_branches' => $activeBranches->values(),
+                'to_branches' => $activeBranches->values(),
+            ]);
+        }
+
+        $assignedBranchIds = $this->assignedBranchIds($request);
+        $assignedLookup = array_fill_keys($assignedBranchIds, true);
+
+        $fromBranches = $activeBranches
+            ->filter(fn (Branch $branch) => isset($assignedLookup[(int) $branch->id]))
+            ->values();
+
+        // Allow transfer-capable staff (e.g., inventory clerk) to pick any active destination branch.
+        $toBranches = $user?->hasPermission('TRANSFER_CREATE')
+            ? $activeBranches->values()
+            : $fromBranches->values();
+
+        return response()->json([
+            'from_branches' => $fromBranches,
+            'to_branches' => $toBranches,
+        ]);
+    }
 
     public function index(Request $request)
     {

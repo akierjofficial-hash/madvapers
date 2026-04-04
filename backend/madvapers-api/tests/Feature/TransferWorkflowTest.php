@@ -52,7 +52,7 @@ class TransferWorkflowTest extends TestCase
             ->where('product_variant_id', $variantId)
             ->value('qty_on_hand');
 
-        $manager = $this->actingAsUser('manager@madvapers.local');
+        $admin = $this->actingAsUser('admin@madvapers.com');
         $created = $this->postJson('/api/transfers', [
             'from_branch_id' => $fromBranch->id,
             'to_branch_id' => $toBranch->id,
@@ -119,7 +119,7 @@ class TransferWorkflowTest extends TestCase
             'entity_type' => 'transfer',
             'entity_id' => $transferId,
             'branch_id' => $fromBranch->id,
-            'user_id' => $manager->id,
+            'user_id' => $admin->id,
         ]);
 
         $this->assertDatabaseHas('audit_events', [
@@ -127,7 +127,7 @@ class TransferWorkflowTest extends TestCase
             'entity_type' => 'transfer',
             'entity_id' => $transferId,
             'branch_id' => $fromBranch->id,
-            'user_id' => $manager->id,
+            'user_id' => $admin->id,
         ]);
 
         $this->assertDatabaseHas('audit_events', [
@@ -135,7 +135,7 @@ class TransferWorkflowTest extends TestCase
             'entity_type' => 'transfer',
             'entity_id' => $transferId,
             'branch_id' => $toBranch->id,
-            'user_id' => $manager->id,
+            'user_id' => $admin->id,
         ]);
 
         $this->assertDatabaseHas('audit_events', [
@@ -143,7 +143,7 @@ class TransferWorkflowTest extends TestCase
             'entity_type' => 'transfer',
             'entity_id' => $transferId,
             'branch_id' => $fromBranch->id,
-            'user_id' => $manager->id,
+            'user_id' => $admin->id,
         ]);
 
         $this->assertDatabaseHas('audit_events', [
@@ -175,5 +175,46 @@ class TransferWorkflowTest extends TestCase
             ],
         ])->assertStatus(403)
             ->assertJsonPath('message', 'Forbidden branch access.');
+    }
+
+    public function test_clerk_branch_options_allow_all_active_destination_branches(): void
+    {
+        $clerk = $this->actingAsUser('clerk@madvapers.local');
+
+        $assignedBranchIds = $clerk->branches()->pluck('branches.id')->map(fn ($id) => (int) $id)->all();
+        if ($clerk->branch_id) {
+            $assignedBranchIds[] = (int) $clerk->branch_id;
+        }
+
+        $assignedBranchIds = array_values(array_unique(array_filter($assignedBranchIds, fn ($id) => $id > 0)));
+        sort($assignedBranchIds);
+
+        $activeBranchIds = Branch::query()
+            ->where('is_active', true)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        sort($activeBranchIds);
+
+        $payload = $this->getJson('/api/transfers/branch-options')
+            ->assertOk()
+            ->json();
+
+        $fromBranchIds = collect($payload['from_branches'] ?? [])
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->sort()
+            ->values()
+            ->all();
+
+        $toBranchIds = collect($payload['to_branches'] ?? [])
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->sort()
+            ->values()
+            ->all();
+
+        $this->assertSame($assignedBranchIds, $fromBranchIds);
+        $this->assertSame($activeBranchIds, $toBranchIds);
     }
 }

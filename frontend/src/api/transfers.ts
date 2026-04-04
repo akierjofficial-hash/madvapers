@@ -26,6 +26,18 @@ export type Transfer = {
   toBranch?: { id: number; code: string; name: string } | null;
 };
 
+export type TransferBranchOption = {
+  id: number;
+  code: string;
+  name: string;
+  is_active: boolean;
+};
+
+export type TransferBranchOptionsResponse = {
+  from_branches: TransferBranchOption[];
+  to_branches: TransferBranchOption[];
+};
+
 type TransferActionResponse = {
   status: string;
   transfer: Transfer;
@@ -48,6 +60,11 @@ export type TransfersQuery = {
 
 export async function getTransfers(params: TransfersQuery) {
   const res = await api.get<LaravelPaginator<Transfer>>('/transfers', { params });
+  return res.data;
+}
+
+export async function getTransferBranchOptions() {
+  const res = await api.get<TransferBranchOptionsResponse>('/transfers/branch-options');
   return res.data;
 }
 

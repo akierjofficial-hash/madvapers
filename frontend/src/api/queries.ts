@@ -64,6 +64,7 @@ import {
 
 // Transfers
 import {
+  getTransferBranchOptions,
   getTransfers,
   getTransfer,
   createTransfer,
@@ -72,6 +73,7 @@ import {
   dispatchTransfer,
   receiveTransfer,
   cancelTransfer,
+  type TransferBranchOptionsResponse,
   type TransfersQuery,
   type Transfer,
   type CreateTransferInput,
@@ -208,6 +210,7 @@ export const qk = {
 
   transfers: (params: TransfersQuery) => ['transfers', params] as const,
   transfer: (id: number) => ['transfer', id] as const,
+  transferBranchOptions: ['transferBranchOptions'] as const,
 
   purchaseOrders: (params: PurchaseOrdersQuery) => ['purchaseOrders', params] as const,
   purchaseOrder: (id: number) => ['purchaseOrder', id] as const,
@@ -599,6 +602,15 @@ export function useTransferQuery(id: number, enabled = true) {
     refetchInterval: realtimeInterval(enabled, POLL_MS.transfers),
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useTransferBranchOptionsQuery(enabled = true) {
+  return useQuery<TransferBranchOptionsResponse>({
+    queryKey: qk.transferBranchOptions,
+    queryFn: getTransferBranchOptions,
+    enabled,
+    staleTime: 5 * 60_000,
   });
 }
 

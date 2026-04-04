@@ -142,6 +142,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
     // Transfers
     Route::get('/transfers', [TransferController::class, 'index'])->middleware('perm:TRANSFER_VIEW');
+    Route::get('/transfers/branch-options', [TransferController::class, 'branchOptions'])->middleware('perm:TRANSFER_VIEW');
     Route::get('/transfers/{transfer}', [TransferController::class, 'show'])->middleware('perm:TRANSFER_VIEW');
     Route::post('/transfers', [TransferController::class, 'store'])->middleware('perm:TRANSFER_CREATE');
     Route::put('/transfers/{transfer}', [TransferController::class, 'update'])->middleware('perm:TRANSFER_CREATE');

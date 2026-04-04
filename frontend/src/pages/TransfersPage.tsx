@@ -41,9 +41,9 @@ import {
 } from '../components/requestDialogStyles';
 import {
   useApproveTransferMutation,
-  useBranchesQuery,
   useCancelTransferMutation,
   useCreateTransferMutation,
+  useTransferBranchOptionsQuery,
   useDispatchTransferMutation,
   useReceiveTransferMutation,
   useRequestTransferMutation,
@@ -105,7 +105,6 @@ export function TransfersPage() {
   const theme = useTheme();
   const isCompactList = useMediaQuery(theme.breakpoints.down('md'));
   const { user, can } = useAuth();
-  const canBranchView = can('BRANCH_VIEW');
   const canTransferView = can('TRANSFER_VIEW');
   const canTransferCreate = can('TRANSFER_CREATE');
   const canTransferApprove = can('TRANSFER_APPROVE');
@@ -116,7 +115,9 @@ export function TransfersPage() {
     canTransferCreate || canTransferApprove || canTransferDispatch || canTransferReceive;
 
   const navigate = useNavigate();
-  const branchesQuery = useBranchesQuery(canBranchView);
+  const transferBranchOptionsQuery = useTransferBranchOptionsQuery(canTransferView);
+  const fromBranchOptions = transferBranchOptionsQuery.data?.from_branches ?? [];
+  const toBranchOptions = transferBranchOptionsQuery.data?.to_branches ?? [];
   const [searchParams, setSearchParams] = useSearchParams();
 
   const createMut = useCreateTransferMutation();
@@ -338,13 +339,13 @@ export function TransfersPage() {
 
   // Default branch once branches load
   useEffect(() => {
-    if (!canBranchView) return;
-    if (fromBranchId !== '' || !branchesQuery.data?.length) return;
-    const preferred = user?.branch_id ? branchesQuery.data.find((b) => b.id === user.branch_id) : null;
-    const first = preferred ?? branchesQuery.data[0];
+    if (fromBranchOptions.length < 1) return;
+    if (typeof fromBranchId === 'number' && fromBranchOptions.some((b) => b.id === fromBranchId)) return;
+    const preferred = user?.branch_id ? fromBranchOptions.find((b) => b.id === user.branch_id) : null;
+    const first = preferred ?? fromBranchOptions[0];
     setFromBranchId(first.id);
     authStorage.setLastBranchId(first.id);
-  }, [canBranchView, fromBranchId, branchesQuery.data, user?.branch_id]);
+  }, [fromBranchId, fromBranchOptions, user?.branch_id]);
 
   // Sync to URL
   useEffect(() => {
@@ -378,7 +379,7 @@ export function TransfersPage() {
   const totalPages = transfersQuery.data?.last_page ?? 1;
   const branchLabelById = useMemo(() => {
     const map = new Map<number, string>();
-    for (const branch of branchesQuery.data ?? []) {
+    for (const branch of [...fromBranchOptions, ...toBranchOptions]) {
       const id = Number(branch.id);
       if (!Number.isFinite(id) || id <= 0) continue;
       const code = String(branch.code ?? '').trim();
@@ -387,7 +388,7 @@ export function TransfersPage() {
       map.set(id, code ? `${code} - ${name}` : name);
     }
     return map;
-  }, [branchesQuery.data]);
+  }, [fromBranchOptions, toBranchOptions]);
 
   const resolveBranchLabel = (branchId: number | null | undefined, explicitName?: unknown): string => {
     const name = String(explicitName ?? '').trim();
@@ -508,16 +509,28 @@ export function TransfersPage() {
   };
 
   const createFromBranchOptions = useMemo(() => {
-    const all = branchesQuery.data ?? [];
+    const all = fromBranchOptions;
     if (typeof createTo !== 'number') return all;
     return all.filter((b) => b.id !== createTo);
-  }, [branchesQuery.data, createTo]);
+  }, [fromBranchOptions, createTo]);
 
   const createToBranchOptions = useMemo(() => {
-    const all = branchesQuery.data ?? [];
+    const all = toBranchOptions;
     if (typeof createFrom !== 'number') return all;
     return all.filter((b) => b.id !== createFrom);
-  }, [branchesQuery.data, createFrom]);
+  }, [toBranchOptions, createFrom]);
+
+  useEffect(() => {
+    if (typeof toBranchId !== 'number') return;
+    if (toBranchOptions.some((b) => b.id === toBranchId)) return;
+    setToBranchId('');
+  }, [toBranchId, toBranchOptions]);
+
+  useEffect(() => {
+    if (typeof createTo !== 'number') return;
+    if (createToBranchOptions.some((b) => b.id === createTo)) return;
+    setCreateTo('');
+  }, [createTo, createToBranchOptions]);
 
   useEffect(() => {
     if (typeof createFrom === 'number' && createTo === createFrom) {
@@ -554,10 +567,6 @@ export function TransfersPage() {
     const fromId = typeof createFrom === 'number' ? createFrom : null;
     const toId = typeof createTo === 'number' ? createTo : null;
 
-    if (!canBranchView && !toId) {
-      showSnack('Destination branch selection requires BRANCH_VIEW.');
-      return;
-    }
     if (!fromId || !toId) {
       showSnack('Select From/To branches.');
       return;
@@ -712,16 +721,16 @@ export function TransfersPage() {
 
       {!canMutateTransfers && <Alert severity="info">You have view-only access to transfers.</Alert>}
 
-      {canBranchView && branchesQuery.isError && <Alert severity="error">Failed to load branches.</Alert>}
+      {transferBranchOptionsQuery.isError && <Alert severity="error">Failed to load transfer branch options.</Alert>}
 
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
         <Box sx={{ minWidth: 260, flex: 1 }}>
           <Typography variant="caption" sx={{ opacity: 0.7 }}>
             From branch
           </Typography>
-          {canBranchView ? (
+          {fromBranchOptions.length > 0 ? (
             <BranchSelect
-              branches={branchesQuery.data ?? []}
+              branches={fromBranchOptions}
               value={fromBranchId}
               onChange={(id) => {
                 setFromBranchId(id);
@@ -743,9 +752,9 @@ export function TransfersPage() {
           <Typography variant="caption" sx={{ opacity: 0.7 }}>
             To branch
           </Typography>
-          {canBranchView ? (
+          {toBranchOptions.length > 0 ? (
             <BranchSelect
-              branches={branchesQuery.data ?? []}
+              branches={toBranchOptions}
               value={toBranchId}
               onChange={(id) => {
                 setToBranchId(id);
@@ -801,8 +810,8 @@ export function TransfersPage() {
       </Menu>
 
       {fromBranchId === '' ? (
-        <Alert severity={canBranchView ? 'info' : 'error'}>
-          {canBranchView ? 'Select a From branch.' : 'No branch assigned to your account.'}
+        <Alert severity={fromBranchOptions.length > 0 ? 'info' : 'error'}>
+          {fromBranchOptions.length > 0 ? 'Select a From branch.' : 'No branch assigned to your account.'}
         </Alert>
       ) : transfersQuery.isLoading ? (
         <Alert severity="info">Loading transfers…</Alert>
@@ -935,7 +944,7 @@ export function TransfersPage() {
               <Typography variant="caption" sx={{ opacity: 0.7 }}>
                 From branch
               </Typography>
-              {canBranchView ? (
+              {createFromBranchOptions.length > 0 ? (
                 <BranchSelect
                   branches={createFromBranchOptions}
                   value={createFrom}
@@ -951,7 +960,7 @@ export function TransfersPage() {
               <Typography variant="caption" sx={{ opacity: 0.7 }}>
                 To branch
               </Typography>
-              {canBranchView ? (
+              {createToBranchOptions.length > 0 ? (
                 <BranchSelect
                   branches={createToBranchOptions}
                   value={createTo}
