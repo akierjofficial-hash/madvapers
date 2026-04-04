@@ -10,6 +10,16 @@ use Illuminate\Support\Facades\DB;
 
 class InventoryService
 {
+    private function runInTransaction(callable $callback)
+    {
+        // Avoid nested savepoints when caller already wrapped the flow in a transaction.
+        if (DB::transactionLevel() > 0) {
+            return $callback();
+        }
+
+        return DB::transaction($callback);
+    }
+
     public function applyInboundWeightedCost(int $productVariantId, float $inboundQty, ?float $unitCost): ?float
     {
         $qty = (float) $inboundQty;
@@ -52,7 +62,7 @@ class InventoryService
     {
         // Required keys:
         // branch_id, product_variant_id, qty_delta, movement_type
-        return DB::transaction(function () use ($data) {
+        return $this->runInTransaction(function () use ($data) {
 
             $ledger = StockLedger::create([
                 'posted_at' => $data['posted_at'] ?? now(),

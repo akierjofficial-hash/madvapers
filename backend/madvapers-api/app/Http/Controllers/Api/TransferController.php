@@ -63,7 +63,7 @@ class TransferController extends Controller
         // Non-admin users can only originate transfers from their own branch.
         $this->enforceTransferFromBranchAccessOrFail($request, (int) $data['from_branch_id']);
 
-        return DB::transaction(function () use ($data, $request) {
+        return $this->transactionWithRetry(function () use ($data, $request) {
             $transfer = Transfer::create([
                 'from_branch_id' => $data['from_branch_id'],
                 'to_branch_id'   => $data['to_branch_id'],
@@ -113,7 +113,7 @@ class TransferController extends Controller
             'items.*.unit_cost'         => ['nullable', 'numeric', 'gte:0'],
         ]);
 
-        return DB::transaction(function () use ($request, $data, $transfer) {
+        return $this->transactionWithRetry(function () use ($request, $data, $transfer) {
             $locked = $this->lockTransfer($transfer->id);
 
             $this->enforceTransferFromBranchAccessOrFail($request, (int) $locked->from_branch_id);
@@ -174,7 +174,7 @@ class TransferController extends Controller
 
     public function requestTransfer(Request $request, Transfer $transfer)
     {
-        return DB::transaction(function () use ($request, $transfer) {
+        return $this->transactionWithRetry(function () use ($request, $transfer) {
             $locked = $this->lockTransfer($transfer->id);
 
             $this->enforceTransferFromBranchAccessOrFail($request, (int) $locked->from_branch_id);
@@ -217,7 +217,7 @@ class TransferController extends Controller
 
     public function approve(Request $request, Transfer $transfer)
     {
-        return DB::transaction(function () use ($request, $transfer) {
+        return $this->transactionWithRetry(function () use ($request, $transfer) {
             $locked = $this->lockTransfer($transfer->id);
 
             $this->enforceTransferTouchAccessOrFail(
@@ -257,7 +257,7 @@ class TransferController extends Controller
      */
     public function dispatch(Request $request, Transfer $transfer, InventoryService $inventoryService)
     {
-        return DB::transaction(function () use ($request, $transfer, $inventoryService) {
+        return $this->transactionWithRetry(function () use ($request, $transfer, $inventoryService) {
             $locked = $this->lockTransfer($transfer->id);
 
             $this->enforceTransferFromBranchAccessOrFail($request, (int) $locked->from_branch_id);
@@ -268,7 +268,10 @@ class TransferController extends Controller
                 ]);
             }
 
-            $items = $locked->items()->get();
+            $items = $locked->items()
+                ->orderBy('product_variant_id')
+                ->orderBy('id')
+                ->get();
             $totalQty = (float) $items->sum(function ($item) {
                 return (float) ($item->qty ?? 0);
             });
@@ -344,7 +347,7 @@ class TransferController extends Controller
      */
     public function receive(Request $request, Transfer $transfer, InventoryService $inventoryService)
     {
-        return DB::transaction(function () use ($request, $transfer, $inventoryService) {
+        return $this->transactionWithRetry(function () use ($request, $transfer, $inventoryService) {
             $locked = $this->lockTransfer($transfer->id);
 
             $this->enforceTransferToBranchAccessOrFail($request, (int) $locked->to_branch_id);
@@ -355,7 +358,10 @@ class TransferController extends Controller
                 ]);
             }
 
-            $items = $locked->items()->get();
+            $items = $locked->items()
+                ->orderBy('product_variant_id')
+                ->orderBy('id')
+                ->get();
             $totalQty = (float) $items->sum(function ($item) {
                 return (float) ($item->qty ?? 0);
             });
@@ -400,7 +406,7 @@ class TransferController extends Controller
 
     public function cancel(Request $request, Transfer $transfer)
     {
-        return DB::transaction(function () use ($request, $transfer) {
+        return $this->transactionWithRetry(function () use ($request, $transfer) {
             $locked = $this->lockTransfer($transfer->id);
 
             $this->enforceTransferTouchAccessOrFail(

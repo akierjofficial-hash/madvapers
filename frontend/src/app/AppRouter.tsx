@@ -20,6 +20,8 @@ import { ApprovalsPage } from '../pages/ApprovalsPage';
 import { SalesPage } from '../pages/SalesPage';
 import { ExpensesPage } from '../pages/ExpensesPage';
 import { AuditLogsPage } from '../pages/AuditLogsPage';
+import { StaffAttendancePage } from '../pages/StaffAttendancePage';
+import { AttendancePage } from '../pages/AttendancePage';
 
 export function AppRouter() {
   return (
@@ -133,6 +135,22 @@ export function AppRouter() {
             element={
               <RequirePermission perm="USER_VIEW" denyRoleCodes={['CASHIER']}>
                 <AccountsPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="/staff-attendance"
+            element={
+              <RequirePermission perm="STAFF_ATTENDANCE_VIEW" allowRoleCodes={['ADMIN']}>
+                <StaffAttendancePage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="/attendance"
+            element={
+              <RequirePermission perm="STAFF_ATTENDANCE_VIEW" allowRoleCodes={['CLERK', 'CASHIER']}>
+                <AttendancePage />
               </RequirePermission>
             }
           />

@@ -94,6 +94,7 @@ class DashboardController extends Controller
         $transfers = count($approvalQueue['transfers'] ?? []);
         $purchaseOrders = count($approvalQueue['purchase_orders'] ?? []);
         $voidRequests = count($approvalQueue['void_requests'] ?? []);
+        $staffAttendanceRequests = count($approvalQueue['staff_attendance_requests'] ?? []);
 
         return response()->json([
             'filters' => [
@@ -105,7 +106,8 @@ class DashboardController extends Controller
                 'transfers' => $transfers,
                 'purchase_orders' => $purchaseOrders,
                 'void_requests' => $voidRequests,
-                'total' => $adjustments + $transfers + $purchaseOrders + $voidRequests,
+                'staff_attendance_requests' => $staffAttendanceRequests,
+                'total' => $adjustments + $transfers + $purchaseOrders + $voidRequests + $staffAttendanceRequests,
             ],
             'approval_queue' => $approvalQueue,
             'generated_at' => now()->toIso8601String(),
@@ -1008,11 +1010,67 @@ class DashboardController extends Controller
                 ->values();
         }
 
+        $staffAttendanceRequests = collect();
+        if (Schema::hasTable('staff_attendances')) {
+            $staffAttendanceRequests = $this->applyBranchFilter(
+                DB::table('staff_attendances as sa')
+                    ->leftJoin('branches as b', 'b.id', '=', 'sa.branch_id')
+                    ->leftJoin('users as u', 'u.id', '=', 'sa.user_id')
+                    ->where('sa.clock_in_status', 'PENDING')
+                    ->whereNull('sa.clock_out_at')
+                    ->orderByDesc('sa.clock_in_requested_at')
+                    ->orderByDesc('sa.id')
+                    ->limit(10)
+                    ->selectRaw('
+                        sa.id,
+                        sa.user_id,
+                        sa.branch_id,
+                        b.name as branch_name,
+                        u.name as staff_name,
+                        u.email as staff_email,
+                        sa.clock_in_requested_at,
+                        sa.scheduled_start_at,
+                        sa.request_notes
+                    '),
+                $branchIds,
+                'sa.branch_id'
+            )
+                ->get()
+                ->map(function ($row) {
+                    $requestedAt = $row->clock_in_requested_at
+                        ? Carbon::parse($row->clock_in_requested_at)
+                        : null;
+                    $scheduledStartAt = $row->scheduled_start_at
+                        ? Carbon::parse($row->scheduled_start_at)
+                        : null;
+
+                    $lateMinutes = null;
+                    if ($requestedAt && $scheduledStartAt) {
+                        $lateMinutes = max(0, (int) $scheduledStartAt->diffInMinutes($requestedAt, false));
+                    }
+
+                    return [
+                        'id' => (int) $row->id,
+                        'user_id' => (int) $row->user_id,
+                        'branch_id' => isset($row->branch_id) ? (int) $row->branch_id : null,
+                        'branch_name' => $row->branch_name,
+                        'staff_name' => $row->staff_name,
+                        'staff_email' => $row->staff_email,
+                        'clock_in_requested_at' => $requestedAt?->toIso8601String(),
+                        'scheduled_start_at' => $scheduledStartAt?->toIso8601String(),
+                        'late_minutes' => $lateMinutes,
+                        'request_notes' => $row->request_notes,
+                    ];
+                })
+                ->values();
+        }
+
         return [
             'adjustments' => $adjustments,
             'transfers' => $transfers,
             'purchase_orders' => $purchaseOrders,
             'void_requests' => $voidRequests,
+            'staff_attendance_requests' => $staffAttendanceRequests,
         ];
     }
 

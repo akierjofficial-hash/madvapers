@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\PublicReviewController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\AuditEventController;
+use App\Http\Controllers\Api\StaffAttendanceController;
 
 // Health
 Route::get('/health', [HealthController::class, 'index']);
@@ -79,6 +80,18 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('/users/{user}/password', [UserController::class, 'setPassword'])->middleware('perm:USER_UPDATE');
     Route::post('/users/{user}/disable', [UserController::class, 'disable'])->middleware('perm:USER_DISABLE');
     Route::post('/users/{user}/enable', [UserController::class, 'enable'])->middleware('perm:USER_DISABLE');
+
+    // Staff Attendance
+    Route::get('/staff-attendance', [StaffAttendanceController::class, 'index'])->middleware('perm:STAFF_ATTENDANCE_VIEW');
+    Route::post('/staff-attendance/time-in', [StaffAttendanceController::class, 'requestTimeIn'])->middleware('perm:STAFF_ATTENDANCE_CLOCK');
+    Route::post('/staff-attendance/time-out', [StaffAttendanceController::class, 'requestTimeOut'])
+        ->middleware(['perm:STAFF_ATTENDANCE_CLOCK', 'throttle:sensitive-actions']);
+    Route::post('/staff-attendance/{attendance}/approve', [StaffAttendanceController::class, 'approve'])
+        ->middleware(['perm:STAFF_ATTENDANCE_APPROVE', 'throttle:sensitive-actions']);
+    Route::post('/staff-attendance/{attendance}/reject', [StaffAttendanceController::class, 'reject'])
+        ->middleware(['perm:STAFF_ATTENDANCE_APPROVE', 'throttle:sensitive-actions']);
+    Route::post('/staff-attendance/{attendance}/close', [StaffAttendanceController::class, 'close'])
+        ->middleware(['perm:STAFF_ATTENDANCE_APPROVE', 'throttle:sensitive-actions']);
 
     // Products
     Route::get('/products', [ProductController::class, 'index'])->middleware('perm:PRODUCT_VIEW');

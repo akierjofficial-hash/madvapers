@@ -66,6 +66,14 @@ function getVariantOnHand(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function getVariantFlavorLabel(v: any): string {
+  const variantName = String(v?.variant_name ?? '').trim();
+  const flavor = String(v?.flavor ?? '').trim();
+
+  if (variantName && flavor) return `${variantName} / ${flavor}`;
+  return variantName || flavor || '-';
+}
+
 export function AdjustmentsPage() {
   const theme = useTheme();
   const isCompactList = useMediaQuery(theme.breakpoints.down('md'));
@@ -116,6 +124,7 @@ export function AdjustmentsPage() {
       product_variant_id: number;
       sku?: string | null;
       productName?: string | null;
+      variantFlavor?: string | null;
       onHand?: number | null;
       qty_delta: number;
       unit_cost: number | null;
@@ -426,6 +435,8 @@ export function AdjustmentsPage() {
     const notes = itemNotes.trim() ? itemNotes.trim() : null;
     const sku = pickedVariant?.sku ?? null;
     const productName = pickedVariant?.product?.name ?? null;
+    const variantFlavorLabel = getVariantFlavorLabel(pickedVariant);
+    const variantFlavor = variantFlavorLabel === '-' ? null : variantFlavorLabel;
     const onHand = getVariantOnHand(pickedVariant);
 
     setDraftItems((prev) => {
@@ -439,6 +450,7 @@ export function AdjustmentsPage() {
           notes,
           sku: sku ?? next[idx].sku,
           productName: productName ?? next[idx].productName,
+          variantFlavor: variantFlavor ?? next[idx].variantFlavor,
           onHand: onHand ?? next[idx].onHand ?? null,
         };
         return next;
@@ -450,6 +462,7 @@ export function AdjustmentsPage() {
           product_variant_id: variantId,
           sku,
           productName,
+          variantFlavor,
           onHand,
           qty_delta: qtyDelta,
           unit_cost: unitCost,
@@ -845,6 +858,7 @@ export function AdjustmentsPage() {
                       <TableCell width={110}>ID</TableCell>
                       <TableCell>SKU</TableCell>
                       <TableCell>Product</TableCell>
+                      <TableCell>Variant+Flavor</TableCell>
                       <TableCell align="right" width={120}>On hand</TableCell>
                       <TableCell width={100} />
                     </TableRow>
@@ -858,6 +872,7 @@ export function AdjustmentsPage() {
                           <TableCell sx={{ fontFamily: 'monospace' }}>{id}</TableCell>
                           <TableCell>{v?.sku ?? '-'}</TableCell>
                           <TableCell>{v?.product?.name ?? '-'}</TableCell>
+                          <TableCell>{getVariantFlavorLabel(v)}</TableCell>
                           <TableCell align="right">{onHand === null ? '-' : qty(onHand)}</TableCell>
                           <TableCell>
                             <Button size="small" onClick={() => pickVariant(v)} disabled={!canCreatePerm}>
@@ -943,6 +958,7 @@ export function AdjustmentsPage() {
                       <TableCell width={130}>Variant ID</TableCell>
                       <TableCell>SKU</TableCell>
                       <TableCell>Product</TableCell>
+                      <TableCell>Variant+Flavor</TableCell>
                       <TableCell align="right" width={120}>On hand</TableCell>
                       <TableCell align="right" width={120}>Qty delta</TableCell>
                       <TableCell align="right" width={120}>Unit cost</TableCell>
@@ -955,6 +971,7 @@ export function AdjustmentsPage() {
                         <TableCell sx={{ fontFamily: 'monospace' }}>{it.product_variant_id}</TableCell>
                         <TableCell>{it.sku ?? '-'}</TableCell>
                         <TableCell>{it.productName ?? '-'}</TableCell>
+                        <TableCell>{it.variantFlavor ?? '-'}</TableCell>
                         <TableCell align="right">{it.onHand === null || it.onHand === undefined ? '-' : qty(it.onHand)}</TableCell>
                         <TableCell align="right">{qty(it.qty_delta)}</TableCell>
                         <TableCell align="right">

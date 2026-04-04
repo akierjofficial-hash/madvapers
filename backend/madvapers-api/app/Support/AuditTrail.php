@@ -8,6 +8,17 @@ use Illuminate\Support\Facades\Schema;
 
 class AuditTrail
 {
+    private static ?bool $auditEventsTableExists = null;
+
+    private static function auditEventsTableExists(): bool
+    {
+        if (self::$auditEventsTableExists === null) {
+            self::$auditEventsTableExists = Schema::hasTable('audit_events');
+        }
+
+        return self::$auditEventsTableExists;
+    }
+
     /**
      * @param array{
      *   event_type:string,
@@ -26,7 +37,7 @@ class AuditTrail
             return;
         }
 
-        if (!Schema::hasTable('audit_events')) {
+        if (!self::auditEventsTableExists()) {
             Log::warning('Audit trail skipped because audit_events table is missing.', [
                 'event_type' => $eventType,
             ]);

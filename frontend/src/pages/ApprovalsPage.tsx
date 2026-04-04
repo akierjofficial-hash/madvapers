@@ -23,15 +23,19 @@ import type {
   DashboardAdjustmentQueueItem,
   DashboardPurchaseOrderQueueItem,
   DashboardSaleVoidRequestQueueItem,
+  DashboardStaffAttendanceQueueItem,
   DashboardTransferQueueItem,
 } from '../api/dashboard';
 import {
   useApproveAdjustmentMutation,
   useApprovePurchaseOrderMutation,
   useApproveSaleVoidRequestMutation,
+  useApproveStaffAttendanceMutation,
+  useCloseStaffAttendanceMutation,
   useApproveTransferMutation,
   useBranchesQuery,
   useDashboardApprovalQueueQuery,
+  useRejectStaffAttendanceMutation,
   useRejectSaleVoidRequestMutation,
 } from '../api/queries';
 import { useAuth } from '../auth/AuthProvider';
@@ -40,6 +44,7 @@ import { authStorage } from '../auth/authStorage';
 const SURFACE_BORDER = alpha('#d9e2ec', 0.92);
 
 const APPROVAL_TABS = [
+  { key: 'staff_attendance_requests', label: 'Staff Time-In' },
   { key: 'adjustments', label: 'Adjustments' },
   { key: 'transfers', label: 'Transfers' },
   { key: 'purchase_orders', label: 'Purchase Orders' },
@@ -162,15 +167,20 @@ export function ApprovalsPage() {
   const canTransfersApprove = can('TRANSFER_APPROVE');
   const canPurchaseOrdersApprove = can('PO_APPROVE');
   const canVoidApprove = can('SALES_VOID');
+  const canStaffAttendanceApprove = can('STAFF_ATTENDANCE_APPROVE');
   const canAnyApproval =
-    canAdjustmentsApprove || canTransfersApprove || canPurchaseOrdersApprove || canVoidApprove;
+    canAdjustmentsApprove ||
+    canTransfersApprove ||
+    canPurchaseOrdersApprove ||
+    canVoidApprove ||
+    canStaffAttendanceApprove;
 
   const branchesQuery = useBranchesQuery(canBranchView);
   const [branchId, setBranchId] = useState<number | ''>(() => {
     const fromStorage = authStorage.getLastBranchId();
     return fromStorage ?? (user?.branch_id ?? '');
   });
-  const [tab, setTab] = useState<ApprovalTabKey>('void_requests');
+  const [tab, setTab] = useState<ApprovalTabKey>('staff_attendance_requests');
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [snack, setSnack] = useState<{
     open: boolean;
@@ -204,17 +214,45 @@ export function ApprovalsPage() {
   const queueTransfers = approvalQueueQuery.data?.approval_queue.transfers ?? [];
   const queuePurchaseOrders = approvalQueueQuery.data?.approval_queue.purchase_orders ?? [];
   const queueVoidRequests = approvalQueueQuery.data?.approval_queue.void_requests ?? [];
+  const queueStaffAttendance = approvalQueueQuery.data?.approval_queue.staff_attendance_requests ?? [];
+
+  const visibleApprovalTabs = useMemo(
+    () =>
+      APPROVAL_TABS.filter((item) => {
+        if (item.key === 'staff_attendance_requests') return canStaffAttendanceApprove;
+        if (item.key === 'adjustments') return canAdjustmentsApprove;
+        if (item.key === 'transfers') return canTransfersApprove;
+        if (item.key === 'purchase_orders') return canPurchaseOrdersApprove;
+        if (item.key === 'void_requests') return canVoidApprove;
+        return false;
+      }),
+    [canAdjustmentsApprove, canPurchaseOrdersApprove, canStaffAttendanceApprove, canTransfersApprove, canVoidApprove]
+  );
+
+  useEffect(() => {
+    if (visibleApprovalTabs.length === 0) return;
+    if (visibleApprovalTabs.some((item) => item.key === tab)) return;
+    setTab(visibleApprovalTabs[0].key);
+  }, [tab, visibleApprovalTabs]);
 
   const queueCounts = useMemo(
     () => ({
+      staff_attendance_requests: queueStaffAttendance.length,
       adjustments: queueAdjustments.length,
       transfers: queueTransfers.length,
       purchase_orders: queuePurchaseOrders.length,
       void_requests: queueVoidRequests.length,
     }),
-    [queueAdjustments.length, queuePurchaseOrders.length, queueTransfers.length, queueVoidRequests.length]
+    [
+      queueAdjustments.length,
+      queuePurchaseOrders.length,
+      queueStaffAttendance.length,
+      queueTransfers.length,
+      queueVoidRequests.length,
+    ]
   );
   const totalPending =
+    queueCounts.staff_attendance_requests +
     queueCounts.adjustments +
     queueCounts.transfers +
     queueCounts.purchase_orders +
@@ -244,6 +282,9 @@ export function ApprovalsPage() {
       if (voidStatus && voidStatus !== 'PENDING') continue;
       bump((row as any)?.branch_id);
     }
+    for (const row of queue.staff_attendance_requests ?? []) {
+      bump((row as any)?.branch_id);
+    }
 
     return counts;
   }, [branchDotQueueData?.approval_queue]);
@@ -255,7 +296,7 @@ export function ApprovalsPage() {
   };
 
   const removeQueueItemFromCache = (
-    queueKey: 'adjustments' | 'transfers' | 'purchase_orders' | 'void_requests',
+    queueKey: 'staff_attendance_requests' | 'adjustments' | 'transfers' | 'purchase_orders' | 'void_requests',
     id: number
   ) => {
     queryClient.setQueriesData({ queryKey: ['dashboardApprovalQueue'] }, (current: any) => {
@@ -279,6 +320,7 @@ export function ApprovalsPage() {
       nextCounts[queueKey] = nextBucketCount;
 
       const computedTotalFromRows =
+        Number(nextApprovalQueue.staff_attendance_requests?.length ?? 0) +
         Number(nextApprovalQueue.adjustments?.length ?? 0) +
         Number(nextApprovalQueue.transfers?.length ?? 0) +
         Number(nextApprovalQueue.purchase_orders?.length ?? 0) +
@@ -353,7 +395,21 @@ export function ApprovalsPage() {
     navigate(`/sales?${params.toString()}`);
   };
 
+  const openStaffAttendance = (targetBranchId?: number | null) => {
+    const params = new URLSearchParams();
+    params.set('status', 'PENDING');
+    const resolvedBranchId =
+      typeof targetBranchId === 'number'
+        ? targetBranchId
+        : typeof branchId === 'number'
+        ? branchId
+        : null;
+    if (resolvedBranchId) params.set('branch_id', String(resolvedBranchId));
+    navigate(`/staff-attendance?${params.toString()}`);
+  };
+
   const openCurrentModule = () => {
+    if (tab === 'staff_attendance_requests') return openStaffAttendance();
     if (tab === 'adjustments') return openAdjustments();
     if (tab === 'transfers') return openTransfers();
     if (tab === 'purchase_orders') return openPurchaseOrders();
@@ -363,8 +419,59 @@ export function ApprovalsPage() {
   const approveAdjustmentMut = useApproveAdjustmentMutation();
   const approveTransferMut = useApproveTransferMutation();
   const approvePurchaseOrderMut = useApprovePurchaseOrderMutation();
+  const approveStaffAttendanceMut = useApproveStaffAttendanceMutation();
+  const rejectStaffAttendanceMut = useRejectStaffAttendanceMutation();
+  const closeStaffAttendanceMut = useCloseStaffAttendanceMutation();
   const approveVoidMut = useApproveSaleVoidRequestMutation();
   const rejectVoidMut = useRejectSaleVoidRequestMutation();
+
+  const runApproveStaffAttendance = async (row: DashboardStaffAttendanceQueueItem) => {
+    if (!canStaffAttendanceApprove) return;
+    setBusyKey(`staff-attendance-approve-${row.id}`);
+    try {
+      await approveStaffAttendanceMut.mutateAsync({ id: row.id });
+      authStorage.pingApprovalQueue();
+      removeQueueItemFromCache('staff_attendance_requests', row.id);
+      showSnack(`Time-in request #${row.id} approved.`, 'success');
+      void syncApprovalNotifications();
+    } catch (error: any) {
+      showSnack(extractErrorMessage(error, `Failed to approve time-in request #${row.id}.`), 'error');
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const runRejectStaffAttendance = async (row: DashboardStaffAttendanceQueueItem) => {
+    if (!canStaffAttendanceApprove) return;
+    setBusyKey(`staff-attendance-reject-${row.id}`);
+    try {
+      await rejectStaffAttendanceMut.mutateAsync({ id: row.id });
+      authStorage.pingApprovalQueue();
+      removeQueueItemFromCache('staff_attendance_requests', row.id);
+      showSnack(`Time-in request #${row.id} rejected.`, 'success');
+      void syncApprovalNotifications();
+    } catch (error: any) {
+      showSnack(extractErrorMessage(error, `Failed to reject time-in request #${row.id}.`), 'error');
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const runCloseStaffAttendance = async (row: DashboardStaffAttendanceQueueItem) => {
+    if (!canStaffAttendanceApprove) return;
+    setBusyKey(`staff-attendance-close-${row.id}`);
+    try {
+      await closeStaffAttendanceMut.mutateAsync({ id: row.id });
+      authStorage.pingApprovalQueue();
+      removeQueueItemFromCache('staff_attendance_requests', row.id);
+      showSnack(`Time-in request #${row.id} closed.`, 'success');
+      void syncApprovalNotifications();
+    } catch (error: any) {
+      showSnack(extractErrorMessage(error, `Failed to close time-in request #${row.id}.`), 'error');
+    } finally {
+      setBusyKey(null);
+    }
+  };
 
   const runApproveAdjustment = async (row: DashboardAdjustmentQueueItem) => {
     if (!canAdjustmentsApprove) return;
@@ -454,6 +561,95 @@ export function ApprovalsPage() {
   };
 
   const renderQueueCards = () => {
+    if (tab === 'staff_attendance_requests') {
+      if (queueStaffAttendance.length === 0) {
+        return <Alert severity="success">No staff time-in requests waiting for approval.</Alert>;
+      }
+
+      return (
+        <Stack spacing={1}>
+          {queueStaffAttendance.map((row) => (
+            <Paper key={row.id} variant="outlined" sx={{ p: 1.2 }}>
+              <Stack spacing={0.8}>
+                <Stack direction="row" justifyContent="space-between" spacing={1}>
+                  <Typography variant="subtitle2" sx={{ fontFamily: 'monospace' }}>
+                    ATT #{row.id}
+                  </Typography>
+                  <Chip size="small" color="warning" label="Pending Time-In" />
+                </Stack>
+                <Typography variant="caption" color="text.secondary">
+                  {formatDateTime(row.clock_in_requested_at)} | {row.branch_name ?? row.branch_id}
+                </Typography>
+                <Typography variant="body2">
+                  Staff: {row.staff_name ?? '-'} ({row.staff_email ?? '-'})
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Scheduled: {formatDateTime(row.scheduled_start_at)} |{' '}
+                  {row.late_minutes && row.late_minutes > 0
+                    ? `${row.late_minutes} min late`
+                    : 'On time'}
+                </Typography>
+                {row.request_notes ? (
+                  <Typography variant="caption" color="text.secondary">
+                    Note: {row.request_notes}
+                  </Typography>
+                ) : null}
+                <Stack direction="row" spacing={0.8} justifyContent="flex-end" useFlexGap flexWrap="wrap">
+                  <Button size="small" variant="outlined" onClick={() => openStaffAttendance(row.branch_id)}>
+                    Open
+                  </Button>
+                  {canStaffAttendanceApprove && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="warning"
+                      onClick={() => void runRejectStaffAttendance(row)}
+                      disabled={
+                        busyKey === `staff-attendance-approve-${row.id}` ||
+                        busyKey === `staff-attendance-reject-${row.id}` ||
+                        busyKey === `staff-attendance-close-${row.id}`
+                      }
+                    >
+                      {busyKey === `staff-attendance-reject-${row.id}` ? 'Rejecting...' : 'Reject'}
+                    </Button>
+                  )}
+                  {canStaffAttendanceApprove && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="inherit"
+                      onClick={() => void runCloseStaffAttendance(row)}
+                      disabled={
+                        busyKey === `staff-attendance-approve-${row.id}` ||
+                        busyKey === `staff-attendance-reject-${row.id}` ||
+                        busyKey === `staff-attendance-close-${row.id}`
+                      }
+                    >
+                      {busyKey === `staff-attendance-close-${row.id}` ? 'Closing...' : 'Close'}
+                    </Button>
+                  )}
+                  {canStaffAttendanceApprove && (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      onClick={() => void runApproveStaffAttendance(row)}
+                      disabled={
+                        busyKey === `staff-attendance-approve-${row.id}` ||
+                        busyKey === `staff-attendance-reject-${row.id}` ||
+                        busyKey === `staff-attendance-close-${row.id}`
+                      }
+                    >
+                      {busyKey === `staff-attendance-approve-${row.id}` ? 'Approving...' : 'Approve'}
+                    </Button>
+                  )}
+                </Stack>
+              </Stack>
+            </Paper>
+          ))}
+        </Stack>
+      );
+    }
+
     if (tab === 'adjustments') {
       if (queueAdjustments.length === 0) {
         return <Alert severity="success">No submitted adjustments waiting for approval.</Alert>;
@@ -660,7 +856,7 @@ export function ApprovalsPage() {
     return <Alert severity="error">You do not have approval permissions.</Alert>;
   }
 
-  const activeTabLabel = APPROVAL_TABS.find((item) => item.key === tab)?.label ?? 'Approvals';
+  const activeTabLabel = visibleApprovalTabs.find((item) => item.key === tab)?.label ?? 'Approvals';
 
   return (
     <Stack spacing={2}>
@@ -789,7 +985,7 @@ export function ApprovalsPage() {
           gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' },
         }}
       >
-        {APPROVAL_TABS.map((item) => (
+        {visibleApprovalTabs.map((item) => (
           <QueueCountCard
             key={item.key}
             label={item.label}
@@ -808,7 +1004,7 @@ export function ApprovalsPage() {
           allowScrollButtonsMobile
           sx={{ px: 1.2, minHeight: 42 }}
         >
-          {APPROVAL_TABS.map((item) => (
+          {visibleApprovalTabs.map((item) => (
             <Tab
               key={item.key}
               value={item.key}

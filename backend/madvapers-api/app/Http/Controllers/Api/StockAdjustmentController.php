@@ -55,7 +55,7 @@ class StockAdjustmentController extends Controller
 
         $userId = $request->user()->id;
 
-        return DB::transaction(function () use ($data, $userId) {
+        return $this->transactionWithRetry(function () use ($data, $userId) {
             $referenceNo = $data['reference_no'] ?? null;
 
             $adj = StockAdjustment::create([
@@ -119,7 +119,7 @@ class StockAdjustmentController extends Controller
     // POST /api/adjustments/{id}/submit
     public function submit(Request $request, StockAdjustment $adjustment)
     {
-        return DB::transaction(function () use ($request, $adjustment) {
+        return $this->transactionWithRetry(function () use ($request, $adjustment) {
             $locked = StockAdjustment::query()
                 ->lockForUpdate()
                 ->findOrFail($adjustment->id);
@@ -153,7 +153,7 @@ class StockAdjustmentController extends Controller
     // POST /api/adjustments/{id}/approve
     public function approve(Request $request, StockAdjustment $adjustment)
     {
-        return DB::transaction(function () use ($request, $adjustment) {
+        return $this->transactionWithRetry(function () use ($request, $adjustment) {
             $locked = StockAdjustment::query()
                 ->lockForUpdate()
                 ->findOrFail($adjustment->id);
@@ -191,7 +191,7 @@ class StockAdjustmentController extends Controller
     // POST /api/adjustments/{id}/post  (writes to ledger + balances)
     public function post(Request $request, StockAdjustment $adjustment, InventoryService $inv)
     {
-        return DB::transaction(function () use ($request, $adjustment, $inv) {
+        return $this->transactionWithRetry(function () use ($request, $adjustment, $inv) {
             $locked = StockAdjustment::query()
                 ->lockForUpdate()
                 ->findOrFail($adjustment->id);
@@ -203,12 +203,18 @@ class StockAdjustmentController extends Controller
             }
 
             $locked->load('items');
-            $itemCount = $locked->items->count();
-            $totalQtyDelta = (float) $locked->items->sum(function ($item) {
+            $items = $locked->items
+                ->sortBy(function ($item) {
+                    return sprintf('%010d-%010d', (int) $item->product_variant_id, (int) $item->id);
+                })
+                ->values();
+
+            $itemCount = $items->count();
+            $totalQtyDelta = (float) $items->sum(function ($item) {
                 return (float) ($item->qty_delta ?? 0);
             });
 
-            foreach ($locked->items as $item) {
+            foreach ($items as $item) {
                 $qtyDelta = (float) $item->qty_delta;
                 $unitCost = $item->unit_cost === null ? null : (float) $item->unit_cost;
 

@@ -1,4 +1,5 @@
 import {
+  Alert,
   AppBar,
   Avatar,
   Badge,
@@ -16,6 +17,7 @@ import {
   ListItemIcon,
   ListItemText,
   Stack,
+  Snackbar,
   Toolbar,
   Tooltip,
   Typography,
@@ -39,6 +41,7 @@ import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import QueryStatsOutlinedIcon from '@mui/icons-material/QueryStatsOutlined';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import GavelOutlinedIcon from '@mui/icons-material/GavelOutlined';
+import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
@@ -62,9 +65,18 @@ type NavItem = {
 };
 
 const drawerWidth = 248;
-const SECONDARY_NAV_PATHS = new Set(['/suppliers', '/branches', '/accounts', '/audit-logs', '/ledger']);
+const SECONDARY_NAV_PATHS = new Set(['/suppliers', '/branches', '/accounts', '/staff-attendance', '/audit-logs', '/ledger']);
 const ADMIN_MOBILE_FIXED_PATHS = ['/dashboard', '/approvals', '/analytics'] as const;
 const ADMIN_MOBILE_MENU_VALUE = '__menu__';
+const INSTALL_PROMPT_DISMISSED_KEY = 'mv_install_prompt_dismissed_v1';
+
+type DeferredInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{
+    outcome: 'accepted' | 'dismissed';
+    platform: string;
+  }>;
+};
 
 export function AppShell() {
   const theme = useTheme();
@@ -75,6 +87,10 @@ export function AppShell() {
   const { user, logout, can, isLoggingOut } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [secondaryOpen, setSecondaryOpen] = useState(false);
+  const [installPromptEvent, setInstallPromptEvent] = useState<DeferredInstallPromptEvent | null>(null);
+  const [installPromptOpen, setInstallPromptOpen] = useState(false);
+  const [isInstallPrompting, setIsInstallPrompting] = useState(false);
+  const [isStandaloneMode, setIsStandaloneMode] = useState(false);
   const [selectedBranchId, setSelectedBranchId] = useState<number | null>(() => {
     const stored = authStorage.getLastBranchId();
     return typeof stored === 'number' && Number.isFinite(stored) && stored > 0 ? stored : null;
@@ -90,10 +106,16 @@ export function AppShell() {
   const dashboardSummaryQuery = useDashboardSummaryQuery({}, canDashboardView);
   const roleCode = String(user?.role?.code ?? '').toUpperCase();
   const isCashierRole = roleCode === 'CASHIER';
+  const canOfferInstall = !isStandaloneMode && !!installPromptEvent;
 
   const readCount = (
     data: any,
-    key: 'adjustments' | 'transfers' | 'purchase_orders' | 'void_requests'
+    key:
+      | 'staff_attendance_requests'
+      | 'adjustments'
+      | 'transfers'
+      | 'purchase_orders'
+      | 'void_requests'
   ): number => {
     if (!data) return 0;
     const fromCounts = Number(data?.counts?.[key] ?? 0);
@@ -103,7 +125,12 @@ export function AppShell() {
   };
 
   const countFor = (
-    key: 'adjustments' | 'transfers' | 'purchase_orders' | 'void_requests'
+    key:
+      | 'staff_attendance_requests'
+      | 'adjustments'
+      | 'transfers'
+      | 'purchase_orders'
+      | 'void_requests'
   ): number =>
     Math.max(
       readCount(approvalQueueGlobalQuery.data, key),
@@ -115,6 +142,7 @@ export function AppShell() {
     const explicit = Number(data?.counts?.total ?? 0);
     if (Number.isFinite(explicit) && explicit > 0) return explicit;
     return (
+      readCount(data, 'staff_attendance_requests') +
       readCount(data, 'adjustments') +
       readCount(data, 'transfers') +
       readCount(data, 'purchase_orders') +
@@ -124,6 +152,9 @@ export function AppShell() {
 
   const pendingCounts = useMemo(
     () => ({
+      staffAttendanceRequests: can('STAFF_ATTENDANCE_APPROVE')
+        ? countFor('staff_attendance_requests')
+        : 0,
       adjustments: can('ADJUSTMENT_VIEW')
         ? countFor('adjustments')
         : 0,
@@ -182,7 +213,7 @@ export function AppShell() {
       perm: 'USER_VIEW',
       icon: <GavelOutlinedIcon />,
       notificationCount: approvalsBadgeCount,
-      requiresAnyPerms: ['ADJUSTMENT_APPROVE', 'TRANSFER_APPROVE', 'PO_APPROVE', 'SALES_VOID'],
+      requiresAnyPerms: ['ADJUSTMENT_APPROVE', 'TRANSFER_APPROVE', 'PO_APPROVE', 'SALES_VOID', 'STAFF_ATTENDANCE_APPROVE'],
     },
     {
       to: '/analytics',
@@ -223,10 +254,25 @@ export function AppShell() {
       notificationCount: pendingCounts.voidRequests,
       notificationSubtitle: pendingCounts.voidRequests > 0 ? pendingVoidRequestBranchSubtitle : undefined,
     },
+    {
+      to: '/attendance',
+      label: 'Attendance',
+      perm: 'STAFF_ATTENDANCE_VIEW',
+      icon: <AccessTimeOutlinedIcon />,
+      allowRoleCodes: ['CLERK', 'CASHIER'],
+    },
     { to: '/expenses', label: 'Expenses', perm: 'EXPENSE_VIEW', icon: <RequestQuoteOutlinedIcon /> },
     { to: '/suppliers', label: 'Suppliers', perm: 'SUPPLIER_VIEW', icon: <ApartmentOutlinedIcon /> },
     { to: '/branches', label: 'Branches', perm: 'BRANCH_MANAGE', icon: <FmdGoodOutlinedIcon /> },
     { to: '/accounts', label: 'Accounts', perm: 'USER_VIEW', icon: <GroupOutlinedIcon /> },
+    {
+      to: '/staff-attendance',
+      label: 'Staff Attendance',
+      perm: 'STAFF_ATTENDANCE_VIEW',
+      icon: <AccessTimeOutlinedIcon />,
+      notificationCount: pendingCounts.staffAttendanceRequests,
+      allowRoleCodes: ['ADMIN'],
+    },
     { to: '/audit-logs', label: 'Audit Logs', perm: 'AUDIT_VIEW', icon: <FactCheckOutlinedIcon /> },
     { to: '/ledger', label: 'Ledger', perm: 'LEDGER_VIEW', icon: <AccountTreeOutlinedIcon /> },
   ];
@@ -241,7 +287,7 @@ export function AppShell() {
       const allowed = item.allowRoleCodes.map((code) => code.toUpperCase()).includes(roleCode);
       if (!allowed) return false;
     }
-    if (isCashierRole && item.to !== '/sales') return false;
+    if (isCashierRole && !['/sales', '/attendance'].includes(item.to)) return false;
     return true;
   });
 
@@ -313,6 +359,63 @@ export function AppShell() {
     selectedBranchId,
   ]);
 
+  useEffect(() => {
+    const isStandalone = () =>
+      window.matchMedia('(display-mode: standalone)').matches
+      || (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+
+    setIsStandaloneMode(isStandalone());
+
+    const onBeforeInstallPrompt = (event: Event) => {
+      const promptEvent = event as DeferredInstallPromptEvent;
+      promptEvent.preventDefault();
+      setInstallPromptEvent(promptEvent);
+
+      const dismissed = localStorage.getItem(INSTALL_PROMPT_DISMISSED_KEY) === '1';
+      if (!dismissed && !isStandalone()) {
+        setInstallPromptOpen(true);
+      }
+    };
+
+    const onInstalled = () => {
+      setIsStandaloneMode(true);
+      setInstallPromptOpen(false);
+      setInstallPromptEvent(null);
+      localStorage.removeItem(INSTALL_PROMPT_DISMISSED_KEY);
+    };
+
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt as EventListener);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt as EventListener);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+
+  const dismissInstallPrompt = () => {
+    setInstallPromptOpen(false);
+    localStorage.setItem(INSTALL_PROMPT_DISMISSED_KEY, '1');
+  };
+
+  const handleInstallApp = async () => {
+    if (!installPromptEvent || isInstallPrompting) return;
+
+    setIsInstallPrompting(true);
+    try {
+      await installPromptEvent.prompt();
+      const choice = await installPromptEvent.userChoice;
+      setInstallPromptOpen(false);
+      setInstallPromptEvent(null);
+      if (choice.outcome === 'dismissed') {
+        localStorage.setItem(INSTALL_PROMPT_DISMISSED_KEY, '1');
+      } else {
+        localStorage.removeItem(INSTALL_PROMPT_DISMISSED_KEY);
+      }
+    } finally {
+      setIsInstallPrompting(false);
+    }
+  };
+
   const activeLabel = useMemo(() => {
     const hit = availableNav.find((item) => isRouteActive(item.to));
     return hit?.label ?? (isCashierRole ? 'Sales' : 'Dashboard');
@@ -320,17 +423,22 @@ export function AppShell() {
 
   const mobileQuickNav = useMemo(() => {
     if (isCashierRole) return availableNav.slice(0, 4);
-    return ADMIN_MOBILE_FIXED_PATHS
+    const fixedQuickNav = ADMIN_MOBILE_FIXED_PATHS
       .map((path) => availableNav.find((item) => item.to === path))
       .filter((item): item is NavItem => !!item);
+    if (fixedQuickNav.length > 0) return fixedQuickNav;
+    // Fallback for non-admin roles (for example CLERK) that do not have dashboard/approvals/analytics.
+    return availableNav.slice(0, 3);
   }, [availableNav, isCashierRole]);
 
+  const mobileQuickNavPathSet = useMemo(
+    () => new Set(mobileQuickNav.map((item) => item.to)),
+    [mobileQuickNav]
+  );
+
   const mobileMenuNav = useMemo(
-    () =>
-      availableNav.filter(
-        (item) => !ADMIN_MOBILE_FIXED_PATHS.includes(item.to as (typeof ADMIN_MOBILE_FIXED_PATHS)[number])
-      ),
-    [availableNav]
+    () => availableNav.filter((item) => !mobileQuickNavPathSet.has(item.to)),
+    [availableNav, mobileQuickNavPathSet]
   );
   const mobileMenuHasNotifications = useMemo(
     () => mobileMenuNav.some((item) => Number(item.notificationCount ?? 0) > 0),
@@ -630,6 +738,18 @@ export function AppShell() {
                 sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
               />
             )}
+            {canOfferInstall && (
+              <Button
+                color="inherit"
+                variant="outlined"
+                onClick={() => void handleInstallApp()}
+                size="small"
+                disabled={isInstallPrompting}
+                sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
+              >
+                {isInstallPrompting ? 'Opening...' : 'Install App'}
+              </Button>
+            )}
             <Tooltip title={user?.name ?? ''}>
               <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main', fontSize: 13 }}>{initials}</Avatar>
             </Tooltip>
@@ -822,6 +942,41 @@ export function AppShell() {
           </List>
         </Drawer>
       )}
+
+      <Snackbar
+        open={installPromptOpen && canOfferInstall}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ pb: { xs: 'calc(90px + env(safe-area-inset-bottom))', md: 2 } }}
+      >
+        <Alert
+          severity="info"
+          variant="filled"
+          action={
+            <Stack direction="row" spacing={0.6}>
+              <Button color="inherit" size="small" onClick={dismissInstallPrompt}>
+                Later
+              </Button>
+              <Button
+                color="inherit"
+                size="small"
+                variant="outlined"
+                onClick={() => void handleInstallApp()}
+                disabled={isInstallPrompting}
+                sx={{
+                  borderColor: alpha('#ffffff', 0.6),
+                  '&:hover': { borderColor: '#ffffff' },
+                }}
+              >
+                {isInstallPrompting ? 'Opening...' : 'Install'}
+              </Button>
+            </Stack>
+          }
+          onClose={dismissInstallPrompt}
+          sx={{ width: '100%' }}
+        >
+          Install Mad Vapers for app-like access.
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

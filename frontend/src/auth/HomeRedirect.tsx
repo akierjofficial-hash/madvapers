@@ -8,11 +8,14 @@ export function HomeRedirect() {
   if (isLoadingUser) return <Alert severity="info">Loading...</Alert>;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
 
-  const role = user?.role?.code ?? '';
+  const role = String(user?.role?.code ?? '').toUpperCase();
 
   // Role-specific preference (small but meaningful)
   if (role === 'CASHIER' && can('SALES_VIEW')) {
     return <Navigate to="/sales" replace />;
+  }
+  if (role === 'CLERK' && can('INVENTORY_VIEW')) {
+    return <Navigate to="/inventory" replace />;
   }
 
   // Default priority by capability

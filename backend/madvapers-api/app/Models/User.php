@@ -13,6 +13,7 @@ class User extends Authenticatable
 
     protected $fillable = ['name', 'email', 'password', 'role_id', 'branch_id', 'is_active'];
     protected $hidden = ['password', 'remember_token'];
+    private ?array $permissionCodeCache = null;
 
     protected function casts(): array
     {
@@ -41,8 +42,29 @@ class User extends Authenticatable
 
     public function hasPermission(string $permissionCode): bool
     {
-        return $this->role
-            ? $this->role->permissions()->where('code', $permissionCode)->exists()
-            : false;
+        $targetCode = strtoupper(trim($permissionCode));
+        if ($targetCode === '') {
+            return false;
+        }
+
+        if (!$this->role) {
+            return false;
+        }
+
+        if ($this->permissionCodeCache === null) {
+            $role = $this->role;
+            if (!$role->relationLoaded('permissions')) {
+                $role->load('permissions:id,code');
+            }
+
+            $this->permissionCodeCache = $role->permissions
+                ->pluck('code')
+                ->map(fn ($code) => strtoupper((string) $code))
+                ->unique()
+                ->values()
+                ->all();
+        }
+
+        return in_array($targetCode, $this->permissionCodeCache, true);
     }
 }

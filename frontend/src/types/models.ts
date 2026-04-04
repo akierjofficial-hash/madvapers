@@ -26,6 +26,28 @@ export type User = {
   branches?: UserBranch[];
 };
 
+export type StaffAttendance = {
+  id: number;
+  user_id: number;
+  branch_id?: number | null;
+  scheduled_start_at?: string | null;
+  clock_in_requested_at: string;
+  clock_in_status: string;
+  reviewed_at?: string | null;
+  reviewed_by_user_id?: number | null;
+  clock_out_at?: string | null;
+  request_notes?: string | null;
+  review_notes?: string | null;
+  clock_out_notes?: string | null;
+  late_minutes?: number | null;
+  is_open?: boolean;
+
+  user?: User | null;
+  branch?: UserBranch | null;
+  reviewed_by?: User | null;
+  reviewedBy?: User | null;
+};
+
 export type Branch = {
   id: number;
   code: string;

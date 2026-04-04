@@ -106,7 +106,7 @@ class SalesController extends Controller
 
         $this->enforceBranchAccessOrFail($request, (int) $data['branch_id']);
 
-        return DB::transaction(function () use ($request, $data) {
+        return $this->transactionWithRetry(function () use ($request, $data) {
             $sale = Sale::create([
                 'branch_id' => (int) $data['branch_id'],
                 'status' => 'DRAFT',
@@ -159,7 +159,7 @@ class SalesController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
-        return DB::transaction(function () use ($request, $sale, $data) {
+        return $this->transactionWithRetry(function () use ($request, $sale, $data) {
             $locked = $this->lockSale($sale->id);
             $this->enforceBranchAccessOrFail($request, (int) $locked->branch_id);
 
@@ -273,7 +273,7 @@ class SalesController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
-        return DB::transaction(function () use ($request, $sale, $data, $inventoryService) {
+        return $this->transactionWithRetry(function () use ($request, $sale, $data, $inventoryService) {
             $locked = $this->lockSale($sale->id);
             $this->enforceBranchAccessOrFail($request, (int) $locked->branch_id);
 
@@ -401,7 +401,7 @@ class SalesController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
-        return DB::transaction(function () use ($request, $sale, $data) {
+        return $this->transactionWithRetry(function () use ($request, $sale, $data) {
             $locked = $this->lockSale($sale->id);
             $this->enforceBranchAccessOrFail($request, (int) $locked->branch_id);
 
@@ -468,7 +468,7 @@ class SalesController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
-        return DB::transaction(function () use ($request, $sale, $inventoryService, $data) {
+        return $this->transactionWithRetry(function () use ($request, $sale, $inventoryService, $data) {
             $locked = $this->lockSale($sale->id);
             $this->enforceBranchAccessOrFail($request, (int) $locked->branch_id);
 
@@ -515,7 +515,7 @@ class SalesController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
-        return DB::transaction(function () use ($request, $sale, $data) {
+        return $this->transactionWithRetry(function () use ($request, $sale, $data) {
             $locked = $this->lockSale($sale->id);
             $this->enforceBranchAccessOrFail($request, (int) $locked->branch_id);
 
@@ -574,7 +574,7 @@ class SalesController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
-        return DB::transaction(function () use ($request, $sale, $inventoryService, $data) {
+        return $this->transactionWithRetry(function () use ($request, $sale, $inventoryService, $data) {
             $locked = $this->lockSale($sale->id);
             $this->enforceBranchAccessOrFail($request, (int) $locked->branch_id);
 
@@ -660,7 +660,13 @@ class SalesController extends Controller
         }
 
         $qtyByVariant = [];
-        foreach ($sale->items as $item) {
+        $itemsToPost = $sale->items
+            ->sortBy(function ($item) {
+                return sprintf('%010d-%010d', (int) $item->product_variant_id, (int) $item->id);
+            })
+            ->values();
+
+        foreach ($itemsToPost as $item) {
             $variantId = (int) $item->product_variant_id;
             if (!isset($qtyByVariant[$variantId])) {
                 $qtyByVariant[$variantId] = 0.0;

@@ -6,6 +6,7 @@ import type {
   InventoryBalance,
   Product,
   ProductVariant,
+  StaffAttendance,
   StockLedger,
   User,
   UserRole,
@@ -40,6 +41,16 @@ import {
   type CreateUserInput,
   type UpdateUserInput,
 } from './accounts';
+import {
+  approveStaffAttendance,
+  closeStaffAttendance,
+  getStaffAttendances,
+  rejectStaffAttendance,
+  requestStaffTimeIn,
+  requestStaffTimeOut,
+  type AttendanceNoteInput,
+  type StaffAttendanceQuery,
+} from './staffAttendance';
 
 // Suppliers (CRUD)
 import {
@@ -172,6 +183,7 @@ const POLL_MS = {
   purchaseOrders: parsePollMs(import.meta.env.VITE_REALTIME_PURCHASE_ORDERS_MS, 6000),
   sales: parsePollMs(import.meta.env.VITE_REALTIME_SALES_MS, 5000),
   expenses: parsePollMs(import.meta.env.VITE_REALTIME_EXPENSES_MS, 7000),
+  staffAttendance: parsePollMs(import.meta.env.VITE_REALTIME_STAFF_ATTENDANCE_MS, 5000),
 } as const;
 
 function realtimeInterval(enabled: boolean, ms: number): number | false {
@@ -188,6 +200,7 @@ export const qk = {
   brands: (params: CatalogQuery) => ['brands', params] as const,
   roles: ['roles'] as const,
   users: (params: UsersQuery) => ['users', params] as const,
+  staffAttendance: (params: StaffAttendanceQuery) => ['staffAttendance', params] as const,
   suppliers: ['suppliers'] as const,
 
   inventory: (params: InventoryQuery) => ['inventory', params] as const,
@@ -419,6 +432,76 @@ export function useEnableUserMutation() {
   return useMutation<{ status: string }, unknown, number>({
     mutationFn: (id) => enableUser(id),
     onSuccess: () => invalidateUsers(qc),
+  });
+}
+
+function invalidateStaffAttendance(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: ['staffAttendance'] });
+}
+
+export function useStaffAttendanceQuery(params: StaffAttendanceQuery, enabled = true) {
+  return useQuery<LaravelPaginator<StaffAttendance>>({
+    queryKey: qk.staffAttendance(params),
+    queryFn: () => getStaffAttendances(params),
+    enabled,
+    placeholderData: keepPreviousData,
+    // Keep attendance status fresh across staff/admin sessions even if other realtime polling is disabled.
+    refetchInterval: enabled ? POLL_MS.staffAttendance : false,
+    refetchIntervalInBackground: false,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useRequestStaffTimeInMutation() {
+  const qc = useQueryClient();
+  return useMutation<{ status: string; attendance: StaffAttendance }, unknown, AttendanceNoteInput | undefined>({
+    mutationFn: (input) => requestStaffTimeIn(input),
+    onSuccess: () => invalidateStaffAttendance(qc),
+  });
+}
+
+export function useRequestStaffTimeOutMutation() {
+  const qc = useQueryClient();
+  return useMutation<{ status: string; attendance: StaffAttendance }, unknown, AttendanceNoteInput | undefined>({
+    mutationFn: (input) => requestStaffTimeOut(input),
+    onSuccess: () => invalidateStaffAttendance(qc),
+  });
+}
+
+export function useApproveStaffAttendanceMutation() {
+  const qc = useQueryClient();
+  return useMutation<
+    { status: string; attendance: StaffAttendance },
+    unknown,
+    { id: number; input?: AttendanceNoteInput }
+  >({
+    mutationFn: ({ id, input }) => approveStaffAttendance(id, input),
+    onSuccess: () => invalidateStaffAttendance(qc),
+  });
+}
+
+export function useRejectStaffAttendanceMutation() {
+  const qc = useQueryClient();
+  return useMutation<
+    { status: string; attendance: StaffAttendance },
+    unknown,
+    { id: number; input?: AttendanceNoteInput }
+  >({
+    mutationFn: ({ id, input }) => rejectStaffAttendance(id, input),
+    onSuccess: () => invalidateStaffAttendance(qc),
+  });
+}
+
+export function useCloseStaffAttendanceMutation() {
+  const qc = useQueryClient();
+  return useMutation<
+    { status: string; attendance: StaffAttendance },
+    unknown,
+    { id: number; input?: AttendanceNoteInput }
+  >({
+    mutationFn: ({ id, input }) => closeStaffAttendance(id, input),
+    onSuccess: () => invalidateStaffAttendance(qc),
   });
 }
 

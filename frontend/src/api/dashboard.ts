@@ -117,6 +117,19 @@ export type DashboardSaleVoidRequestQueueItem = {
   void_request_notes?: string | null;
 };
 
+export type DashboardStaffAttendanceQueueItem = {
+  id: number;
+  user_id: number;
+  branch_id?: number | null;
+  branch_name?: string | null;
+  staff_name?: string | null;
+  staff_email?: string | null;
+  clock_in_requested_at?: string | null;
+  scheduled_start_at?: string | null;
+  late_minutes?: number | null;
+  request_notes?: string | null;
+};
+
 export type DashboardBranchHealth = {
   branch_id: number;
   branch_code: string;
@@ -228,6 +241,7 @@ export type DashboardSummaryResponse = {
     transfers: DashboardTransferQueueItem[];
     purchase_orders: DashboardPurchaseOrderQueueItem[];
     void_requests: DashboardSaleVoidRequestQueueItem[];
+    staff_attendance_requests?: DashboardStaffAttendanceQueueItem[];
   };
   alerts: DashboardAlert[];
   branch_health: DashboardBranchHealth[];
@@ -246,6 +260,7 @@ export type DashboardApprovalQueueResponse = {
     transfers: number;
     purchase_orders: number;
     void_requests: number;
+    staff_attendance_requests?: number;
     total: number;
   };
   approval_queue: DashboardSummaryResponse['approval_queue'];

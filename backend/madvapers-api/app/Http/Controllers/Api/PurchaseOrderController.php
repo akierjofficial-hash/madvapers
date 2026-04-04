@@ -16,6 +16,19 @@ use Illuminate\Validation\ValidationException;
 class PurchaseOrderController extends Controller
 {
     use EnforcesBranchAccess;
+    private static ?array $purchaseOrderColumnMap = null;
+
+    private function purchaseOrderHasColumn(string $column): bool
+    {
+        if (self::$purchaseOrderColumnMap === null) {
+            self::$purchaseOrderColumnMap = [];
+            foreach (Schema::getColumnListing('purchase_orders') as $name) {
+                self::$purchaseOrderColumnMap[strtolower((string) $name)] = true;
+            }
+        }
+
+        return isset(self::$purchaseOrderColumnMap[strtolower($column)]);
+    }
 
     public function index(Request $request)
 {
@@ -60,7 +73,7 @@ class PurchaseOrderController extends Controller
 
         $this->enforceBranchAccessOrFail($request, (int) $data['branch_id']);
 
-        return DB::transaction(function () use ($data, $request) {
+        return $this->transactionWithRetry(function () use ($data, $request) {
             $poAttrs = [
                 'supplier_id' => $data['supplier_id'],
                 'branch_id' => $data['branch_id'],
@@ -68,13 +81,13 @@ class PurchaseOrderController extends Controller
             ];
 
             // Guard optional columns (prevents crashes if migration missing)
-            if (Schema::hasColumn('purchase_orders', 'reference_no')) {
+            if ($this->purchaseOrderHasColumn('reference_no')) {
                 $poAttrs['reference_no'] = $data['reference_no'] ?? null;
             }
-            if (Schema::hasColumn('purchase_orders', 'notes')) {
+            if ($this->purchaseOrderHasColumn('notes')) {
                 $poAttrs['notes'] = $data['notes'] ?? null;
             }
-            if (Schema::hasColumn('purchase_orders', 'created_by_user_id')) {
+            if ($this->purchaseOrderHasColumn('created_by_user_id')) {
                 $poAttrs['created_by_user_id'] = $request->user()?->id;
             }
 
@@ -133,7 +146,7 @@ class PurchaseOrderController extends Controller
 
     public function submit(Request $request, PurchaseOrder $po)
     {
-        return DB::transaction(function () use ($request, $po) {
+        return $this->transactionWithRetry(function () use ($request, $po) {
             $locked = $this->lockPurchaseOrder($po->id);
             $this->enforceBranchAccessOrFail($request, (int) $locked->branch_id);
             if ($locked->status !== 'DRAFT') {
@@ -141,7 +154,7 @@ class PurchaseOrderController extends Controller
             }
 
             $update = ['status' => 'SUBMITTED'];
-            if (Schema::hasColumn('purchase_orders', 'submitted_at')) {
+            if ($this->purchaseOrderHasColumn('submitted_at')) {
                 $update['submitted_at'] = now();
             }
 
@@ -170,7 +183,7 @@ class PurchaseOrderController extends Controller
 
     public function approve(Request $request, PurchaseOrder $po)
     {
-        return DB::transaction(function () use ($request, $po) {
+        return $this->transactionWithRetry(function () use ($request, $po) {
             $locked = $this->lockPurchaseOrder($po->id);
             $this->enforceBranchAccessOrFail($request, (int) $locked->branch_id);
             if ($locked->status !== 'SUBMITTED') {
@@ -178,10 +191,10 @@ class PurchaseOrderController extends Controller
             }
 
             $update = ['status' => 'APPROVED'];
-            if (Schema::hasColumn('purchase_orders', 'approved_at')) {
+            if ($this->purchaseOrderHasColumn('approved_at')) {
                 $update['approved_at'] = now();
             }
-            if (Schema::hasColumn('purchase_orders', 'approved_by_user_id')) {
+            if ($this->purchaseOrderHasColumn('approved_by_user_id')) {
                 $update['approved_by_user_id'] = $request->user()?->id;
             }
 
@@ -210,7 +223,7 @@ class PurchaseOrderController extends Controller
 
     public function cancel(Request $request, PurchaseOrder $po)
     {
-        return DB::transaction(function () use ($request, $po) {
+        return $this->transactionWithRetry(function () use ($request, $po) {
             $locked = $this->lockPurchaseOrder($po->id);
             $this->enforceBranchAccessOrFail($request, (int) $locked->branch_id);
             if (in_array($locked->status, ['RECEIVED', 'CANCELLED'], true)) {
@@ -253,7 +266,7 @@ class PurchaseOrderController extends Controller
             'lines.*.qty_received' => ['required_with:lines', 'numeric', 'gt:0'],
         ]);
 
-        return DB::transaction(function () use ($po, $data, $request, $svc) {
+        return $this->transactionWithRetry(function () use ($po, $data, $request, $svc) {
             $locked = $this->lockPurchaseOrder($po->id);
             $this->enforceBranchAccessOrFail($request, (int) $locked->branch_id);
 
@@ -286,6 +299,26 @@ class PurchaseOrderController extends Controller
                     ->values()
                     ->all();
             }
+
+            $aggregatedLines = [];
+            foreach ($lines as $line) {
+                $variantId = (int) ($line['product_variant_id'] ?? 0);
+                $receiveQty = (float) ($line['qty_received'] ?? 0);
+                if ($variantId <= 0 || $receiveQty <= 0) {
+                    continue;
+                }
+
+                if (!isset($aggregatedLines[$variantId])) {
+                    $aggregatedLines[$variantId] = [
+                        'product_variant_id' => $variantId,
+                        'qty_received' => 0.0,
+                    ];
+                }
+
+                $aggregatedLines[$variantId]['qty_received'] += $receiveQty;
+            }
+            ksort($aggregatedLines);
+            $lines = array_values($aggregatedLines);
 
             if (empty($lines)) {
                 return response()->json(['message' => 'Nothing to receive.'], 422);
@@ -344,7 +377,7 @@ class PurchaseOrderController extends Controller
             });
 
             $locked->status = $allReceived ? 'RECEIVED' : 'PARTIALLY_RECEIVED';
-            if ($allReceived && Schema::hasColumn('purchase_orders', 'received_at')) {
+            if ($allReceived && $this->purchaseOrderHasColumn('received_at')) {
                 $locked->received_at = now();
             }
             $locked->save();

@@ -28,6 +28,7 @@ import {
   useMediaQuery,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
+import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
 import AssignmentTurnedInOutlinedIcon from '@mui/icons-material/AssignmentTurnedInOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
@@ -261,6 +262,7 @@ export function SalesPage() {
   const canSalesVoid = can('SALES_VOID') && !isCashierRole;
   const canSalesPayment = can('SALES_PAYMENT');
   const canLedgerView = can('LEDGER_VIEW');
+  const canStaffAttendanceView = can('STAFF_ATTENDANCE_VIEW');
 
   const [searchParams, setSearchParams] = useSearchParams();
   const branchesQuery = useBranchesQuery(canBranchView);
@@ -1016,7 +1018,7 @@ export function SalesPage() {
           setPaymentMethod('CASH');
           setPaymentAmount(total > 0 ? total.toFixed(2) : '');
           setSnack({ severity: 'success', message: `Sale #${created.id} created and posted. Proceed to payment.` });
-          await Promise.all([salesQuery.refetch(), cashierCatalogQuery.refetch()]);
+          void Promise.allSettled([salesQuery.refetch(), cashierCatalogQuery.refetch()]);
         } catch (postError: any) {
           const postMessage =
             postError?.response?.data?.errors?.stock?.[0] ??
@@ -1033,7 +1035,7 @@ export function SalesPage() {
           ? `Sale #${created.id} saved as DRAFT. Stock will decrease only after posting the sale.`
           : `Sale #${created.id} created.`,
       });
-      await salesQuery.refetch();
+      void salesQuery.refetch();
     } catch (error: any) {
       const message = error?.response?.data?.message || 'Failed to create sale.';
       setSnack({ severity: 'error', message });
@@ -1049,7 +1051,7 @@ export function SalesPage() {
         setPaymentAmount(dueAmount.toFixed(2));
       }
       setSnack({ severity: 'success', message: `Sale #${selected.id} posted.` });
-      await Promise.all([saleQuery.refetch(), salesQuery.refetch(), cashierCatalogQuery.refetch()]);
+      void Promise.allSettled([saleQuery.refetch(), salesQuery.refetch(), cashierCatalogQuery.refetch()]);
     } catch (error: any) {
       const details = error?.response?.data?.errors?.stock?.[0] ?? error?.response?.data?.message;
       setSnack({ severity: 'error', message: details || 'Failed to post sale.' });
@@ -1085,7 +1087,7 @@ export function SalesPage() {
       setPaymentNotes('');
       setPaymentClientTxnId(createClientTxnId());
       setSnack({ severity: 'success', message: 'Payment recorded.' });
-      await Promise.all([saleQuery.refetch(), salesQuery.refetch()]);
+      void Promise.allSettled([saleQuery.refetch(), salesQuery.refetch()]);
     } catch (error: any) {
       const message = error?.response?.data?.message || 'Failed to add payment.';
       setSnack({ severity: 'error', message });
@@ -1122,7 +1124,7 @@ export function SalesPage() {
           setPaymentRef('');
           setPaymentNotes('');
           setSnack({ severity: 'success', message: `Sale #${saleId} voided.` });
-          await Promise.all([
+          void Promise.allSettled([
             saleQuery.refetch(),
             salesQuery.refetch(),
             cashierCatalogQuery.refetch(),
@@ -1164,7 +1166,7 @@ export function SalesPage() {
           await requestVoidMut.mutateAsync({ id: saleId });
           authStorage.pingApprovalQueue();
           setSnack({ severity: 'success', message: `Void request submitted for Sale #${saleId}.` });
-          await Promise.all([saleQuery.refetch(), salesQuery.refetch(), syncApprovalNotifications()]);
+          void Promise.allSettled([saleQuery.refetch(), salesQuery.refetch(), syncApprovalNotifications()]);
         } catch (error: any) {
           const message =
             error?.response?.data?.errors?.void_request_status?.[0] ??
@@ -1202,7 +1204,7 @@ export function SalesPage() {
           setPaymentRef('');
           setPaymentNotes('');
           setSnack({ severity: 'success', message: `Void request approved. Sale #${saleId} is now voided.` });
-          await Promise.all([
+          void Promise.allSettled([
             saleQuery.refetch(),
             salesQuery.refetch(),
             cashierCatalogQuery.refetch(),
@@ -1239,7 +1241,7 @@ export function SalesPage() {
           await rejectVoidMut.mutateAsync({ id: saleId });
           authStorage.pingApprovalQueue();
           setSnack({ severity: 'success', message: `Void request rejected for Sale #${saleId}.` });
-          await Promise.all([saleQuery.refetch(), salesQuery.refetch(), syncApprovalNotifications()]);
+          void Promise.allSettled([saleQuery.refetch(), salesQuery.refetch(), syncApprovalNotifications()]);
         } catch (error: any) {
           const message =
             error?.response?.data?.errors?.void_request_status?.[0] ??
@@ -1298,24 +1300,39 @@ export function SalesPage() {
           </Typography>
         </Box>
         {(!isCashierRole || !isPhone) && (
-          <Tooltip
-            title={
-              isCashierRole
-                ? 'Start a fresh checkout cart for scanner-first sales.'
-                : 'Create a new sale draft with selected items.'
-            }
-            arrow
-          >
-            <span>
-              <Button
-                variant="contained"
-                onClick={() => openNewSale({ focusSearch: isCashierRole && !isPhone })}
-                disabled={!canSalesCreate}
-              >
-                {isCashierRole ? 'Start New Checkout' : 'New Sale'}
-              </Button>
-            </span>
-          </Tooltip>
+          <Stack direction="row" spacing={1} alignItems="center">
+            {isCashierRole && canStaffAttendanceView && (
+              <Tooltip title="Open your DTR attendance records and time-in/out page." arrow>
+                <span>
+                  <Button
+                    variant="outlined"
+                    onClick={() => navigate('/attendance')}
+                    startIcon={<AccessTimeOutlinedIcon />}
+                  >
+                    Attendance
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
+            <Tooltip
+              title={
+                isCashierRole
+                  ? 'Start a fresh checkout cart for scanner-first sales.'
+                  : 'Create a new sale draft with selected items.'
+              }
+              arrow
+            >
+              <span>
+                <Button
+                  variant="contained"
+                  onClick={() => openNewSale({ focusSearch: isCashierRole && !isPhone })}
+                  disabled={!canSalesCreate}
+                >
+                  {isCashierRole ? 'Start New Checkout' : 'New Sale'}
+                </Button>
+              </span>
+            </Tooltip>
+          </Stack>
         )}
       </Stack>
 
@@ -2521,8 +2538,29 @@ export function SalesPage() {
         </DialogActions>
       </Dialog>
 
-      <Drawer anchor="right" open={!!selectedId} onClose={() => setSelectedId(null)} ModalProps={{ disableScrollLock: true }}>
-        <Box sx={{ width: { xs: '100vw', sm: 560 }, maxWidth: '100vw', p: { xs: 2, sm: 2.5 } }}>
+      <Drawer
+        anchor="right"
+        open={!!selectedId}
+        onClose={() => setSelectedId(null)}
+        ModalProps={{ disableScrollLock: true }}
+        PaperProps={{
+          sx: {
+            width: { xs: '100dvw', sm: 560 },
+            maxWidth: '100dvw',
+            boxSizing: 'border-box',
+          },
+        }}
+      >
+        <Box
+          sx={{
+            width: '100%',
+            maxWidth: '100%',
+            boxSizing: 'border-box',
+            p: { xs: 1.5, sm: 2.5 },
+            pb: { xs: 'calc(16px + env(safe-area-inset-bottom))', sm: 2.5 },
+            overflowX: 'hidden',
+          }}
+        >
           <Stack direction="row" justifyContent="space-between" alignItems="center">
             <Typography variant="h6">Sale</Typography>
             <Button onClick={() => setSelectedId(null)}>Close</Button>

@@ -19,6 +19,9 @@ class RolePermissionSeeder extends Seeder
             ['code' => 'USER_DISABLE', 'name' => 'Disable users'],
             ['code' => 'ROLE_VIEW', 'name' => 'View roles & permissions'],
             ['code' => 'ROLE_MANAGE', 'name' => 'Manage roles & permissions'],
+            ['code' => 'STAFF_ATTENDANCE_VIEW', 'name' => 'View staff attendance'],
+            ['code' => 'STAFF_ATTENDANCE_CLOCK', 'name' => 'Request own staff time in/out'],
+            ['code' => 'STAFF_ATTENDANCE_APPROVE', 'name' => 'Approve or reject staff time in'],
 
             // Branches
             ['code' => 'BRANCH_VIEW', 'name' => 'View branches'],
@@ -122,12 +125,19 @@ class RolePermissionSeeder extends Seeder
             $role->permissions()->sync($permIds);
         };
 
-        // ADMIN: all permissions
-        $attach('ADMIN', Permission::pluck('code')->all());
+        // ADMIN: all permissions except staff clock-in/out actions.
+        $attach(
+            'ADMIN',
+            Permission::query()
+                ->where('code', '!=', 'STAFF_ATTENDANCE_CLOCK')
+                ->pluck('code')
+                ->all()
+        );
 
         // CLERK: manager-like operations without approval powers
         $attach('CLERK', [
             'BRANCH_VIEW',
+            'STAFF_ATTENDANCE_VIEW', 'STAFF_ATTENDANCE_CLOCK',
             'PRODUCT_VIEW', 'PRODUCT_CREATE', 'PRODUCT_UPDATE', 'PRICE_VIEW',
             'INVENTORY_VIEW', 'LEDGER_VIEW',
             'PO_VIEW', 'PO_CREATE', 'PO_RECEIVE',
@@ -143,6 +153,7 @@ class RolePermissionSeeder extends Seeder
         // CASHIER
         $attach('CASHIER', [
             'PRODUCT_VIEW',
+            'STAFF_ATTENDANCE_VIEW', 'STAFF_ATTENDANCE_CLOCK',
             'SALES_VIEW', 'SALES_CREATE', 'SALES_POST', 'SALES_VOID_REQUEST', 'SALES_PAYMENT',
         ]);
 
