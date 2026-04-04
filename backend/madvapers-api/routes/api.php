@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\AuditEventController;
 use App\Http\Controllers\Api\StaffAttendanceController;
+use App\Http\Controllers\Api\PushSubscriptionController;
 
 // Health
 Route::get('/health', [HealthController::class, 'index']);
@@ -54,6 +55,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // Auth
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+    Route::post('/push-subscriptions', [PushSubscriptionController::class, 'store'])->middleware('perm:USER_VIEW');
+    Route::delete('/push-subscriptions', [PushSubscriptionController::class, 'destroy'])->middleware('perm:USER_VIEW');
     Route::get('/audit/events', [AuditEventController::class, 'index'])->middleware('perm:AUDIT_VIEW');
 
     // Dashboard

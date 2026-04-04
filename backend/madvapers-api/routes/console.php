@@ -2,8 +2,10 @@
 
 use App\Models\ProductVariant;
 use App\Models\StockLedger;
+use App\Services\AdminPushNotificationService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Minishlink\WebPush\VAPID;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -85,3 +87,34 @@ Artisan::command(
         return 0;
     }
 )->purpose('Backfill variant default_cost using latest positive ledger unit_cost');
+
+Artisan::command('push:vapid-keys', function () {
+    $keys = VAPID::createVapidKeys();
+
+    $this->newLine();
+    $this->info('Generated VAPID keys (save these in your backend/.env and frontend/.env):');
+    $this->line('WEB_PUSH_VAPID_PUBLIC_KEY=' . $keys['publicKey']);
+    $this->line('WEB_PUSH_VAPID_PRIVATE_KEY=' . $keys['privateKey']);
+    $this->line('WEB_PUSH_VAPID_SUBJECT=mailto:admin@madvapers.com');
+    $this->line('VITE_WEB_PUSH_PUBLIC_KEY=' . $keys['publicKey']);
+    $this->newLine();
+})->purpose('Generate VAPID keys for Web Push notifications');
+
+Artisan::command('push:test {--message=Test approval request from Mad Vapers} {--path=/approvals}', function () {
+    $message = trim((string) $this->option('message'));
+    $path = trim((string) $this->option('path'));
+
+    /** @var AdminPushNotificationService $push */
+    $push = app(AdminPushNotificationService::class);
+    $push->sendApprovalRequestNotification(
+        $message !== '' ? $message : 'Test approval request from Mad Vapers',
+        [
+            'type' => 'test_push',
+            'entity_type' => 'system',
+            'entity_id' => 0,
+            'path' => $path !== '' ? $path : '/approvals',
+        ]
+    );
+
+    $this->info('Push test notification dispatched to subscribed admin devices.');
+})->purpose('Send a test Web Push notification to admin devices');

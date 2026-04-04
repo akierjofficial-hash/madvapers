@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Api\Concerns\EnforcesBranchAccess;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Services\AdminPushNotificationService;
 use App\Support\AuditTrail;
 use App\Services\InventoryService;
 use Illuminate\Http\Request;
@@ -17,6 +18,11 @@ class PurchaseOrderController extends Controller
 {
     use EnforcesBranchAccess;
     private static ?array $purchaseOrderColumnMap = null;
+
+    public function __construct(
+        private readonly AdminPushNotificationService $adminPushNotifications
+    ) {
+    }
 
     private function purchaseOrderHasColumn(string $column): bool
     {
@@ -146,7 +152,13 @@ class PurchaseOrderController extends Controller
 
     public function submit(Request $request, PurchaseOrder $po)
     {
-        return $this->transactionWithRetry(function () use ($request, $po) {
+        $notifyContext = [
+            'po_id' => 0,
+            'branch_id' => null,
+            'reference_no' => '',
+        ];
+
+        $response = $this->transactionWithRetry(function () use ($request, $po, &$notifyContext) {
             $locked = $this->lockPurchaseOrder($po->id);
             $this->enforceBranchAccessOrFail($request, (int) $locked->branch_id);
             if ($locked->status !== 'DRAFT') {
@@ -159,6 +171,9 @@ class PurchaseOrderController extends Controller
             }
 
             $locked->update($update);
+            $notifyContext['po_id'] = (int) $locked->id;
+            $notifyContext['branch_id'] = (int) $locked->branch_id;
+            $notifyContext['reference_no'] = (string) ($locked->reference_no ?? '');
 
             AuditTrail::record([
                 'event_type' => 'PO_SUBMITTED',
@@ -179,6 +194,24 @@ class PurchaseOrderController extends Controller
                 'purchase_order' => $locked->fresh()->load(['supplier', 'branch', 'items.variant.product']),
             ]);
         });
+
+        if ((int) ($notifyContext['po_id'] ?? 0) > 0) {
+            $reference = trim((string) ($notifyContext['reference_no'] ?? ''));
+            $label = $reference !== '' ? $reference : ('PO #' . (int) $notifyContext['po_id']);
+
+            $this->adminPushNotifications->sendApprovalRequestNotification(
+                sprintf('Purchase order %s was submitted for approval.', $label),
+                [
+                    'type' => 'purchase_order_request',
+                    'entity_type' => 'purchase_order',
+                    'entity_id' => (int) $notifyContext['po_id'],
+                    'branch_id' => (int) $notifyContext['branch_id'],
+                    'path' => '/purchase-orders',
+                ]
+            );
+        }
+
+        return $response;
     }
 
     public function approve(Request $request, PurchaseOrder $po)

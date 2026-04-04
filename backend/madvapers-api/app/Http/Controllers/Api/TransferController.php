@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\Transfer;
 use App\Models\TransferItem;
 use App\Models\InventoryBalance;
+use App\Services\AdminPushNotificationService;
 use App\Support\AuditTrail;
 use App\Services\InventoryService;
 use Illuminate\Http\Request;
@@ -17,6 +18,11 @@ use Illuminate\Validation\ValidationException;
 class TransferController extends Controller
 {
     use EnforcesBranchAccess;
+
+    public function __construct(
+        private readonly AdminPushNotificationService $adminPushNotifications
+    ) {
+    }
 
     public function branchOptions(Request $request)
     {
@@ -209,7 +215,14 @@ class TransferController extends Controller
 
     public function requestTransfer(Request $request, Transfer $transfer)
     {
-        return $this->transactionWithRetry(function () use ($request, $transfer) {
+        $notifyContext = [
+            'transfer_id' => 0,
+            'from_branch_id' => null,
+            'to_branch_id' => null,
+            'transfer_number' => '',
+        ];
+
+        $response = $this->transactionWithRetry(function () use ($request, $transfer, &$notifyContext) {
             $locked = $this->lockTransfer($transfer->id);
 
             $this->enforceTransferFromBranchAccessOrFail($request, (int) $locked->from_branch_id);
@@ -228,6 +241,10 @@ class TransferController extends Controller
 
             $locked->status = 'REQUESTED';
             $locked->save();
+            $notifyContext['transfer_id'] = (int) $locked->id;
+            $notifyContext['from_branch_id'] = (int) $locked->from_branch_id;
+            $notifyContext['to_branch_id'] = (int) $locked->to_branch_id;
+            $notifyContext['transfer_number'] = (string) ($locked->transfer_number ?? '');
 
             $itemCount = (int) $locked->items()->count();
             $totalQty = (float) $locked->items()->sum('qty');
@@ -248,6 +265,25 @@ class TransferController extends Controller
                 'transfer' => $locked->fresh()->load(['items.variant.product','fromBranch','toBranch']),
             ]);
         });
+
+        if ((int) ($notifyContext['transfer_id'] ?? 0) > 0) {
+            $number = trim((string) ($notifyContext['transfer_number'] ?? ''));
+            $label = $number !== '' ? $number : ('TRF #' . (int) $notifyContext['transfer_id']);
+
+            $this->adminPushNotifications->sendApprovalRequestNotification(
+                sprintf('Transfer %s was requested and needs approval.', $label),
+                [
+                    'type' => 'transfer_request',
+                    'entity_type' => 'transfer',
+                    'entity_id' => (int) $notifyContext['transfer_id'],
+                    'from_branch_id' => $notifyContext['from_branch_id'],
+                    'to_branch_id' => $notifyContext['to_branch_id'],
+                    'path' => '/transfers',
+                ]
+            );
+        }
+
+        return $response;
     }
 
     public function approve(Request $request, Transfer $transfer)

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Api\Concerns\EnforcesBranchAccess;
 use App\Http\Controllers\Controller;
 use App\Models\StaffAttendance;
+use App\Services\AdminPushNotificationService;
 use App\Support\AuditTrail;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -15,6 +16,11 @@ use Illuminate\Validation\ValidationException;
 class StaffAttendanceController extends Controller
 {
     use EnforcesBranchAccess;
+
+    public function __construct(
+        private readonly AdminPushNotificationService $adminPushNotifications
+    ) {
+    }
 
     public function index(Request $request)
     {
@@ -114,7 +120,13 @@ class StaffAttendanceController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
-        return $this->transactionWithRetry(function () use ($request, $data) {
+        $notifyContext = [
+            'attendance_id' => 0,
+            'branch_id' => null,
+            'staff_user_id' => 0,
+        ];
+
+        $response = $this->transactionWithRetry(function () use ($request, $data, &$notifyContext) {
             $actor = $request->user();
             if (!$actor) {
                 abort(401, 'Unauthenticated.');
@@ -157,6 +169,10 @@ class StaffAttendanceController extends Controller
                 'request_notes' => array_key_exists('notes', $data) ? ($data['notes'] ?? null) : null,
             ]);
 
+            $notifyContext['attendance_id'] = (int) $attendance->id;
+            $notifyContext['branch_id'] = $attendance->branch_id ? (int) $attendance->branch_id : null;
+            $notifyContext['staff_user_id'] = (int) $attendance->user_id;
+
             AuditTrail::record([
                 'event_type' => 'STAFF_TIME_IN_REQUESTED',
                 'entity_type' => 'staff_attendance',
@@ -182,6 +198,22 @@ class StaffAttendanceController extends Controller
                 ]),
             ], 201);
         });
+
+        if ((int) ($notifyContext['attendance_id'] ?? 0) > 0) {
+            $this->adminPushNotifications->sendApprovalRequestNotification(
+                sprintf('New staff time-in request #%d needs approval.', (int) $notifyContext['attendance_id']),
+                [
+                    'type' => 'staff_attendance_request',
+                    'entity_type' => 'staff_attendance',
+                    'entity_id' => (int) $notifyContext['attendance_id'],
+                    'branch_id' => $notifyContext['branch_id'],
+                    'staff_user_id' => (int) $notifyContext['staff_user_id'],
+                    'path' => '/staff-attendance',
+                ]
+            );
+        }
+
+        return $response;
     }
 
     public function requestTimeOut(Request $request)

@@ -47,6 +47,12 @@ SESSION_SAME_SITE=lax
 
 # Keep non-admin demo users disabled in production
 SEED_ROLE_USERS=false
+
+# Web Push (admin phone notifications)
+WEB_PUSH_ENABLED=true
+WEB_PUSH_VAPID_SUBJECT=mailto:admin@madvapers.com
+WEB_PUSH_VAPID_PUBLIC_KEY=<generated-public-key>
+WEB_PUSH_VAPID_PRIVATE_KEY=<generated-private-key>
 ```
 
 Example:
@@ -77,6 +83,46 @@ In token mode, authenticated API calls use `Authorization: Bearer <token>` inste
 - Never commit cookie jar files (`tmp_*cookies*.txt`, `*.cookiejar`).
 - If sensitive artifacts were pushed before, rotate sessions/tokens.
 - Use HTTPS for frontend and backend.
+
+## 6) Admin Phone Push Notifications (PWA)
+
+To enable real phone notification-panel alerts for admin approvals:
+
+1. Generate VAPID keys in backend:
+```bash
+php artisan push:vapid-keys
+```
+2. Set backend env:
+- `WEB_PUSH_VAPID_PUBLIC_KEY`
+- `WEB_PUSH_VAPID_PRIVATE_KEY`
+- `WEB_PUSH_VAPID_SUBJECT`
+3. Set frontend env:
+- `VITE_WEB_PUSH_PUBLIC_KEY` (must match backend public key)
+4. Run backend migration:
+```bash
+php artisan migrate --force
+```
+5. Redeploy backend + frontend.
+6. On admin phone, reinstall/refresh PWA, login, tap `Enable Alerts`.
+7. Send a live test notification:
+```bash
+php artisan push:test
+```
+
+Notes:
+- Push notifications require HTTPS.
+- Notifications are admin-only by design.
+- After changing backend env values, run:
+```bash
+php artisan config:clear
+php artisan optimize:clear
+```
+- Verify device subscription exists:
+```bash
+php artisan tinker
+>>> \App\Models\PushSubscription::count();
+```
+- If phone app shows blank/old UI, uninstall PWA once and reinstall from the latest deployment.
 
 ## 5) Optional: Cookie-Based Sanctum Mode
 

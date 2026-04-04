@@ -9,6 +9,7 @@ use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\SalePayment;
 use App\Models\StockLedger;
+use App\Services\AdminPushNotificationService;
 use App\Services\InventoryService;
 use App\Support\AuditTrail;
 use Illuminate\Database\QueryException;
@@ -19,6 +20,11 @@ use Illuminate\Validation\ValidationException;
 class SalesController extends Controller
 {
     use EnforcesBranchAccess;
+
+    public function __construct(
+        private readonly AdminPushNotificationService $adminPushNotifications
+    ) {
+    }
 
     public function index(Request $request)
     {
@@ -401,7 +407,13 @@ class SalesController extends Controller
             'notes' => ['nullable', 'string'],
         ]);
 
-        return $this->transactionWithRetry(function () use ($request, $sale, $data) {
+        $notifyContext = [
+            'sale_id' => 0,
+            'branch_id' => null,
+            'sale_number' => '',
+        ];
+
+        $response = $this->transactionWithRetry(function () use ($request, $sale, $data, &$notifyContext) {
             $locked = $this->lockSale($sale->id);
             $this->enforceBranchAccessOrFail($request, (int) $locked->branch_id);
 
@@ -431,6 +443,9 @@ class SalesController extends Controller
             $locked->void_rejected_by_user_id = null;
             $locked->void_rejection_notes = null;
             $locked->save();
+            $notifyContext['sale_id'] = (int) $locked->id;
+            $notifyContext['branch_id'] = (int) $locked->branch_id;
+            $notifyContext['sale_number'] = (string) ($locked->sale_number ?? '');
 
             AuditTrail::record([
                 'event_type' => 'SALE_VOID_REQUESTED',
@@ -460,6 +475,24 @@ class SalesController extends Controller
                 ]),
             ]);
         });
+
+        if ((int) ($notifyContext['sale_id'] ?? 0) > 0) {
+            $saleNumber = trim((string) ($notifyContext['sale_number'] ?? ''));
+            $label = $saleNumber !== '' ? $saleNumber : ('Sale #' . (int) $notifyContext['sale_id']);
+
+            $this->adminPushNotifications->sendApprovalRequestNotification(
+                sprintf('%s has a new void request awaiting approval.', $label),
+                [
+                    'type' => 'sale_void_request',
+                    'entity_type' => 'sale',
+                    'entity_id' => (int) $notifyContext['sale_id'],
+                    'branch_id' => (int) $notifyContext['branch_id'],
+                    'path' => '/sales',
+                ]
+            );
+        }
+
+        return $response;
     }
 
     public function approveVoid(Request $request, Sale $sale, InventoryService $inventoryService)

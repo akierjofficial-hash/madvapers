@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Api\Concerns\EnforcesBranchAccess;
 use App\Models\StockAdjustment;
 use App\Models\StockAdjustmentItem;
+use App\Services\AdminPushNotificationService;
 use App\Support\AuditTrail;
 use App\Services\InventoryService;
 use Illuminate\Http\Request;
@@ -14,6 +15,11 @@ use Illuminate\Support\Facades\DB;
 class StockAdjustmentController extends Controller
 {
     use EnforcesBranchAccess;
+
+    public function __construct(
+        private readonly AdminPushNotificationService $adminPushNotifications
+    ) {
+    }
 
     // GET /api/adjustments?branch_id=1&status=DRAFT
     public function index(Request $request)
@@ -119,7 +125,13 @@ class StockAdjustmentController extends Controller
     // POST /api/adjustments/{id}/submit
     public function submit(Request $request, StockAdjustment $adjustment)
     {
-        return $this->transactionWithRetry(function () use ($request, $adjustment) {
+        $notifyContext = [
+            'adjustment_id' => 0,
+            'branch_id' => null,
+            'reference_no' => '',
+        ];
+
+        $response = $this->transactionWithRetry(function () use ($request, $adjustment, &$notifyContext) {
             $locked = StockAdjustment::query()
                 ->lockForUpdate()
                 ->findOrFail($adjustment->id);
@@ -131,6 +143,9 @@ class StockAdjustmentController extends Controller
             }
 
             $locked->update(['status' => 'SUBMITTED']);
+            $notifyContext['adjustment_id'] = (int) $locked->id;
+            $notifyContext['branch_id'] = (int) $locked->branch_id;
+            $notifyContext['reference_no'] = (string) ($locked->reference_no ?? '');
 
             AuditTrail::record([
                 'event_type' => 'ADJUSTMENT_SUBMITTED',
@@ -148,6 +163,24 @@ class StockAdjustmentController extends Controller
 
             return response()->json(['status' => 'ok', 'adjustment' => $locked]);
         });
+
+        if ((int) ($notifyContext['adjustment_id'] ?? 0) > 0) {
+            $reference = trim((string) ($notifyContext['reference_no'] ?? ''));
+            $label = $reference !== '' ? $reference : ('ADJ #' . (int) $notifyContext['adjustment_id']);
+
+            $this->adminPushNotifications->sendApprovalRequestNotification(
+                sprintf('Adjustment %s was submitted for approval.', $label),
+                [
+                    'type' => 'adjustment_request',
+                    'entity_type' => 'adjustment',
+                    'entity_id' => (int) $notifyContext['adjustment_id'],
+                    'branch_id' => (int) $notifyContext['branch_id'],
+                    'path' => '/adjustments',
+                ]
+            );
+        }
+
+        return $response;
     }
 
     // POST /api/adjustments/{id}/approve

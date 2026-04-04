@@ -40,6 +40,11 @@ class User extends Authenticatable
             ->withTimestamps();
     }
 
+    public function pushSubscriptions()
+    {
+        return $this->hasMany(PushSubscription::class);
+    }
+
     public function hasPermission(string $permissionCode): bool
     {
         $targetCode = strtoupper(trim($permissionCode));

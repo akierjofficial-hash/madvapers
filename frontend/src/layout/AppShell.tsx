@@ -53,6 +53,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { authStorage } from '../auth/authStorage';
 import { useDashboardApprovalQueueQuery, useDashboardSummaryQuery } from '../api/queries';
+import { registerPushSubscription, removePushSubscription } from '../api/pushSubscriptions';
 
 type NavItem = {
   to: string;
@@ -71,6 +72,7 @@ const ADMIN_MOBILE_FIXED_PATHS = ['/dashboard', '/approvals', '/analytics'] as c
 const ADMIN_MOBILE_MENU_VALUE = '__menu__';
 const INSTALL_PROMPT_DISMISSED_KEY = 'mv_install_prompt_dismissed_v1';
 const ADMIN_APPROVAL_NOTIFY_BASELINE_KEY = 'mv_admin_approval_notify_baseline_v1';
+const WEB_PUSH_PUBLIC_KEY = String(import.meta.env.VITE_WEB_PUSH_PUBLIC_KEY ?? '').trim();
 
 type DeferredInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -79,6 +81,20 @@ type DeferredInstallPromptEvent = Event & {
     platform: string;
   }>;
 };
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const normalized = base64String
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  const padding = '='.repeat((4 - (normalized.length % 4 || 4)) % 4);
+  const encoded = `${normalized}${padding}`;
+  const rawData = window.atob(encoded);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i += 1) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 
 export function AppShell() {
   const theme = useTheme();
@@ -113,9 +129,15 @@ export function AppShell() {
   const supportsNotificationApi = typeof window !== 'undefined' && 'Notification' in window;
   const isSecureNotificationContext = typeof window !== 'undefined' && window.isSecureContext;
   const supportsBrowserNotification = supportsNotificationApi && isSecureNotificationContext;
+  const supportsPushSubscription =
+    typeof window !== 'undefined' &&
+    'serviceWorker' in navigator &&
+    'PushManager' in window &&
+    isSecureNotificationContext;
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() =>
     supportsNotificationApi ? Notification.permission : 'default'
   );
+  const [isPushSubscriptionActive, setIsPushSubscriptionActive] = useState(false);
   const [notificationSnack, setNotificationSnack] = useState<{
     open: boolean;
     message: string;
@@ -378,6 +400,125 @@ export function AppShell() {
     setNotificationPermission(Notification.permission);
   }, [supportsNotificationApi]);
 
+  const syncAdminPushSubscription = async (opts?: { forceSubscribe?: boolean; showSuccess?: boolean; showErrors?: boolean }) => {
+    const showErrors = opts?.showErrors ?? !!opts?.forceSubscribe;
+    if (!isAdminRole) return false;
+    if (!supportsPushSubscription) {
+      setIsPushSubscriptionActive(false);
+      if (showErrors) {
+        setNotificationSnack({
+          open: true,
+          severity: 'warning',
+          message: 'Push notifications require HTTPS and a modern browser.',
+        });
+      }
+      return false;
+    }
+    if (!WEB_PUSH_PUBLIC_KEY) {
+      setIsPushSubscriptionActive(false);
+      if (showErrors) {
+        setNotificationSnack({
+          open: true,
+          severity: 'warning',
+          message: 'Push key is missing on frontend. Set VITE_WEB_PUSH_PUBLIC_KEY.',
+        });
+      }
+      return false;
+    }
+    if (!supportsNotificationApi || Notification.permission !== 'granted') {
+      setIsPushSubscriptionActive(false);
+      return false;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      let subscription = await registration.pushManager.getSubscription();
+
+      if (!subscription && opts?.forceSubscribe) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(WEB_PUSH_PUBLIC_KEY) as unknown as BufferSource,
+        });
+      }
+
+      if (!subscription) {
+        setIsPushSubscriptionActive(false);
+        return false;
+      }
+
+      const raw = subscription.toJSON();
+      const p256dh = String(raw.keys?.p256dh ?? '').trim();
+      const auth = String(raw.keys?.auth ?? '').trim();
+      if (!p256dh || !auth) {
+        setIsPushSubscriptionActive(false);
+        if (showErrors) {
+          setNotificationSnack({
+            open: true,
+            severity: 'error',
+            message: 'Push subscription keys are invalid on this device.',
+          });
+        }
+        return false;
+      }
+
+      await registerPushSubscription({
+        endpoint: String(subscription.endpoint ?? '').trim(),
+        keys: { p256dh, auth },
+        content_encoding: 'aes128gcm',
+      });
+
+      setIsPushSubscriptionActive(true);
+      if (opts?.showSuccess) {
+        setNotificationSnack({
+          open: true,
+          severity: 'success',
+          message: 'Alerts enabled. Admin approval requests will notify this phone.',
+        });
+      }
+
+      return true;
+    } catch (error: any) {
+      setIsPushSubscriptionActive(false);
+      if (showErrors) {
+        const maybeName = String(error?.name ?? '');
+        const maybeMessage = String(error?.message ?? '');
+        const isBlocked = maybeName === 'NotAllowedError' || maybeMessage.toLowerCase().includes('permission');
+        setNotificationSnack({
+          open: true,
+          severity: isBlocked ? 'warning' : 'error',
+          message: isBlocked
+            ? 'Notifications are blocked. Enable them in browser/site settings.'
+            : 'Unable to subscribe this device for push notifications.',
+        });
+      }
+      return false;
+    }
+  };
+
+  const unregisterAdminPushSubscription = async () => {
+    if (!supportsPushSubscription) {
+      setIsPushSubscriptionActive(false);
+      return;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        try {
+          await removePushSubscription(String(subscription.endpoint ?? ''));
+        } catch {
+          // Best effort cleanup.
+        }
+        await subscription.unsubscribe().catch(() => undefined);
+      }
+    } catch {
+      // Best effort cleanup.
+    } finally {
+      setIsPushSubscriptionActive(false);
+    }
+  };
+
   const enableAdminPhoneNotifications = async () => {
     if (!isAdminRole) return;
     if (!supportsNotificationApi) {
@@ -401,11 +542,7 @@ export function AppShell() {
       const permission = await Notification.requestPermission();
       setNotificationPermission(permission);
       if (permission === 'granted') {
-        setNotificationSnack({
-          open: true,
-          severity: 'success',
-          message: 'Alerts enabled. You will receive admin approval notifications.',
-        });
+        await syncAdminPushSubscription({ forceSubscribe: true, showSuccess: true, showErrors: true });
       } else if (permission === 'denied') {
         setNotificationSnack({
           open: true,
@@ -423,7 +560,26 @@ export function AppShell() {
   };
 
   useEffect(() => {
+    if (!isAdminRole) {
+      setIsPushSubscriptionActive(false);
+      return;
+    }
+    if (!supportsPushSubscription || !supportsNotificationApi) {
+      setIsPushSubscriptionActive(false);
+      return;
+    }
+    if (notificationPermission !== 'granted') {
+      setIsPushSubscriptionActive(false);
+      return;
+    }
+
+    void syncAdminPushSubscription({ forceSubscribe: true, showErrors: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdminRole, notificationPermission, supportsPushSubscription, supportsNotificationApi]);
+
+  useEffect(() => {
     if (!isAdminRole || !supportsBrowserNotification || notificationPermission !== 'granted') return;
+    if (isPushSubscriptionActive) return;
 
     let baseline = Number.NaN;
     try {
@@ -448,27 +604,49 @@ export function AppShell() {
         ? '1 new approval request.'
         : `${newCount} new approval requests.`;
 
-      try {
-        const notification = new Notification('Mad Vapers Approvals', {
-          body: `${message} ${approvalsBadgeCount} pending total.`,
-          icon: '/icons/pwa-192x192.png',
-          badge: '/icons/pwa-192x192.png',
-          tag: 'mv-approvals',
-        });
+      const notificationTitle = 'Mad Vapers Approvals';
+      const notificationOptions: NotificationOptions = {
+        body: `${message} ${approvalsBadgeCount} pending total.`,
+        icon: '/icons/pwa-192x192.png',
+        badge: '/icons/pwa-192x192.png',
+        tag: 'mv-approvals',
+      };
 
-        notification.onclick = () => {
-          notification.close();
-          window.focus();
-          navigate('/approvals');
-        };
-      } catch {
-        // Avoid hard crashes in PWA/browser variants that reject constructor usage.
+      const sendNotification = async (): Promise<boolean> => {
+        // Preferred on mobile/PWA because browser may block window Notification constructor.
+        if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+          try {
+            const registration = await navigator.serviceWorker.ready;
+            await registration.showNotification(notificationTitle, notificationOptions);
+            return true;
+          } catch {
+            // Fallback below.
+          }
+        }
+
+        try {
+          const notification = new Notification(notificationTitle, notificationOptions);
+
+          notification.onclick = () => {
+            notification.close();
+            window.focus();
+            navigate('/approvals');
+          };
+
+          return true;
+        } catch {
+          return false;
+        }
+      };
+
+      void sendNotification().then((sent) => {
+        if (sent) return;
         setNotificationSnack({
           open: true,
           severity: 'warning',
           message: 'Approval alert detected, but this device blocked popup notifications.',
         });
-      }
+      });
     }
 
     try {
@@ -479,6 +657,7 @@ export function AppShell() {
   }, [
     approvalsBadgeCount,
     isAdminRole,
+    isPushSubscriptionActive,
     navigate,
     notificationPermission,
     supportsBrowserNotification,
@@ -545,6 +724,7 @@ export function AppShell() {
     const hit = availableNav.find((item) => isRouteActive(item.to));
     return hit?.label ?? (isCashierRole ? 'Sales' : 'Dashboard');
   }, [availableNav, isCashierRole, location.pathname]);
+  const shouldShowEnableAlerts = isAdminRole && (!isPushSubscriptionActive || notificationPermission !== 'granted');
 
   const mobileQuickNav = useMemo(() => {
     if (isCashierRole) return availableNav.slice(0, 4);
@@ -608,6 +788,13 @@ export function AppShell() {
     .join('')
     .slice(0, 2)
     .toUpperCase();
+
+  const handleLogout = async () => {
+    if (isAdminRole) {
+      await unregisterAdminPushSubscription();
+    }
+    await logout();
+  };
 
   const navDrawer = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -863,7 +1050,7 @@ export function AppShell() {
                 sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
               />
             )}
-            {isAdminRole && notificationPermission !== 'granted' && (
+            {shouldShowEnableAlerts && (
               <>
                 <Button
                   color="inherit"
@@ -905,7 +1092,7 @@ export function AppShell() {
             <Button
               color="inherit"
               variant="outlined"
-              onClick={() => void logout()}
+              onClick={() => void handleLogout()}
               size="small"
               disabled={isLoggingOut}
               sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
@@ -916,7 +1103,7 @@ export function AppShell() {
               <span>
                 <IconButton
                   color="inherit"
-                  onClick={() => void logout()}
+                  onClick={() => void handleLogout()}
                   disabled={isLoggingOut}
                   sx={{ display: { xs: 'inline-flex', sm: 'none' } }}
                 >
@@ -1048,7 +1235,7 @@ export function AppShell() {
           </Box>
           <Divider />
           <List sx={{ px: 1, pt: 0.7, pb: 1.2, maxHeight: '70vh', overflowY: 'auto' }}>
-            {isAdminRole && notificationPermission !== 'granted' && (
+            {shouldShowEnableAlerts && (
               <ListItemButton
                 onClick={() => void enableAdminPhoneNotifications()}
                 sx={{ borderRadius: 2, mb: 0.4, minHeight: 44 }}
