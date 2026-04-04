@@ -10,6 +10,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useRequestStaffTimeInMutation, useRequestStaffTimeOutMutation, useStaffAttendanceQuery } from '../api/queries';
 import { useAuth } from '../auth/AuthProvider';
 
@@ -78,9 +79,12 @@ function normalizeStatus(status?: string | null): string {
 }
 
 export function AttendancePage() {
-  const { can } = useAuth();
+  const navigate = useNavigate();
+  const { can, user } = useAuth();
   const canView = can('STAFF_ATTENDANCE_VIEW');
   const canClock = can('STAFF_ATTENDANCE_CLOCK');
+  const canSalesView = can('SALES_VIEW');
+  const roleCode = String(user?.role?.code ?? '').toUpperCase();
 
   const [page, setPage] = useState(1);
   const [snack, setSnack] = useState<SnackState>({
@@ -160,6 +164,14 @@ export function AttendancePage() {
           </Typography>
         </Box>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+          {canSalesView && (
+            <Button
+              variant="outlined"
+              onClick={() => navigate('/sales')}
+            >
+              {roleCode === 'CASHIER' ? 'Back to Cashier Terminal' : 'Back to Sales'}
+            </Button>
+          )}
           <Button
             variant="contained"
             onClick={() => void handleRequestTimeIn()}

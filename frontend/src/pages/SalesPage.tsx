@@ -1299,7 +1299,7 @@ export function SalesPage() {
               : 'Create sales, post stock-out movements, and record cash collections.'}
           </Typography>
         </Box>
-        {(!isCashierRole || !isPhone) && (
+        {(!isCashierRole || !isPhone || (isCashierRole && isPhone && canStaffAttendanceView)) && (
           <Stack direction="row" spacing={1} alignItems="center">
             {isCashierRole && canStaffAttendanceView && (
               <Tooltip title="Open your DTR attendance records and time-in/out page." arrow>
@@ -1314,24 +1314,26 @@ export function SalesPage() {
                 </span>
               </Tooltip>
             )}
-            <Tooltip
-              title={
-                isCashierRole
-                  ? 'Start a fresh checkout cart for scanner-first sales.'
-                  : 'Create a new sale draft with selected items.'
-              }
-              arrow
-            >
-              <span>
-                <Button
-                  variant="contained"
-                  onClick={() => openNewSale({ focusSearch: isCashierRole && !isPhone })}
-                  disabled={!canSalesCreate}
-                >
-                  {isCashierRole ? 'Start New Checkout' : 'New Sale'}
-                </Button>
-              </span>
-            </Tooltip>
+            {(!isCashierRole || !isPhone) && (
+              <Tooltip
+                title={
+                  isCashierRole
+                    ? 'Start a fresh checkout cart for scanner-first sales.'
+                    : 'Create a new sale draft with selected items.'
+                }
+                arrow
+              >
+                <span>
+                  <Button
+                    variant="contained"
+                    onClick={() => openNewSale({ focusSearch: isCashierRole && !isPhone })}
+                    disabled={!canSalesCreate}
+                  >
+                    {isCashierRole ? 'Start New Checkout' : 'New Sale'}
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
           </Stack>
         )}
       </Stack>

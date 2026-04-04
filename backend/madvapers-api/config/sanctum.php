@@ -68,7 +68,19 @@ return [
     |
     */
 
-    'expiration' => env('SANCTUM_TOKEN_EXPIRATION', 120),
+    'expiration' => (function () {
+        $value = env('SANCTUM_TOKEN_EXPIRATION', null);
+        if ($value === null) {
+            return null;
+        }
+
+        $normalized = strtolower(trim((string) $value));
+        if ($normalized === '' || $normalized === 'null' || $normalized === 'none' || $normalized === 'never') {
+            return null;
+        }
+
+        return max(1, (int) $normalized);
+    })(),
 
     /*
     |--------------------------------------------------------------------------

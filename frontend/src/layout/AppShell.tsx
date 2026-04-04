@@ -69,6 +69,7 @@ const SECONDARY_NAV_PATHS = new Set(['/suppliers', '/branches', '/accounts', '/s
 const ADMIN_MOBILE_FIXED_PATHS = ['/dashboard', '/approvals', '/analytics'] as const;
 const ADMIN_MOBILE_MENU_VALUE = '__menu__';
 const INSTALL_PROMPT_DISMISSED_KEY = 'mv_install_prompt_dismissed_v1';
+const ADMIN_APPROVAL_NOTIFY_BASELINE_KEY = 'mv_admin_approval_notify_baseline_v1';
 
 type DeferredInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -105,8 +106,13 @@ export function AppShell() {
   );
   const dashboardSummaryQuery = useDashboardSummaryQuery({}, canDashboardView);
   const roleCode = String(user?.role?.code ?? '').toUpperCase();
+  const isAdminRole = roleCode === 'ADMIN';
   const isCashierRole = roleCode === 'CASHIER';
   const canOfferInstall = !isStandaloneMode && !!installPromptEvent;
+  const supportsBrowserNotification = typeof window !== 'undefined' && 'Notification' in window;
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(() =>
+    supportsBrowserNotification ? Notification.permission : 'default'
+  );
 
   const readCount = (
     data: any,
@@ -357,6 +363,56 @@ export function AppShell() {
     approvalQueueGlobalQuery,
     dashboardSummaryQuery,
     selectedBranchId,
+  ]);
+
+  useEffect(() => {
+    if (!supportsBrowserNotification) return;
+    setNotificationPermission(Notification.permission);
+  }, [supportsBrowserNotification]);
+
+  const enableAdminPhoneNotifications = async () => {
+    if (!isAdminRole || !supportsBrowserNotification) return;
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+  };
+
+  useEffect(() => {
+    if (!isAdminRole || !supportsBrowserNotification || notificationPermission !== 'granted') return;
+
+    const baselineRaw = sessionStorage.getItem(ADMIN_APPROVAL_NOTIFY_BASELINE_KEY);
+    const baseline = baselineRaw !== null ? Number(baselineRaw) : NaN;
+    if (!Number.isFinite(baseline)) {
+      sessionStorage.setItem(ADMIN_APPROVAL_NOTIFY_BASELINE_KEY, String(approvalsBadgeCount));
+      return;
+    }
+
+    if (approvalsBadgeCount > baseline) {
+      const newCount = approvalsBadgeCount - baseline;
+      const message = newCount === 1
+        ? '1 new approval request.'
+        : `${newCount} new approval requests.`;
+
+      const notification = new Notification('Mad Vapers Approvals', {
+        body: `${message} ${approvalsBadgeCount} pending total.`,
+        icon: '/icons/pwa-192x192.png',
+        badge: '/icons/pwa-192x192.png',
+        tag: 'mv-approvals',
+      });
+
+      notification.onclick = () => {
+        notification.close();
+        window.focus();
+        navigate('/approvals');
+      };
+    }
+
+    sessionStorage.setItem(ADMIN_APPROVAL_NOTIFY_BASELINE_KEY, String(approvalsBadgeCount));
+  }, [
+    approvalsBadgeCount,
+    isAdminRole,
+    navigate,
+    notificationPermission,
+    supportsBrowserNotification,
   ]);
 
   useEffect(() => {
@@ -737,6 +793,17 @@ export function AppShell() {
                 label={user.role.code}
                 sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
               />
+            )}
+            {isAdminRole && supportsBrowserNotification && notificationPermission !== 'granted' && (
+              <Button
+                color="inherit"
+                variant="outlined"
+                onClick={() => void enableAdminPhoneNotifications()}
+                size="small"
+                sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
+              >
+                Enable Alerts
+              </Button>
             )}
             {canOfferInstall && (
               <Button

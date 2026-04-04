@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use DateTimeInterface;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
@@ -10,6 +11,25 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
 {
+    private function expiresAtFromMinutes(mixed $rawMinutes): ?DateTimeInterface
+    {
+        if ($rawMinutes === null) {
+            return null;
+        }
+
+        $value = strtolower(trim((string) $rawMinutes));
+        if ($value === '' || $value === 'null' || $value === 'none' || $value === 'never') {
+            return null;
+        }
+
+        $minutes = (int) $value;
+        if ($minutes <= 0) {
+            return null;
+        }
+
+        return now()->addMinutes($minutes);
+    }
+
     private function authPayload($user): array
     {
         $user->load(['role.permissions', 'branch', 'branches']);
@@ -94,9 +114,16 @@ class AuthController extends Controller
             $request->session()->regenerate();
         }
 
+        $user->loadMissing('role');
+        $roleCode = strtoupper((string) ($user->role?->code ?? ''));
+
+        $expiresAt = $roleCode === 'ADMIN'
+            ? $this->expiresAtFromMinutes(env('ADMIN_TOKEN_TTL_MINUTES', null))
+            : $this->expiresAtFromMinutes(env('NON_ADMIN_TOKEN_TTL_MINUTES', 120));
+
         // Token auth fallback for cross-domain SPA deployments (e.g. separate
         // frontend/backend Railway subdomains where third-party cookies may be blocked).
-        $token = $user->createToken('spa')->plainTextToken;
+        $token = $user->createToken('spa', ['*'], $expiresAt)->plainTextToken;
 
         return response()->json(array_merge(
             $this->authPayload($user),

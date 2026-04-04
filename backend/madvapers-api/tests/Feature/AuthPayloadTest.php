@@ -6,10 +6,24 @@ use Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use App\Models\User;
 use Laravel\Sanctum\Sanctum;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthPayloadTest extends TestCase
 {
     use RefreshDatabase;
+
+    private function setEnvValue(string $key, string $value): void
+    {
+        putenv("{$key}={$value}");
+        $_ENV[$key] = $value;
+        $_SERVER[$key] = $value;
+    }
+
+    private function tokenIdFromPlainText(string $plainTextToken): int
+    {
+        [$id] = explode('|', $plainTextToken, 2);
+        return (int) $id;
+    }
 
     private function seededAdminEmail(): string
     {
@@ -93,5 +107,44 @@ class AuthPayloadTest extends TestCase
 
         $res = $this->postJson('/api/auth/logout');
         $res->assertOk()->assertJsonPath('status', 'ok');
+    }
+
+    public function test_admin_login_token_can_be_non_expiring_for_installed_app(): void
+    {
+        config(['sanctum.expiration' => null]);
+        $this->setEnvValue('ADMIN_TOKEN_TTL_MINUTES', 'null');
+        $this->setEnvValue('NON_ADMIN_TOKEN_TTL_MINUTES', '120');
+
+        $res = $this->postJson('/api/auth/login', [
+            'email' => $this->seededAdminEmail(),
+            'password' => $this->seededAdminPassword(),
+        ])->assertOk();
+
+        $plainTextToken = (string) $res->json('access_token');
+        $tokenId = $this->tokenIdFromPlainText($plainTextToken);
+        $token = PersonalAccessToken::query()->findOrFail($tokenId);
+
+        $this->assertNull($token->expires_at);
+    }
+
+    public function test_non_admin_login_token_keeps_standard_expiration_window(): void
+    {
+        config(['sanctum.expiration' => null]);
+        $this->setEnvValue('ADMIN_TOKEN_TTL_MINUTES', 'null');
+        $this->setEnvValue('NON_ADMIN_TOKEN_TTL_MINUTES', '120');
+
+        $res = $this->postJson('/api/auth/login', [
+            'email' => 'cashier@madvapers.local',
+            'password' => 'password123',
+        ])->assertOk();
+
+        $plainTextToken = (string) $res->json('access_token');
+        $tokenId = $this->tokenIdFromPlainText($plainTextToken);
+        $token = PersonalAccessToken::query()->findOrFail($tokenId);
+
+        $this->assertNotNull($token->expires_at);
+        $minutesUntilExpiry = now()->diffInMinutes($token->expires_at, false);
+        $this->assertGreaterThanOrEqual(110, $minutesUntilExpiry);
+        $this->assertLessThanOrEqual(121, $minutesUntilExpiry);
     }
 }
