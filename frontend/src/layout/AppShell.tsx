@@ -586,6 +586,11 @@ export function AppShell() {
   useEffect(() => {
     if (!isAdminRole) {
       setIsPushSubscriptionActive(false);
+      // Shared-device safety: if this session is not admin, remove any existing
+      // browser push subscription so non-admin users won't receive admin alerts.
+      if (supportsPushSubscription) {
+        void unregisterAdminPushSubscription();
+      }
       return;
     }
     if (!supportsPushSubscription || !supportsNotificationApi) {
