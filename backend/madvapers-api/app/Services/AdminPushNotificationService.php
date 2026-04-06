@@ -59,6 +59,8 @@ class AdminPushNotificationService
         $subject = trim((string) config('web_push.vapid.subject', ''));
         $publicKey = trim((string) config('web_push.vapid.public_key', ''));
         $privateKey = trim((string) config('web_push.vapid.private_key', ''));
+        $hasGmp = extension_loaded('gmp');
+        $hasBcmath = extension_loaded('bcmath');
 
         $adminIds = User::query()
             ->where('is_active', true)
@@ -92,6 +94,11 @@ class AdminPushNotificationService
                 'public_key_set' => $publicKey !== '',
                 'private_key_set' => $privateKey !== '',
                 'public_key_prefix' => $publicKey !== '' ? substr($publicKey, 0, 12) : null,
+            ],
+            'php_extensions' => [
+                'gmp_loaded' => $hasGmp,
+                'bcmath_loaded' => $hasBcmath,
+                'has_fast_bigint_math' => $hasGmp || $hasBcmath,
             ],
             'admins' => [
                 'active_count' => count($adminIds),
@@ -140,6 +147,9 @@ class AdminPushNotificationService
             return $summary;
         }
 
+        $hasGmp = extension_loaded('gmp');
+        $hasBcmath = extension_loaded('bcmath');
+
         $adminIds = User::query()
             ->where('is_active', true)
             ->whereHas('role', function ($q) {
@@ -166,28 +176,60 @@ class AdminPushNotificationService
             return $summary;
         }
 
+        $webPushConfig = [
+            'VAPID' => [
+                'subject' => $subject,
+                'publicKey' => $publicKey,
+                'privateKey' => $privateKey,
+            ],
+        ];
+        $webPushOptions = [
+            'TTL' => 300,
+            'urgency' => 'high',
+            'topic' => 'mv-approvals',
+        ];
+
         try {
-            $webPush = new WebPush([
-                'VAPID' => [
-                    'subject' => $subject,
-                    'publicKey' => $publicKey,
-                    'privateKey' => $privateKey,
-                ],
-            ], [
-                'TTL' => 300,
-                'urgency' => 'high',
-                'topic' => 'mv-approvals',
-            ]);
+            $webPush = new WebPush($webPushConfig, $webPushOptions);
             $webPush->setReuseVAPIDHeaders(true);
         } catch (\Throwable $e) {
-            $summary['status'] = 'failed';
-            $summary['reason'] = 'web_push_init_failed';
-            $summary['error'] = $this->sanitizeErrorMessage($e);
-            Log::error('Web Push initialization failed.', [
-                'reason' => $summary['reason'],
-                'error' => $summary['error'],
-            ]);
-            return $summary;
+            $message = strtolower(trim((string) $e->getMessage()));
+            $isMathNoticeElevated = str_contains(
+                $message,
+                'highly recommended to install the gmp or bcmath extension'
+            );
+
+            if (!$isMathNoticeElevated) {
+                $summary['status'] = 'failed';
+                $summary['reason'] = 'web_push_init_failed';
+                $summary['error'] = $this->sanitizeErrorMessage($e);
+                Log::error('Web Push initialization failed.', [
+                    'reason' => $summary['reason'],
+                    'error' => $summary['error'],
+                ]);
+                return $summary;
+            }
+
+            $previousErrorReporting = error_reporting();
+            error_reporting($previousErrorReporting & ~E_USER_NOTICE);
+            try {
+                $webPush = new WebPush($webPushConfig, $webPushOptions);
+                $webPush->setReuseVAPIDHeaders(true);
+                Log::warning('Web Push initialized without gmp/bcmath. Enable one extension for better performance.');
+            } catch (\Throwable $retryException) {
+                $summary['status'] = 'failed';
+                $summary['reason'] = 'web_push_init_failed';
+                $summary['error'] = $this->sanitizeErrorMessage($retryException);
+                Log::error('Web Push initialization failed after notice-safe retry.', [
+                    'reason' => $summary['reason'],
+                    'error' => $summary['error'],
+                    'gmp_loaded' => $hasGmp,
+                    'bcmath_loaded' => $hasBcmath,
+                ]);
+                return $summary;
+            } finally {
+                error_reporting($previousErrorReporting);
+            }
         }
 
         $now = Carbon::now();
