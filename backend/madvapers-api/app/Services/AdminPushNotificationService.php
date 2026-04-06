@@ -112,6 +112,7 @@ class AdminPushNotificationService
         $summary = [
             'status' => 'skipped',
             'reason' => null,
+            'error' => null,
             'admin_count' => 0,
             'subscription_count' => 0,
             'queued' => 0,
@@ -165,18 +166,29 @@ class AdminPushNotificationService
             return $summary;
         }
 
-        $webPush = new WebPush([
-            'VAPID' => [
-                'subject' => $subject,
-                'publicKey' => $publicKey,
-                'privateKey' => $privateKey,
-            ],
-        ], [
-            'TTL' => 300,
-            'urgency' => 'high',
-            'topic' => 'mv-approvals',
-        ]);
-        $webPush->setReuseVAPIDHeaders(true);
+        try {
+            $webPush = new WebPush([
+                'VAPID' => [
+                    'subject' => $subject,
+                    'publicKey' => $publicKey,
+                    'privateKey' => $privateKey,
+                ],
+            ], [
+                'TTL' => 300,
+                'urgency' => 'high',
+                'topic' => 'mv-approvals',
+            ]);
+            $webPush->setReuseVAPIDHeaders(true);
+        } catch (\Throwable $e) {
+            $summary['status'] = 'failed';
+            $summary['reason'] = 'web_push_init_failed';
+            $summary['error'] = $this->sanitizeErrorMessage($e);
+            Log::error('Web Push initialization failed.', [
+                'reason' => $summary['reason'],
+                'error' => $summary['error'],
+            ]);
+            return $summary;
+        }
 
         $now = Carbon::now();
         $payloadJson = json_encode($payload, JSON_UNESCAPED_SLASHES);
@@ -235,42 +247,54 @@ class AdminPushNotificationService
             return $summary;
         }
 
-        foreach ($webPush->flush() as $report) {
-            $endpoint = (string) $report->getEndpoint();
-            $endpointHash = hash('sha256', $endpoint);
-            $subscriptionId = $byEndpointHash[$endpointHash] ?? null;
+        try {
+            foreach ($webPush->flush() as $report) {
+                $endpoint = (string) $report->getEndpoint();
+                $endpointHash = hash('sha256', $endpoint);
+                $subscriptionId = $byEndpointHash[$endpointHash] ?? null;
 
-            if (!$report->isSuccess()) {
-                $summary['failed']++;
-                if ($report->isSubscriptionExpired()) {
-                    PushSubscription::query()
-                        ->where('endpoint_hash', $endpointHash)
-                        ->delete();
-                    $summary['expired_removed']++;
-                }
+                if (!$report->isSuccess()) {
+                    $summary['failed']++;
+                    if ($report->isSubscriptionExpired()) {
+                        PushSubscription::query()
+                            ->where('endpoint_hash', $endpointHash)
+                            ->delete();
+                        $summary['expired_removed']++;
+                    }
 
-                if ($includeFailureReasons) {
-                    $summary['failures'][] = [
+                    if ($includeFailureReasons) {
+                        $summary['failures'][] = [
+                            'subscription_id' => $subscriptionId,
+                            'reason' => $report->getReason(),
+                            'expired' => $report->isSubscriptionExpired(),
+                        ];
+                    }
+
+                    Log::warning('Web push delivery failed.', [
                         'subscription_id' => $subscriptionId,
+                        'endpoint_hash' => $endpointHash,
                         'reason' => $report->getReason(),
-                        'expired' => $report->isSubscriptionExpired(),
-                    ];
+                    ]);
+                    continue;
                 }
 
-                Log::warning('Web push delivery failed.', [
-                    'subscription_id' => $subscriptionId,
-                    'endpoint_hash' => $endpointHash,
-                    'reason' => $report->getReason(),
-                ]);
-                continue;
+                $summary['delivered']++;
+                if ($subscriptionId) {
+                    PushSubscription::query()
+                        ->whereKey($subscriptionId)
+                        ->update(['last_used_at' => $now]);
+                }
             }
-
-            $summary['delivered']++;
-            if ($subscriptionId) {
-                PushSubscription::query()
-                    ->whereKey($subscriptionId)
-                    ->update(['last_used_at' => $now]);
-            }
+        } catch (\Throwable $e) {
+            $summary['status'] = 'failed';
+            $summary['reason'] = 'web_push_flush_failed';
+            $summary['error'] = $this->sanitizeErrorMessage($e);
+            Log::error('Web Push flush failed unexpectedly.', [
+                'reason' => $summary['reason'],
+                'error' => $summary['error'],
+                'queued' => (int) ($summary['queued'] ?? 0),
+            ]);
+            return $summary;
         }
 
         if ((int) $summary['delivered'] > 0 && (int) $summary['failed'] === 0) {
@@ -289,12 +313,22 @@ class AdminPushNotificationService
         return $summary;
     }
 
+    private function sanitizeErrorMessage(\Throwable $e): string
+    {
+        $message = trim((string) $e->getMessage());
+        if ($message === '') {
+            $message = 'Unknown push error';
+        }
+        return substr($message, 0, 260);
+    }
+
     private function logDispatchSummary(array $summary, string $event): void
     {
         $context = [
             'event' => $event,
             'status' => (string) ($summary['status'] ?? 'unknown'),
             'reason' => $summary['reason'] ?? null,
+            'error' => $summary['error'] ?? null,
             'admin_count' => (int) ($summary['admin_count'] ?? 0),
             'subscription_count' => (int) ($summary['subscription_count'] ?? 0),
             'queued' => (int) ($summary['queued'] ?? 0),
