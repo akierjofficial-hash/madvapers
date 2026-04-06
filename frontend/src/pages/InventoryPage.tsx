@@ -105,6 +105,8 @@ export function InventoryPage() {
   const isCompact = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
   const { user, can } = useAuth();
+  const roleCode = String(user?.role?.code ?? '').toUpperCase();
+  const disableAutoSearchFocus = roleCode === 'CLERK';
   const canBranchView = can('BRANCH_VIEW');
   const branchesQuery = useBranchesQuery(canBranchView);
   const quickPostAdj = useQuickPostAdjustmentMutation();
@@ -127,6 +129,11 @@ export function InventoryPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
   const searchRef = useRef<HTMLInputElement | null>(null);
+
+  const focusSearchInput = (delay = 50) => {
+    if (disableAutoSearchFocus) return;
+    setTimeout(() => searchRef.current?.focus(), delay);
+  };
 
   // Drawer + stock dialog
   const [selected, setSelected] = useState<SelectedItem | null>(null);
@@ -243,10 +250,10 @@ export function InventoryPage() {
 
   // Keep search focused for scanner workflow
   useEffect(() => {
-    if (!searchRef.current) return;
+    if (!searchRef.current || disableAutoSearchFocus) return;
     const t = setTimeout(() => searchRef.current?.focus(), 150);
     return () => clearTimeout(t);
-  }, [branchId]);
+  }, [branchId, disableAutoSearchFocus]);
 
   const openDetails = (item: SelectedItem, source: 'scan' | 'click' = 'click') => {
     setSelected(item);
@@ -292,7 +299,7 @@ export function InventoryPage() {
     setSearch('');
     setDebouncedSearch('');
     setPage(1);
-    setTimeout(() => searchRef.current?.focus(), 50);
+    focusSearchInput();
   };
 
   const handleQuickPostStock = async () => {
@@ -408,7 +415,7 @@ export function InventoryPage() {
     setSearch('');
     setDebouncedSearch('');
     setPage(1);
-    setTimeout(() => searchRef.current?.focus(), 50);
+    focusSearchInput();
   };
 
   const busy = quickPostAdj.isPending || createAdj.isPending;
@@ -437,7 +444,7 @@ export function InventoryPage() {
                 authStorage.setLastBranchId(id);
                 setPage(1);
                 setSelected(null);
-                setTimeout(() => searchRef.current?.focus(), 50);
+                focusSearchInput();
               }}
             />
           ) : (
