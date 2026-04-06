@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\PushSubscription;
+use App\Services\AdminPushNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -70,9 +71,58 @@ class PushSubscriptionController extends Controller
         return response()->json(['status' => 'ok']);
     }
 
+    public function debug(Request $request, AdminPushNotificationService $pushService)
+    {
+        $actor = $request->user();
+        if (!$this->isAdmin($actor?->role?->code)) {
+            return response()->json([
+                'message' => 'Only admin accounts can view push diagnostics.',
+            ], 403);
+        }
+
+        return response()->json([
+            'status' => 'ok',
+            'debug' => $pushService->diagnostics((int) $actor->id),
+        ]);
+    }
+
+    public function sendTest(Request $request, AdminPushNotificationService $pushService)
+    {
+        $actor = $request->user();
+        if (!$this->isAdmin($actor?->role?->code)) {
+            return response()->json([
+                'message' => 'Only admin accounts can send push test notifications.',
+            ], 403);
+        }
+
+        $data = $request->validate([
+            'message' => ['nullable', 'string', 'max:180'],
+            'path' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $message = trim((string) ($data['message'] ?? ''));
+        $path = trim((string) ($data['path'] ?? '/approvals'));
+        if ($path === '' || !str_starts_with($path, '/')) {
+            $path = '/approvals';
+        }
+
+        $summary = $pushService->sendTestNotification(
+            $message !== '' ? $message : 'Test approval request from Mad Vapers',
+            [
+                'type' => 'manual_debug_test',
+                'path' => $path,
+                'triggered_by_user_id' => (int) $actor->id,
+            ]
+        );
+
+        return response()->json([
+            'status' => 'ok',
+            'result' => $summary,
+        ]);
+    }
+
     private function isAdmin(?string $roleCode): bool
     {
         return strtoupper((string) $roleCode) === 'ADMIN';
     }
 }
-

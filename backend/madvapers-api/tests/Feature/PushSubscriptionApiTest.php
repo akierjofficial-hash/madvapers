@@ -70,5 +70,49 @@ class PushSubscriptionApiTest extends TestCase
 
         $this->assertSame(0, PushSubscription::query()->count());
     }
-}
 
+    public function test_admin_can_view_push_diagnostics_and_send_test_notification(): void
+    {
+        $admin = $this->actingAsEmail('admin@madvapers.com');
+
+        PushSubscription::query()->create([
+            'user_id' => $admin->id,
+            'endpoint_hash' => hash('sha256', 'https://example.push.service/subscription/diag1'),
+            'endpoint' => 'https://example.push.service/subscription/diag1',
+            'public_key' => 'test-public-key',
+            'auth_token' => 'test-auth-token',
+            'content_encoding' => 'aes128gcm',
+        ]);
+
+        $this->getJson('/api/push-subscriptions/debug')
+            ->assertOk()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonPath('debug.enabled', true)
+            ->assertJsonPath('debug.subscriptions.requesting_admin_total', 1);
+
+        $this->postJson('/api/push-subscriptions/test', [
+            'message' => 'Debug ping',
+            'path' => '/approvals',
+        ])->assertOk()
+            ->assertJsonPath('status', 'ok')
+            ->assertJsonStructure([
+                'result' => [
+                    'status',
+                    'reason',
+                    'admin_count',
+                    'subscription_count',
+                    'queued',
+                    'delivered',
+                    'failed',
+                ],
+            ]);
+    }
+
+    public function test_non_admin_cannot_access_push_debug_endpoints(): void
+    {
+        $this->actingAsEmail('clerk@madvapers.local');
+
+        $this->getJson('/api/push-subscriptions/debug')->assertStatus(403);
+        $this->postJson('/api/push-subscriptions/test')->assertStatus(403);
+    }
+}

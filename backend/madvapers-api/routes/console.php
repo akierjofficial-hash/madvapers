@@ -106,7 +106,7 @@ Artisan::command('push:test {--message=Test approval request from Mad Vapers} {-
 
     /** @var AdminPushNotificationService $push */
     $push = app(AdminPushNotificationService::class);
-    $push->sendApprovalRequestNotification(
+    $summary = $push->sendTestNotification(
         $message !== '' ? $message : 'Test approval request from Mad Vapers',
         [
             'type' => 'test_push',
@@ -116,5 +116,15 @@ Artisan::command('push:test {--message=Test approval request from Mad Vapers} {-
         ]
     );
 
-    $this->info('Push test notification dispatched to subscribed admin devices.');
+    $this->line('Push test summary:');
+    $this->line('status=' . (string) ($summary['status'] ?? 'unknown'));
+    $this->line('reason=' . (string) ($summary['reason'] ?? ''));
+    $this->line('admins=' . (int) ($summary['admin_count'] ?? 0));
+    $this->line('subscriptions=' . (int) ($summary['subscription_count'] ?? 0));
+    $this->line('queued=' . (int) ($summary['queued'] ?? 0));
+    $this->line('delivered=' . (int) ($summary['delivered'] ?? 0));
+    $this->line('failed=' . (int) ($summary['failed'] ?? 0));
+    $this->line('expired_removed=' . (int) ($summary['expired_removed'] ?? 0));
+    $this->line('invalid_subscriptions=' . (int) ($summary['invalid_subscriptions'] ?? 0));
+    $this->line('queue_errors=' . (int) ($summary['queue_errors'] ?? 0));
 })->purpose('Send a test Web Push notification to admin devices');

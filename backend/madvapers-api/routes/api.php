@@ -57,6 +57,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::post('/push-subscriptions', [PushSubscriptionController::class, 'store'])->middleware('perm:USER_VIEW');
     Route::delete('/push-subscriptions', [PushSubscriptionController::class, 'destroy'])->middleware('perm:USER_VIEW');
+    Route::get('/push-subscriptions/debug', [PushSubscriptionController::class, 'debug'])->middleware('perm:USER_VIEW');
+    Route::post('/push-subscriptions/test', [PushSubscriptionController::class, 'sendTest'])
+        ->middleware(['perm:USER_VIEW', 'throttle:sensitive-actions']);
     Route::get('/audit/events', [AuditEventController::class, 'index'])->middleware('perm:AUDIT_VIEW');
 
     // Dashboard

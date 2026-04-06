@@ -109,6 +109,16 @@ php artisan migrate --force
 php artisan push:test
 ```
 
+8. Optional API diagnostics (admin token required):
+```bash
+GET  /api/push-subscriptions/debug
+POST /api/push-subscriptions/test
+```
+Use these to confirm:
+- admin subscription exists
+- VAPID keys are loaded
+- push send result (`sent`, `partial`, `failed`, or `skipped`)
+
 Notes:
 - Push notifications require HTTPS.
 - Notifications are admin-only by design.
