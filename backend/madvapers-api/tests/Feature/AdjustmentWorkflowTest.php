@@ -58,7 +58,7 @@ class AdjustmentWorkflowTest extends TestCase
         return (int) $variant->id;
     }
 
-    public function test_manager_can_create_submit_approve_and_post_adjustment(): void
+    public function test_admin_can_create_submit_approve_and_post_adjustment(): void
     {
         $branch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();
         $balance = InventoryBalance::query()
@@ -85,7 +85,7 @@ class AdjustmentWorkflowTest extends TestCase
             ->where('product_variant_id', $variantId)
             ->sum('qty_on_hand');
 
-        $manager = $this->actingAsUser('manager@madvapers.local');
+        $admin = $this->actingAsUser('admin@madvapers.local');
 
         $created = $this->postJson('/api/adjustments', [
             'branch_id' => $branch->id,
@@ -141,7 +141,7 @@ class AdjustmentWorkflowTest extends TestCase
             'entity_type' => 'adjustment',
             'entity_id' => $adjustmentId,
             'branch_id' => $branch->id,
-            'user_id' => $manager->id,
+            'user_id' => $admin->id,
         ]);
 
         $this->assertDatabaseHas('audit_events', [
@@ -149,7 +149,7 @@ class AdjustmentWorkflowTest extends TestCase
             'entity_type' => 'adjustment',
             'entity_id' => $adjustmentId,
             'branch_id' => $branch->id,
-            'user_id' => $manager->id,
+            'user_id' => $admin->id,
         ]);
 
         $this->assertDatabaseHas('audit_events', [
@@ -157,7 +157,7 @@ class AdjustmentWorkflowTest extends TestCase
             'entity_type' => 'adjustment',
             'entity_id' => $adjustmentId,
             'branch_id' => $branch->id,
-            'user_id' => $manager->id,
+            'user_id' => $admin->id,
         ]);
 
         $this->assertDatabaseHas('audit_events', [
@@ -165,11 +165,11 @@ class AdjustmentWorkflowTest extends TestCase
             'entity_type' => 'adjustment',
             'entity_id' => $adjustmentId,
             'branch_id' => $branch->id,
-            'user_id' => $manager->id,
+            'user_id' => $admin->id,
         ]);
     }
 
-    public function test_clerk_can_submit_but_cannot_approve_adjustment(): void
+    public function test_clerk_can_submit_approve_and_post_adjustment(): void
     {
         $branch = Branch::query()->where('code', 'MOTONG')->firstOrFail();
         $balance = InventoryBalance::query()
@@ -204,13 +204,12 @@ class AdjustmentWorkflowTest extends TestCase
 
         $this->postJson("/api/adjustments/{$adjustmentId}/submit")->assertOk();
 
-        $this->postJson("/api/adjustments/{$adjustmentId}/approve")
-            ->assertStatus(403)
-            ->assertJsonPath('required', 'ADJUSTMENT_APPROVE');
+        $this->postJson("/api/adjustments/{$adjustmentId}/approve")->assertOk();
+        $this->postJson("/api/adjustments/{$adjustmentId}/post")->assertOk();
 
         $this->assertDatabaseHas('stock_adjustments', [
             'id' => $adjustmentId,
-            'status' => 'SUBMITTED',
+            'status' => 'POSTED',
         ]);
     }
 
@@ -218,5 +217,52 @@ class AdjustmentWorkflowTest extends TestCase
     {
         $this->actingAsUser('cashier@madvapers.local');
         $this->getJson('/api/adjustments')->assertStatus(403);
+    }
+
+    public function test_adjustment_submit_blocks_negative_qty_when_stock_is_insufficient(): void
+    {
+        $branch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();
+        $balance = InventoryBalance::query()
+            ->where('branch_id', $branch->id)
+            ->orderBy('id')
+            ->first();
+
+        if (!$balance) {
+            $seedVariantId = $this->ensureSeedVariantId();
+            $balance = InventoryBalance::query()->create([
+                'branch_id' => $branch->id,
+                'product_variant_id' => $seedVariantId,
+                'qty_on_hand' => 0,
+            ]);
+        }
+
+        $onHand = (float) ($balance->qty_on_hand ?? 0);
+        $required = $onHand + 1.0;
+
+        $this->actingAsUser('admin@madvapers.local');
+
+        $created = $this->postJson('/api/adjustments', [
+            'branch_id' => $branch->id,
+            'reason_code' => 'CORRECTION',
+            'items' => [
+                [
+                    'product_variant_id' => (int) $balance->product_variant_id,
+                    'qty_delta' => -1 * $required,
+                    'unit_cost' => 0,
+                ],
+            ],
+        ])->assertCreated()->json();
+
+        $adjustmentId = (int) ($created['id'] ?? 0);
+        $this->assertGreaterThan(0, $adjustmentId);
+
+        $this->postJson("/api/adjustments/{$adjustmentId}/submit")
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['stock', 'details']);
+
+        $this->assertDatabaseHas('stock_adjustments', [
+            'id' => $adjustmentId,
+            'status' => 'DRAFT',
+        ]);
     }
 }

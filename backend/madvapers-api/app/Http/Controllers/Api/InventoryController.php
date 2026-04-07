@@ -16,6 +16,7 @@ class InventoryController extends Controller
     public function index(Request $request)
     {
         $like = DB::getDriverName() === 'pgsql' ? 'ilike' : 'like';
+        $includeInactive = $request->boolean('include_inactive', false);
 
         $q = InventoryBalance::query()
             ->with(['branch', 'variant.product.brand', 'variant.product.category'])
@@ -28,6 +29,16 @@ class InventoryController extends Controller
             $branchId = $request->integer('branch_id');
             $this->enforceBranchAccessOrFail($request, $branchId);
             $q->where('branch_id', $branchId);
+        }
+
+        if (!$includeInactive) {
+            $q->whereHas('variant', function ($variantQuery) {
+                $variantQuery
+                    ->where('is_active', true)
+                    ->whereHas('product', function ($productQuery) {
+                        $productQuery->where('is_active', true);
+                    });
+            });
         }
 
         if ($request->filled('search')) {

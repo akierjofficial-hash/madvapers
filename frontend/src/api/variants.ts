@@ -8,6 +8,7 @@ export type VariantsQuery = {
   code?: string;
   product_id?: number;
   branch_id?: number;
+  include_inactive?: boolean;
 };
 
 export type CreateVariantInput = {

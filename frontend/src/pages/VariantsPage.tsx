@@ -2,10 +2,12 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   LinearProgress,
   MenuItem,
   Pagination,
@@ -103,6 +105,7 @@ export function VariantsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [includeInactive, setIncludeInactive] = useState(false);
   const [openCreate, setOpenCreate] = useState(false);
   const [openEdit, setOpenEdit] = useState(false);
   const [editingVariantId, setEditingVariantId] = useState<number | null>(null);
@@ -162,7 +165,14 @@ export function VariantsPage() {
     authStorage.setLastBranchId(first.id);
   }, [stockBranchId, canBranchView, branchesQuery.data, user?.branch_id]);
 
-  const variantsQuery = useVariantsQuery({ page, search: debouncedSearch || undefined }, true);
+  const variantsQuery = useVariantsQuery(
+    {
+      page,
+      search: debouncedSearch || undefined,
+      include_inactive: includeInactive ? true : undefined,
+    },
+    true
+  );
   const productsQuery = useProductsQuery({ page: 1, include_inactive: false }, openCreate && canCreate);
   const createVariant = useCreateVariantMutation();
   const updateVariant = useUpdateVariantMutation();
@@ -561,16 +571,31 @@ export function VariantsPage() {
         <Alert severity="info">You have view-only access to variants.</Alert>
       )}
 
-      <TextField
-        size="small"
-        label="Search SKU / variant / flavor"
-        value={search}
-        onChange={(e) => {
-          setSearch(e.target.value);
-          setPage(1);
-        }}
-        sx={{ maxWidth: { md: 520 } }}
-      />
+      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ md: 'center' }}>
+        <TextField
+          size="small"
+          label="Search SKU / variant / flavor"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
+          sx={{ maxWidth: { md: 520 }, minWidth: { md: 280 }, flex: 1 }}
+        />
+
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={includeInactive}
+              onChange={(e) => {
+                setIncludeInactive(e.target.checked);
+                setPage(1);
+              }}
+            />
+          }
+          label="Include inactive"
+        />
+      </Stack>
 
       {variantsQuery.isLoading ? (
         <Alert severity="info">Loading variants...</Alert>

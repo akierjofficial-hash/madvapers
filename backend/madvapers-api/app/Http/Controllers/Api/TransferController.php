@@ -233,11 +233,22 @@ class TransferController extends Controller
                 ]);
             }
 
-            if ($locked->items()->count() < 1) {
+            $items = $locked->items()
+                ->orderBy('product_variant_id')
+                ->orderBy('id')
+                ->get();
+
+            if ($items->count() < 1) {
                 throw ValidationException::withMessages([
                     'items' => ['Transfer must have at least 1 item.'],
                 ]);
             }
+
+            $this->ensureTransferStockAvailableForSourceBranch(
+                (int) $locked->from_branch_id,
+                $items,
+                'request'
+            );
 
             $locked->status = 'REQUESTED';
             $locked->save();
@@ -246,8 +257,10 @@ class TransferController extends Controller
             $notifyContext['to_branch_id'] = (int) $locked->to_branch_id;
             $notifyContext['transfer_number'] = (string) ($locked->transfer_number ?? '');
 
-            $itemCount = (int) $locked->items()->count();
-            $totalQty = (float) $locked->items()->sum('qty');
+            $itemCount = (int) $items->count();
+            $totalQty = (float) $items->sum(function ($item) {
+                return (float) ($item->qty ?? 0);
+            });
 
             $this->recordTransferAudit(
                 $locked,
@@ -347,32 +360,11 @@ class TransferController extends Controller
                 return (float) ($item->qty ?? 0);
             });
 
-            // Lock inventory rows for source branch so check + post is race-safe
-            $insufficient = [];
-
-            foreach ($items as $it) {
-                $bal = InventoryBalance::query()
-                    ->where('branch_id', $locked->from_branch_id)
-                    ->where('product_variant_id', $it->product_variant_id)
-                    ->lockForUpdate()
-                    ->first();
-
-                $onHand = $bal?->qty_on_hand ?? 0;
-                if ((float)$onHand < (float)$it->qty) {
-                    $insufficient[] = [
-                        'product_variant_id' => $it->product_variant_id,
-                        'required' => (float)$it->qty,
-                        'on_hand' => (float)$onHand,
-                    ];
-                }
-            }
-
-            if (!empty($insufficient)) {
-                throw ValidationException::withMessages([
-                    'stock' => ['Insufficient stock to dispatch.'],
-                    'details' => $insufficient,
-                ]);
-            }
+            $this->ensureTransferStockAvailableForSourceBranch(
+                (int) $locked->from_branch_id,
+                $items,
+                'dispatch'
+            );
 
             // Post ledger OUT movements
             foreach ($items as $it) {
@@ -560,5 +552,64 @@ class TransferController extends Controller
         return Transfer::query()
             ->lockForUpdate()
             ->findOrFail($transferId);
+    }
+
+    private function ensureTransferStockAvailableForSourceBranch(
+        int $fromBranchId,
+        \Illuminate\Support\Collection $items,
+        string $phase
+    ): void {
+        $variantIds = $items
+            ->pluck('product_variant_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($variantIds->isEmpty()) {
+            return;
+        }
+
+        $balances = InventoryBalance::query()
+            ->where('branch_id', $fromBranchId)
+            ->whereIn('product_variant_id', $variantIds->all())
+            ->lockForUpdate()
+            ->get(['product_variant_id', 'qty_on_hand']);
+
+        $onHandByVariant = [];
+        foreach ($balances as $balance) {
+            $onHandByVariant[(int) $balance->product_variant_id] = (float) ($balance->qty_on_hand ?? 0);
+        }
+
+        $insufficient = [];
+
+        foreach ($items as $item) {
+            $variantId = (int) ($item->product_variant_id ?? 0);
+            $requiredQty = (float) ($item->qty ?? 0);
+            $available = (float) ($onHandByVariant[$variantId] ?? 0.0);
+
+            if ($requiredQty <= 0) {
+                continue;
+            }
+
+            if ($available < $requiredQty) {
+                $insufficient[] = [
+                    'product_variant_id' => $variantId,
+                    'required' => $requiredQty,
+                    'on_hand' => $available,
+                ];
+                continue;
+            }
+
+            $onHandByVariant[$variantId] = $available - $requiredQty;
+        }
+
+        if (!empty($insufficient)) {
+            $label = strtoupper(trim($phase)) === 'REQUEST' ? 'request' : 'dispatch';
+            throw ValidationException::withMessages([
+                'stock' => [sprintf('Insufficient stock to %s transfer.', $label)],
+                'details' => $insufficient,
+            ]);
+        }
     }
 }

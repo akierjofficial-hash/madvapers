@@ -2,12 +2,14 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   Drawer,
+  FormControlLabel,
   Pagination,
   Paper,
   Snackbar,
@@ -127,6 +129,7 @@ export function InventoryPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [includeInactive, setIncludeInactive] = useState(false);
 
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -177,6 +180,7 @@ export function InventoryPage() {
       branch_id: branchId === '' ? 0 : branchId,
       page,
       search: debouncedSearch || undefined,
+      include_inactive: includeInactive ? true : undefined,
     },
     branchId !== ''
   );
@@ -463,6 +467,21 @@ export function InventoryPage() {
           }}
           onKeyDown={handleSearchKeyDown}
           sx={{ flex: 2, minWidth: { md: 260 } }}
+        />
+
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={includeInactive}
+              onChange={(e) => {
+                setIncludeInactive(e.target.checked);
+                setPage(1);
+                setSelected(null);
+              }}
+            />
+          }
+          label="Include inactive"
+          sx={{ ml: { md: 0.5 } }}
         />
       </Stack>
       {branchId === '' ? (

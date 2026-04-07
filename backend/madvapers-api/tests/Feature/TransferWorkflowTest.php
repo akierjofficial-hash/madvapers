@@ -217,4 +217,52 @@ class TransferWorkflowTest extends TestCase
         $this->assertSame($assignedBranchIds, $fromBranchIds);
         $this->assertSame($activeBranchIds, $toBranchIds);
     }
+
+    public function test_transfer_request_blocks_when_source_stock_is_insufficient(): void
+    {
+        $sourceBalance = InventoryBalance::query()
+            ->where('qty_on_hand', '>', 0)
+            ->orderBy('id')
+            ->firstOrFail();
+
+        $fromBranchId = (int) $sourceBalance->branch_id;
+        $variantId = (int) $sourceBalance->product_variant_id;
+        $onHand = (float) $sourceBalance->qty_on_hand;
+        $requestedQty = $onHand + 1.0;
+
+        $toBranchId = (int) Branch::query()
+            ->where('is_active', true)
+            ->where('id', '!=', $fromBranchId)
+            ->orderBy('id')
+            ->value('id');
+
+        $this->assertGreaterThan(0, $toBranchId);
+
+        $this->actingAsUser('admin@madvapers.local');
+
+        $created = $this->postJson('/api/transfers', [
+            'from_branch_id' => $fromBranchId,
+            'to_branch_id' => $toBranchId,
+            'notes' => 'Insufficient stock transfer request',
+            'items' => [
+                [
+                    'product_variant_id' => $variantId,
+                    'qty' => $requestedQty,
+                    'unit_cost' => 0,
+                ],
+            ],
+        ])->assertCreated()->json();
+
+        $transferId = (int) ($created['id'] ?? 0);
+        $this->assertGreaterThan(0, $transferId);
+
+        $this->postJson("/api/transfers/{$transferId}/request")
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['stock', 'details']);
+
+        $this->assertDatabaseHas('transfers', [
+            'id' => $transferId,
+            'status' => 'DRAFT',
+        ]);
+    }
 }

@@ -6,6 +6,7 @@ export type InventoryQuery = {
   branch_id: number;
   page?: number;
   search?: string;
+  include_inactive?: boolean;
 };
 
 export async function getInventory(params: InventoryQuery): Promise<LaravelPaginator<InventoryBalance>> {

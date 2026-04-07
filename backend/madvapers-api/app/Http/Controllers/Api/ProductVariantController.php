@@ -29,6 +29,7 @@ class ProductVariantController extends Controller
             'product_id' => ['nullable', 'integer', 'exists:products,id'],
             'search' => ['nullable', 'string', 'max:120'],
             'code' => ['nullable', 'string', 'max:120'],
+            'include_inactive' => ['nullable', 'boolean'],
         ]);
 
         $branchId = $request->filled('branch_id') ? (int) $request->input('branch_id') : null;
@@ -87,6 +88,13 @@ class ProductVariantController extends Controller
 
         if ($request->filled('product_id')) {
             $q->where('product_id', $request->integer('product_id'));
+        }
+
+        if (!$request->boolean('include_inactive', false)) {
+            $q->where('is_active', true)
+                ->whereHas('product', function ($productQuery) {
+                    $productQuery->where('is_active', true);
+                });
         }
 
         return $q->paginate(20);

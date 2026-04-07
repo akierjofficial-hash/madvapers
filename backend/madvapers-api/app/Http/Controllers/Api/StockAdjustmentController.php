@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Api\Concerns\EnforcesBranchAccess;
+use App\Models\InventoryBalance;
 use App\Models\StockAdjustment;
 use App\Models\StockAdjustmentItem;
 use App\Services\AdminPushNotificationService;
@@ -11,6 +12,7 @@ use App\Support\AuditTrail;
 use App\Services\InventoryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class StockAdjustmentController extends Controller
 {
@@ -142,6 +144,17 @@ class StockAdjustmentController extends Controller
                 return response()->json(['message' => 'Only DRAFT can be submitted.'], 422);
             }
 
+            $items = $locked->items()
+                ->orderBy('product_variant_id')
+                ->orderBy('id')
+                ->get();
+
+            $this->ensureAdjustmentStockAvailability(
+                (int) $locked->branch_id,
+                $items,
+                'submit'
+            );
+
             $locked->update(['status' => 'SUBMITTED']);
             $notifyContext['adjustment_id'] = (int) $locked->id;
             $notifyContext['branch_id'] = (int) $locked->branch_id;
@@ -242,6 +255,12 @@ class StockAdjustmentController extends Controller
                 })
                 ->values();
 
+            $this->ensureAdjustmentStockAvailability(
+                (int) $locked->branch_id,
+                $items,
+                'post'
+            );
+
             $itemCount = $items->count();
             $totalQtyDelta = (float) $items->sum(function ($item) {
                 return (float) ($item->qty_delta ?? 0);
@@ -295,5 +314,63 @@ class StockAdjustmentController extends Controller
 
             return response()->json(['status' => 'ok', 'adjustment' => $locked]);
         });
+    }
+
+    private function ensureAdjustmentStockAvailability(
+        int $branchId,
+        \Illuminate\Support\Collection $items,
+        string $phase
+    ): void {
+        $variantIds = $items
+            ->pluck('product_variant_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($variantIds->isEmpty()) {
+            return;
+        }
+
+        $balances = InventoryBalance::query()
+            ->where('branch_id', $branchId)
+            ->whereIn('product_variant_id', $variantIds->all())
+            ->lockForUpdate()
+            ->get(['product_variant_id', 'qty_on_hand']);
+
+        $onHandByVariant = [];
+        foreach ($balances as $balance) {
+            $onHandByVariant[(int) $balance->product_variant_id] = (float) ($balance->qty_on_hand ?? 0);
+        }
+
+        $insufficient = [];
+
+        foreach ($items as $item) {
+            $variantId = (int) ($item->product_variant_id ?? 0);
+            $qtyDelta = (float) ($item->qty_delta ?? 0);
+            $available = (float) ($onHandByVariant[$variantId] ?? 0.0);
+
+            if ($qtyDelta < 0) {
+                $required = abs($qtyDelta);
+                if ($available < $required) {
+                    $insufficient[] = [
+                        'product_variant_id' => $variantId,
+                        'required' => $required,
+                        'on_hand' => $available,
+                    ];
+                    continue;
+                }
+            }
+
+            $onHandByVariant[$variantId] = $available + $qtyDelta;
+        }
+
+        if (!empty($insufficient)) {
+            $label = strtoupper(trim($phase)) === 'SUBMIT' ? 'submit' : 'post';
+            throw ValidationException::withMessages([
+                'stock' => [sprintf('Insufficient stock to %s adjustment.', $label)],
+                'details' => $insufficient,
+            ]);
+        }
     }
 }
