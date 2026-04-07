@@ -47,7 +47,7 @@ class StaffAttendanceWorkflowTest extends TestCase
             ->assertStatus(422)
             ->assertJsonValidationErrors(['attendance']);
 
-        $admin = $this->actingAsUser('admin@madvapers.com');
+        $admin = $this->actingAsUser('admin@madvapers.local');
         $this->postJson("/api/staff-attendance/{$attendanceId}/approve")
             ->assertOk()
             ->assertJsonPath('status', 'ok')
@@ -78,7 +78,7 @@ class StaffAttendanceWorkflowTest extends TestCase
 
     public function test_admin_cannot_request_staff_time_in_or_time_out(): void
     {
-        $this->actingAsUser('admin@madvapers.com');
+        $this->actingAsUser('admin@madvapers.local');
 
         $this->postJson('/api/staff-attendance/time-in')
             ->assertStatus(403);
@@ -96,7 +96,7 @@ class StaffAttendanceWorkflowTest extends TestCase
             ->json('attendance.id');
         $this->assertGreaterThan(0, $attendanceId);
 
-        $this->actingAsUser('admin@madvapers.com');
+        $this->actingAsUser('admin@madvapers.local');
         $this->postJson("/api/staff-attendance/{$attendanceId}/approve")
             ->assertOk()
             ->assertJsonPath('attendance.clock_in_status', 'APPROVED');
@@ -129,7 +129,7 @@ class StaffAttendanceWorkflowTest extends TestCase
             'clock_in_requested_at' => now()->subMinutes(50),
             'clock_in_status' => 'APPROVED',
             'reviewed_at' => now()->subMinutes(40),
-            'reviewed_by_user_id' => User::query()->where('email', 'admin@madvapers.com')->value('id'),
+            'reviewed_by_user_id' => User::query()->where('email', 'admin@madvapers.local')->value('id'),
         ]);
 
         $this->getJson('/api/staff-attendance?mine=1')
@@ -149,7 +149,7 @@ class StaffAttendanceWorkflowTest extends TestCase
             'clock_in_requested_at' => now()->subMinutes(50),
             'clock_in_status' => 'APPROVED',
             'reviewed_at' => now()->subMinutes(40),
-            'reviewed_by_user_id' => User::query()->where('email', 'admin@madvapers.com')->value('id'),
+            'reviewed_by_user_id' => User::query()->where('email', 'admin@madvapers.local')->value('id'),
         ]);
 
         $this->getJson('/api/staff-attendance?mine=true')
@@ -168,7 +168,7 @@ class StaffAttendanceWorkflowTest extends TestCase
             'clock_in_requested_at' => now()->subDays(2),
             'clock_in_status' => 'APPROVED',
             'reviewed_at' => now()->subDays(2)->addMinutes(5),
-            'reviewed_by_user_id' => User::query()->where('email', 'admin@madvapers.com')->value('id'),
+            'reviewed_by_user_id' => User::query()->where('email', 'admin@madvapers.local')->value('id'),
             'clock_out_at' => now()->subDays(2)->addHours(8),
         ]);
 
@@ -179,11 +179,11 @@ class StaffAttendanceWorkflowTest extends TestCase
             'clock_in_requested_at' => now()->subMinutes(50),
             'clock_in_status' => 'APPROVED',
             'reviewed_at' => now()->subMinutes(45),
-            'reviewed_by_user_id' => User::query()->where('email', 'admin@madvapers.com')->value('id'),
+            'reviewed_by_user_id' => User::query()->where('email', 'admin@madvapers.local')->value('id'),
             'clock_out_at' => now()->subMinutes(5),
         ]);
 
-        $this->actingAsUser('admin@madvapers.com');
+        $this->actingAsUser('admin@madvapers.local');
         $this->getJson('/api/staff-attendance')
             ->assertOk()
             ->assertJsonPath('data.0.id', $newerTimedOut->id)

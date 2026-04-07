@@ -22,8 +22,10 @@ class ProductTypeFlexibilityTest extends TestCase
     private function actingAsAdmin(): void
     {
         $admin = User::query()
-            ->whereIn('email', ['admin@madvapers.com', 'admin@madvapers.local'])
-            ->orderByRaw("CASE WHEN email = 'admin@madvapers.com' THEN 0 ELSE 1 END")
+            ->whereHas('role', function ($query) {
+                $query->where('code', 'ADMIN');
+            })
+            ->orderBy('id')
             ->firstOrFail();
         Sanctum::actingAs($admin);
     }

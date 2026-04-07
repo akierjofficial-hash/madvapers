@@ -52,7 +52,7 @@ class TransferWorkflowTest extends TestCase
             ->where('product_variant_id', $variantId)
             ->value('qty_on_hand');
 
-        $admin = $this->actingAsUser('admin@madvapers.com');
+        $admin = $this->actingAsUser('admin@madvapers.local');
         $created = $this->postJson('/api/transfers', [
             'from_branch_id' => $fromBranch->id,
             'to_branch_id' => $toBranch->id,

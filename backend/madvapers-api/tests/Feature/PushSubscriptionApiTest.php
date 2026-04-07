@@ -27,8 +27,8 @@ class PushSubscriptionApiTest extends TestCase
 
     public function test_admin_can_register_and_remove_push_subscription(): void
     {
-        $admin = $this->actingAsEmail('admin@madvapers.com');
-        $endpoint = 'https://example.push.service/subscription/abc123';
+        $admin = $this->actingAsEmail('admin@madvapers.local');
+        $endpoint = 'https://fcm.googleapis.com/fcm/send/test-subscription-abc123';
 
         $this->postJson('/api/push-subscriptions', [
             'endpoint' => $endpoint,
@@ -73,7 +73,7 @@ class PushSubscriptionApiTest extends TestCase
 
     public function test_admin_can_view_push_diagnostics_and_send_test_notification(): void
     {
-        $admin = $this->actingAsEmail('admin@madvapers.com');
+        $admin = $this->actingAsEmail('admin@madvapers.local');
 
         PushSubscription::query()->create([
             'user_id' => $admin->id,

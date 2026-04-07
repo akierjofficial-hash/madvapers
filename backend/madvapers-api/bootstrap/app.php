@@ -13,15 +13,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        // Enable Sanctum first-party SPA cookie authentication on API routes.
-        $middleware->statefulApi();
-
-        // API routes are authenticated by Sanctum/Bearer tokens and permission middleware.
-        // In production token mode, CSRF cookies are not used, so exclude API paths
-        // from CSRF validation to prevent random 419 failures on POST/PUT/DELETE.
-        $middleware->validateCsrfTokens(except: [
-            'api/*',
-        ]);
+        // Token-only API auth posture: disable stateful cookie auth middleware for APIs.
 
         $middleware->alias([
             'perm' => \App\Http\Middleware\RequirePermission::class,

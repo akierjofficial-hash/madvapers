@@ -32,7 +32,7 @@ class AuthPayloadTest extends TestCase
             return $fromEnv;
         }
 
-        return 'admin@madvapers.com';
+        return 'admin@madvapers.local';
     }
 
     private function seededAdminPassword(): string
@@ -47,7 +47,7 @@ class AuthPayloadTest extends TestCase
             return $fromEnv;
         }
 
-        return 'admin123';
+        return 'password123';
     }
 
     protected function setUp(): void

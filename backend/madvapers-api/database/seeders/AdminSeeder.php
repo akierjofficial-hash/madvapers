@@ -6,6 +6,7 @@ use Illuminate\Database\Seeder;
 use App\Models\User;
 use App\Models\Role;
 use App\Models\Branch;
+use RuntimeException;
 
 class AdminSeeder extends Seeder
 {
@@ -16,7 +17,11 @@ class AdminSeeder extends Seeder
             return $fromEnv;
         }
 
-        return 'admin@madvapers.com';
+        if (app()->environment('testing')) {
+            return 'admin@madvapers.local';
+        }
+
+        throw new RuntimeException('SEED_ADMIN_EMAIL is required. Refusing to seed default admin credentials.');
     }
 
     private function seedPassword(): string
@@ -31,7 +36,11 @@ class AdminSeeder extends Seeder
             return $fromEnv;
         }
 
-        return 'admin123';
+        if (app()->environment('testing')) {
+            return 'password123';
+        }
+
+        throw new RuntimeException('SEED_ADMIN_PASSWORD or SEED_DEFAULT_PASSWORD is required for admin seeding.');
     }
 
     public function run(): void

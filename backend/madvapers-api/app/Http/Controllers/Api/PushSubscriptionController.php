@@ -10,6 +10,78 @@ use Illuminate\Validation\Rule;
 
 class PushSubscriptionController extends Controller
 {
+    /**
+     * @return string[]
+     */
+    private function allowedEndpointHostPatterns(): array
+    {
+        $raw = trim((string) env(
+            'WEB_PUSH_ALLOWED_ENDPOINT_HOSTS',
+            'fcm.googleapis.com,updates.push.services.mozilla.com,web.push.apple.com,*.push.apple.com'
+        ));
+
+        if ($raw === '') {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(
+            static function (string $value): string {
+                return strtolower(trim($value));
+            },
+            explode(',', $raw)
+        )));
+    }
+
+    private function hostMatchesPattern(string $host, string $pattern): bool
+    {
+        if ($pattern === '') {
+            return false;
+        }
+
+        if (str_starts_with($pattern, '*.')) {
+            $base = substr($pattern, 2);
+            if ($base === '') {
+                return false;
+            }
+
+            return $host === $base || str_ends_with($host, '.' . $base);
+        }
+
+        return $host === $pattern;
+    }
+
+    private function validatePushEndpoint(string $endpoint): ?string
+    {
+        $parsed = parse_url($endpoint);
+        if (!is_array($parsed)) {
+            return 'Invalid push endpoint URL.';
+        }
+
+        $scheme = strtolower((string) ($parsed['scheme'] ?? ''));
+        $host = strtolower((string) ($parsed['host'] ?? ''));
+
+        if ($scheme !== 'https') {
+            return 'Push endpoint must use HTTPS.';
+        }
+
+        if ($host === '') {
+            return 'Push endpoint host is required.';
+        }
+
+        $patterns = $this->allowedEndpointHostPatterns();
+        if (empty($patterns)) {
+            return null;
+        }
+
+        foreach ($patterns as $pattern) {
+            if ($this->hostMatchesPattern($host, $pattern)) {
+                return null;
+            }
+        }
+
+        return 'Push endpoint host is not allowed.';
+    }
+
     public function store(Request $request)
     {
         $actor = $request->user();
@@ -20,7 +92,7 @@ class PushSubscriptionController extends Controller
         }
 
         $data = $request->validate([
-            'endpoint' => ['required', 'string', 'max:4000'],
+            'endpoint' => ['required', 'string', 'url', 'max:4000'],
             'keys' => ['required', 'array'],
             'keys.p256dh' => ['required', 'string'],
             'keys.auth' => ['required', 'string'],
@@ -28,6 +100,12 @@ class PushSubscriptionController extends Controller
         ]);
 
         $endpoint = trim((string) $data['endpoint']);
+        if ($endpointError = $this->validatePushEndpoint($endpoint)) {
+            return response()->json([
+                'message' => $endpointError,
+            ], 422);
+        }
+
         $endpointHash = hash('sha256', $endpoint);
 
         $record = PushSubscription::query()->updateOrCreate(
@@ -58,10 +136,17 @@ class PushSubscriptionController extends Controller
         }
 
         $data = $request->validate([
-            'endpoint' => ['required', 'string', 'max:4000'],
+            'endpoint' => ['required', 'string', 'url', 'max:4000'],
         ]);
 
-        $endpointHash = hash('sha256', trim((string) $data['endpoint']));
+        $endpoint = trim((string) $data['endpoint']);
+        if ($endpointError = $this->validatePushEndpoint($endpoint)) {
+            return response()->json([
+                'message' => $endpointError,
+            ], 422);
+        }
+
+        $endpointHash = hash('sha256', $endpoint);
 
         PushSubscription::query()
             ->where('endpoint_hash', $endpointHash)

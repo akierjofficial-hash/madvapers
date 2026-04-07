@@ -95,7 +95,7 @@ Artisan::command('push:vapid-keys', function () {
     $this->info('Generated VAPID keys (save these in your backend/.env and frontend/.env):');
     $this->line('WEB_PUSH_VAPID_PUBLIC_KEY=' . $keys['publicKey']);
     $this->line('WEB_PUSH_VAPID_PRIVATE_KEY=' . $keys['privateKey']);
-    $this->line('WEB_PUSH_VAPID_SUBJECT=mailto:admin@madvapers.com');
+    $this->line('WEB_PUSH_VAPID_SUBJECT=mailto:alerts@example.com');
     $this->line('VITE_WEB_PUSH_PUBLIC_KEY=' . $keys['publicKey']);
     $this->newLine();
 })->purpose('Generate VAPID keys for Web Push notifications');

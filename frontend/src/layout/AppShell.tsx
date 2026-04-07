@@ -636,8 +636,8 @@ export function AppShell() {
       const notificationTitle = 'Mad Vapers Approvals';
       const notificationOptions: NotificationOptions = {
         body: `${message} ${approvalsBadgeCount} pending total.`,
-        icon: '/icons/pwa-192x192.png',
-        badge: '/icons/pwa-192x192.png',
+        icon: '/icons/notif/notifIcon.png',
+        badge: '/icons/notif/notifIcon.png',
         tag: 'mv-approvals',
       };
 

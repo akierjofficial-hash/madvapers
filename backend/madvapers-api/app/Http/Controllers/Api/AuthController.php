@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Models\User;
 use App\Http\Controllers\Controller;
 use DateTimeInterface;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Laravel\Sanctum\PersonalAccessToken;
 
@@ -94,35 +96,31 @@ class AuthController extends Controller
             'password' => ['required'],
         ]);
 
-        if (!Auth::guard('web')->attempt($request->only('email','password'))) {
+        $email = trim((string) $request->input('email'));
+        $password = (string) $request->input('password');
+
+        $user = User::query()->where('email', $email)->first();
+
+        if (!$user || !Hash::check($password, (string) $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['Invalid credentials.'],
             ]);
         }
 
-        $user = Auth::guard('web')->user();
-
         if (!$user->is_active) {
-            Auth::logout();
             throw ValidationException::withMessages([
                 'email' => ['This account is inactive. Contact an administrator.'],
             ]);
-        }
-
-        // Regenerate session ID to prevent session fixation.
-        if ($request->hasSession()) {
-            $request->session()->regenerate();
         }
 
         $user->loadMissing('role');
         $roleCode = strtoupper((string) ($user->role?->code ?? ''));
 
         $expiresAt = $roleCode === 'ADMIN'
-            ? $this->expiresAtFromMinutes(env('ADMIN_TOKEN_TTL_MINUTES', null))
+            ? $this->expiresAtFromMinutes(env('ADMIN_TOKEN_TTL_MINUTES', 43200))
             : $this->expiresAtFromMinutes(env('NON_ADMIN_TOKEN_TTL_MINUTES', 120));
 
-        // Token auth fallback for cross-domain SPA deployments (e.g. separate
-        // frontend/backend Railway subdomains where third-party cookies may be blocked).
+        // Token-first auth strategy for SPA/PWA deployments.
         $token = $user->createToken('spa', ['*'], $expiresAt)->plainTextToken;
 
         return response()->json(array_merge(

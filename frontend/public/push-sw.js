@@ -30,8 +30,8 @@ self.addEventListener('push', (event) => {
   const targetUrl = String(payload.url || payload?.data?.path || '/approvals');
   const notificationOptions = {
     body: String(payload.body || fallback.body),
-    icon: String(payload.icon || '/icons/pwa-192x192.png'),
-    badge: String(payload.badge || '/icons/pwa-192x192.png'),
+    icon: String(payload.icon || '/icons/notif/notifIcon.png'),
+    badge: String(payload.badge || '/icons/notif/notifIcon.png'),
     tag: String(payload.tag || fallback.tag),
     data: {
       ...(payload.data && typeof payload.data === 'object' ? payload.data : {}),
@@ -79,4 +79,3 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
-

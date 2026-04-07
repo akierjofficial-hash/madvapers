@@ -77,12 +77,14 @@ trait EnforcesBranchAccess
         }
 
         if (!in_array((int) $branchId, $assigned, true)) {
-            throw new HttpResponseException(response()->json([
-                'message' => 'Forbidden branch access.',
-                'field' => $field,
-                'allowed_branch_ids' => $assigned,
-                'provided_branch_id' => (int) $branchId,
-            ], 403));
+            $payload = ['message' => 'Forbidden branch access.'];
+            if (!app()->environment('production')) {
+                $payload['field'] = $field;
+                $payload['allowed_branch_ids'] = $assigned;
+                $payload['provided_branch_id'] = (int) $branchId;
+            }
+
+            throw new HttpResponseException(response()->json($payload, 403));
         }
     }
 
@@ -114,10 +116,12 @@ trait EnforcesBranchAccess
         }
 
         if (!in_array((int) $fromBranchId, $assigned, true) && !in_array((int) $toBranchId, $assigned, true)) {
-            throw new HttpResponseException(response()->json([
-                'message' => 'Forbidden transfer access for this branch.',
-                'allowed_branch_ids' => $assigned,
-            ], 403));
+            $payload = ['message' => 'Forbidden transfer access for this branch.'];
+            if (!app()->environment('production')) {
+                $payload['allowed_branch_ids'] = $assigned;
+            }
+
+            throw new HttpResponseException(response()->json($payload, 403));
         }
     }
 

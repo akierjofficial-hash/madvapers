@@ -50,7 +50,7 @@ SEED_ROLE_USERS=false
 
 # Web Push (admin phone notifications)
 WEB_PUSH_ENABLED=true
-WEB_PUSH_VAPID_SUBJECT=mailto:admin@madvapers.com
+WEB_PUSH_VAPID_SUBJECT=mailto:alerts@example.com
 WEB_PUSH_VAPID_PUBLIC_KEY=<generated-public-key>
 WEB_PUSH_VAPID_PRIVATE_KEY=<generated-private-key>
 ```

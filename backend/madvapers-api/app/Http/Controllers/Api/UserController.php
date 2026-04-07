@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
@@ -83,7 +84,7 @@ class UserController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'email' => ['required', 'email', 'max:180', 'unique:users,email'],
-            'password' => ['required', 'string', 'min:8', 'max:120'],
+            'password' => ['required', 'string', 'max:120', Password::min(10)->letters()->mixedCase()->numbers()->symbols()],
             'role_id' => ['required', 'integer', 'exists:roles,id'],
             'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
             'branch_ids' => ['sometimes', 'array'],
@@ -212,7 +213,7 @@ class UserController extends Controller
     public function setPassword(Request $request, User $user)
     {
         $data = $request->validate([
-            'password' => ['required', 'string', 'min:8', 'max:120'],
+            'password' => ['required', 'string', 'max:120', Password::min(10)->letters()->mixedCase()->numbers()->symbols()],
         ]);
 
         $user->password = $data['password']; // hashed cast on model

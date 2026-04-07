@@ -3,6 +3,14 @@ import { tokenStorage } from '../auth/tokenStorage';
 
 type AuthStrategy = 'hybrid' | 'token' | 'cookie';
 
+function resolveAuthStrategy(): AuthStrategy {
+  const raw = String(import.meta.env.VITE_AUTH_STRATEGY ?? '').trim().toLowerCase();
+  if (raw === 'cookie' || raw === 'hybrid' || raw === 'token') {
+    return raw;
+  }
+  return 'token';
+}
+
 function isLocalLikeHost(host: string): boolean {
   const value = String(host ?? '').trim().toLowerCase();
   if (!value) return false;
@@ -32,15 +40,10 @@ function normalizeApiBaseUrlForLocalCookieAuth(rawBaseUrl: string): string {
 }
 
 const RAW_API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api';
-const RAW_AUTH_STRATEGY = String(import.meta.env.VITE_AUTH_STRATEGY ?? 'hybrid').trim().toLowerCase();
-
-function resolveAuthStrategy(input: string): AuthStrategy {
-  if (input === 'token' || input === 'cookie') return input;
-  return 'hybrid';
-}
-
-const AUTH_STRATEGY = resolveAuthStrategy(RAW_AUTH_STRATEGY);
-export const USE_COOKIE_AUTH = AUTH_STRATEGY !== 'token';
+// Security hardening: run token auth only by default.
+// Cookie/session auth support stays disabled unless this constant is changed in code.
+const AUTH_STRATEGY = resolveAuthStrategy();
+export const USE_COOKIE_AUTH = AUTH_STRATEGY === 'cookie';
 
 export const API_BASE_URL = normalizeApiBaseUrlForLocalCookieAuth(RAW_API_BASE_URL);
 
