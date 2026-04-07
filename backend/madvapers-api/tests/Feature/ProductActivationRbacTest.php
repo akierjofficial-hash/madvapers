@@ -111,5 +111,36 @@ class ProductActivationRbacTest extends TestCase
             'is_active' => 1,
         ]);
     }
-}
 
+    public function test_product_purge_auto_removes_inactive_variants_when_safe(): void
+    {
+        $this->actingAsAdmin();
+
+        $product = $this->makeProduct(['is_active' => false]);
+        $variant = $this->makeVariant($product, ['is_active' => false]);
+
+        $this->deleteJson("/api/products/{$product->id}/purge")
+            ->assertOk()
+            ->assertJson(['status' => 'ok']);
+
+        $this->assertDatabaseMissing('products', [
+            'id' => $product->id,
+        ]);
+
+        $this->assertDatabaseMissing('product_variants', [
+            'id' => $variant->id,
+        ]);
+    }
+
+    public function test_product_purge_blocks_when_active_variant_exists(): void
+    {
+        $this->actingAsAdmin();
+
+        $product = $this->makeProduct(['is_active' => false]);
+        $this->makeVariant($product, ['is_active' => true]);
+
+        $this->deleteJson("/api/products/{$product->id}/purge")
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Cannot delete product while it has active variants. Disable variants first.');
+    }
+}

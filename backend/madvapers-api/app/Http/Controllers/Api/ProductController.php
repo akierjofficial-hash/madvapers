@@ -3,7 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\InventoryBalance;
+use App\Models\PriceHistory;
 use App\Models\Product;
+use App\Models\PurchaseOrderItem;
+use App\Models\StockAdjustmentItem;
+use App\Models\StockLedger;
+use App\Models\TransferItem;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -202,10 +208,83 @@ class ProductController extends Controller
             ], 422);
         }
 
-        if ($product->variants()->exists()) {
+        $variants = $product->variants()
+            ->orderBy('id')
+            ->get(['id', 'sku', 'is_active']);
+
+        if ($variants->isEmpty()) {
+            $product->delete();
+
+            return response()->json(['status' => 'ok']);
+        }
+
+        $activeVariantIds = $variants
+            ->filter(fn ($variant) => (bool) ($variant->is_active ?? true))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+
+        if (!empty($activeVariantIds)) {
             return response()->json([
-                'message' => 'Cannot delete product with existing variants. Delete variants first.',
+                'message' => 'Cannot delete product while it has active variants. Disable variants first.',
+                'active_variant_ids' => $activeVariantIds,
             ], 422);
+        }
+
+        $blocked = [];
+        $purgeableVariantIds = [];
+
+        foreach ($variants as $variant) {
+            $variantId = (int) $variant->id;
+
+            $reasons = [];
+
+            $hasNonZero = InventoryBalance::query()
+                ->where('product_variant_id', $variantId)
+                ->where('qty_on_hand', '!=', 0)
+                ->exists();
+            if ($hasNonZero) {
+                $reasons[] = 'Variant still has stock on hand.';
+            }
+
+            if (StockLedger::query()->where('product_variant_id', $variantId)->exists()) {
+                $reasons[] = 'Variant has stock ledger history.';
+            }
+            if (StockAdjustmentItem::query()->where('product_variant_id', $variantId)->exists()) {
+                $reasons[] = 'Variant is referenced by stock adjustments.';
+            }
+            if (TransferItem::query()->where('product_variant_id', $variantId)->exists()) {
+                $reasons[] = 'Variant is referenced by transfers.';
+            }
+            if (PurchaseOrderItem::query()->where('product_variant_id', $variantId)->exists()) {
+                $reasons[] = 'Variant is referenced by purchase orders.';
+            }
+            if (PriceHistory::query()->where('product_variant_id', $variantId)->exists()) {
+                $reasons[] = 'Variant has price history.';
+            }
+
+            if (!empty($reasons)) {
+                $blocked[] = [
+                    'variant_id' => $variantId,
+                    'sku' => (string) ($variant->sku ?? ''),
+                    'reasons' => $reasons,
+                ];
+                continue;
+            }
+
+            $purgeableVariantIds[] = $variantId;
+        }
+
+        if (!empty($blocked)) {
+            return response()->json([
+                'message' => 'Cannot delete product. One or more variants are not purgeable.',
+                'blocked_variants' => $blocked,
+            ], 422);
+        }
+
+        if (!empty($purgeableVariantIds)) {
+            $product->variants()->whereIn('id', $purgeableVariantIds)->delete();
         }
 
         $product->delete();
