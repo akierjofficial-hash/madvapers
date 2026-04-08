@@ -389,6 +389,22 @@ export function SalesPage() {
     authStorage.setLastBranchId(first.id);
   }, [canBranchView, branchId, branchesQuery.data, user?.branch_id]);
 
+  // For roles without BRANCH_VIEW (cashier), force assigned branch and ignore stale URL/storage branch ids.
+  useEffect(() => {
+    if (canBranchView) return;
+    const assigned = user?.branch_id ?? '';
+
+    if (branchId !== assigned) {
+      setBranchId(assigned);
+    }
+    if (createBranchId !== assigned) {
+      setCreateBranchId(assigned);
+    }
+    if (typeof assigned === 'number' && Number.isFinite(assigned) && assigned > 0) {
+      authStorage.setLastBranchId(assigned);
+    }
+  }, [canBranchView, user?.branch_id, branchId, createBranchId]);
+
   useEffect(() => {
     if (branchId === '') return;
     const next = new URLSearchParams();
@@ -1580,7 +1596,10 @@ export function SalesPage() {
               {cashierCatalogQuery.isLoading ? (
                 <Alert severity="info">Loading product catalog...</Alert>
               ) : cashierCatalogQuery.isError ? (
-                <Alert severity="error">Failed to load product catalog.</Alert>
+                <Alert severity="error">
+                  {String((cashierCatalogQuery.error as any)?.response?.data?.message ?? '').trim() ||
+                    'Failed to load product catalog.'}
+                </Alert>
               ) : filteredCashierCatalog.length === 0 ? (
                 <EmptyStateNotice
                   severity="warning"
