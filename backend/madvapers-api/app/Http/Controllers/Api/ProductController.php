@@ -103,7 +103,13 @@ class ProductController extends Controller
             $q->where('product_type', $this->normalizeProductType((string) $request->input('product_type')));
         }
 
-        return $q->paginate(20);
+        $perPage = (int) $request->input('per_page', 20);
+        if ($perPage <= 0) {
+            $perPage = 20;
+        }
+        $perPage = min($perPage, 500);
+
+        return $q->paginate($perPage);
     }
 
     public function store(Request $request)
