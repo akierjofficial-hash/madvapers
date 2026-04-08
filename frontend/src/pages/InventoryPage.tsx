@@ -31,6 +31,7 @@ import {
   useInventoryQuery,
   useQuickPostAdjustmentMutation,
   useCreateAdjustmentMutation, // NEW
+  useUpdateVariantMutation,
 } from '../api/queries';
 import { authStorage } from '../auth/authStorage';
 import { BranchSelect } from '../components/BranchSelect';
@@ -113,12 +114,14 @@ export function InventoryPage() {
   const branchesQuery = useBranchesQuery(canBranchView);
   const quickPostAdj = useQuickPostAdjustmentMutation();
   const createAdj = useCreateAdjustmentMutation();
+  const updateVariantMut = useUpdateVariantMutation();
   const canCreateAdjustment = can('ADJUSTMENT_CREATE');
   const canApproveAdjustment = can('ADJUSTMENT_APPROVE');
   const canPostAdjustment = can('ADJUSTMENT_POST');
   const canQuickPostStock = canCreateAdjustment && canApproveAdjustment && canPostAdjustment;
   const canSaveDraftStock = canCreateAdjustment;
   const canAdjustStock = canSaveDraftStock || canQuickPostStock;
+  const canEditWholesaleCost = can('VARIANT_UPDATE');
   const canViewLedger = can('LEDGER_VIEW');
 
   const [branchId, setBranchId] = useState<number | ''>(() => {
@@ -144,6 +147,8 @@ export function InventoryPage() {
   const [stockQty, setStockQty] = useState<string>('1');
   const [stockUnitCost, setStockUnitCost] = useState<string>('');
   const [stockNotes, setStockNotes] = useState<string>('');
+  const [editWholesaleOpen, setEditWholesaleOpen] = useState(false);
+  const [editWholesaleValue, setEditWholesaleValue] = useState<string>('');
 
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>(() => ({
     open: false,
@@ -279,6 +284,58 @@ export function InventoryPage() {
   };
 
   const closeStock = () => setStockOpen(false);
+
+  const openEditWholesale = () => {
+    if (!selected) return;
+    if (!canEditWholesaleCost) {
+      setSnack({ open: true, message: 'Not authorized to edit wholesale cost.', severity: 'error' });
+      return;
+    }
+    setEditWholesaleValue(String(Number(selected.default_cost ?? 0)));
+    setEditWholesaleOpen(true);
+  };
+
+  const closeEditWholesale = () => setEditWholesaleOpen(false);
+
+  const submitEditWholesale = async () => {
+    if (!selected) return;
+    if (!canEditWholesaleCost) {
+      setSnack({ open: true, message: 'Not authorized to edit wholesale cost.', severity: 'error' });
+      return;
+    }
+
+    const parsed = Number(editWholesaleValue);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setSnack({ open: true, message: 'Wholesale cost must be a valid number (>= 0).', severity: 'error' });
+      return;
+    }
+
+    try {
+      await updateVariantMut.mutateAsync({
+        id: selected.product_variant_id,
+        input: { default_cost: parsed },
+      });
+
+      setSelected((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          default_cost: parsed,
+          stock_value: Number(prev.qty ?? 0) * parsed,
+        };
+      });
+
+      setSnack({
+        open: true,
+        message: 'Wholesale cost updated. This now auto-fills in Purchase Orders.',
+        severity: 'success',
+      });
+      setEditWholesaleOpen(false);
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || 'Failed to update wholesale cost.';
+      setSnack({ open: true, message: msg, severity: 'error' });
+    }
+  };
 
   const validateStockInputs = () => {
     const qty = Number(stockQty);
@@ -422,7 +479,7 @@ export function InventoryPage() {
     focusSearchInput();
   };
 
-  const busy = quickPostAdj.isPending || createAdj.isPending;
+  const busy = quickPostAdj.isPending || createAdj.isPending || updateVariantMut.isPending;
   const branchLabel =
     user?.branch?.name ??
     (typeof branchId === 'number' ? `Branch #${branchId}` : 'No branch assigned');
@@ -727,6 +784,11 @@ export function InventoryPage() {
                     Add Stock
                   </Button>
                 )}
+                {canEditWholesaleCost && (
+                  <Button variant="outlined" onClick={openEditWholesale} disabled={busy}>
+                    Edit Wholesale Cost
+                  </Button>
+                )}
                 {canViewLedger && (
                   <Button variant="outlined" onClick={goToLedgerForSelected}>
                     View Ledger
@@ -802,6 +864,33 @@ export function InventoryPage() {
               Post Now
             </Button>
           )}
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={editWholesaleOpen} onClose={closeEditWholesale} fullWidth maxWidth="xs">
+        <DialogTitle>Edit Wholesale Cost</DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <Stack spacing={2}>
+            <Alert severity="info">
+              This sets the variant&apos;s base wholesale cost and will auto-fill this value in Purchase Orders.
+            </Alert>
+            <TextField
+              label="Wholesale Cost *"
+              type="number"
+              value={editWholesaleValue}
+              onChange={(e) => setEditWholesaleValue(e.target.value)}
+              inputProps={{ step: '0.01', min: '0' }}
+            />
+            {updateVariantMut.isPending && <Alert severity="info">Updating wholesale cost...</Alert>}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeEditWholesale} disabled={updateVariantMut.isPending}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={submitEditWholesale} disabled={updateVariantMut.isPending}>
+            Save
+          </Button>
         </DialogActions>
       </Dialog>
 

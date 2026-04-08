@@ -404,6 +404,12 @@ export function PurchaseOrdersPage() {
   const pickVariant = (v: any) => {
     setPickedVariant(v);
     setVariantSearch(v?.sku ?? v?.barcode ?? String(v?.id ?? ''));
+    const defaultWholesale = Number(v?.default_cost);
+    if (Number.isFinite(defaultWholesale) && defaultWholesale >= 0) {
+      setItemUnitCost(defaultWholesale.toFixed(2));
+    } else {
+      setItemUnitCost('0');
+    }
   };
 
   const addItem = () => {
