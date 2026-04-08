@@ -121,7 +121,7 @@ export function InventoryPage() {
   const canQuickPostStock = canCreateAdjustment && canApproveAdjustment && canPostAdjustment;
   const canSaveDraftStock = canCreateAdjustment;
   const canAdjustStock = canSaveDraftStock || canQuickPostStock;
-  const canEditWholesaleCost = can('VARIANT_UPDATE');
+  const canEditWholesaleCost = can('PRODUCT_UPDATE');
   const canViewLedger = can('LEDGER_VIEW');
 
   const [branchId, setBranchId] = useState<number | ''>(() => {
