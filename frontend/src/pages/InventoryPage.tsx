@@ -144,10 +144,9 @@ export function InventoryPage() {
   // Drawer + stock dialog
   const [selected, setSelected] = useState<SelectedItem | null>(null);
   const [stockOpen, setStockOpen] = useState(false);
-  const [stockQty, setStockQty] = useState<string>('1');
+  const [stockQty, setStockQty] = useState<string>('');
   const [stockUnitCost, setStockUnitCost] = useState<string>('');
   const [stockNotes, setStockNotes] = useState<string>('');
-  const [editWholesaleOpen, setEditWholesaleOpen] = useState(false);
   const [editWholesaleValue, setEditWholesaleValue] = useState<string>('');
 
   const [snack, setSnack] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>(() => ({
@@ -272,30 +271,20 @@ export function InventoryPage() {
   const closeDetails = () => setSelected(null);
 
   const openStock = () => {
-    if (!canAdjustStock) {
-      setSnack({ open: true, message: 'Not authorized to adjust stock.', severity: 'error' });
+    if (!selected) return;
+    if (!canAdjustStock && !canEditWholesaleCost) {
+      setSnack({ open: true, message: 'Not authorized to edit this item.', severity: 'error' });
       return;
     }
 
-    setStockQty('1');
-    setStockUnitCost('');
+    setStockQty('');
+    setStockUnitCost(String(Number(selected.default_cost ?? 0)));
     setStockNotes('');
+    setEditWholesaleValue(String(Number(selected.default_cost ?? 0)));
     setStockOpen(true);
   };
 
   const closeStock = () => setStockOpen(false);
-
-  const openEditWholesale = () => {
-    if (!selected) return;
-    if (!canEditWholesaleCost) {
-      setSnack({ open: true, message: 'Not authorized to edit wholesale cost.', severity: 'error' });
-      return;
-    }
-    setEditWholesaleValue(String(Number(selected.default_cost ?? 0)));
-    setEditWholesaleOpen(true);
-  };
-
-  const closeEditWholesale = () => setEditWholesaleOpen(false);
 
   const submitEditWholesale = async () => {
     if (!selected) return;
@@ -304,7 +293,13 @@ export function InventoryPage() {
       return;
     }
 
-    const parsed = Number(editWholesaleValue);
+    const raw = editWholesaleValue.trim();
+    if (!raw) {
+      setSnack({ open: true, message: 'Enter a wholesale cost value first.', severity: 'error' });
+      return;
+    }
+
+    const parsed = Number(raw);
     if (!Number.isFinite(parsed) || parsed < 0) {
       setSnack({ open: true, message: 'Wholesale cost must be a valid number (>= 0).', severity: 'error' });
       return;
@@ -330,7 +325,7 @@ export function InventoryPage() {
         message: 'Wholesale cost updated. This now auto-fills in Purchase Orders.',
         severity: 'success',
       });
-      setEditWholesaleOpen(false);
+      setStockOpen(false);
     } catch (e: any) {
       const msg = e?.response?.data?.message || 'Failed to update wholesale cost.';
       setSnack({ open: true, message: msg, severity: 'error' });
@@ -779,14 +774,9 @@ export function InventoryPage() {
               </Box>
 
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                {canAdjustStock && (
+                {(canAdjustStock || canEditWholesaleCost) && (
                   <Button variant="contained" onClick={openStock} disabled={busy}>
-                    Add Stock
-                  </Button>
-                )}
-                {canEditWholesaleCost && (
-                  <Button variant="outlined" onClick={openEditWholesale} disabled={busy}>
-                    Edit Wholesale Cost
+                    Edit
                   </Button>
                 )}
                 {canViewLedger && (
@@ -804,46 +794,67 @@ export function InventoryPage() {
         </Box>
       </Drawer>
 
-      {/* Add Stock Dialog */}
+      {/* Edit Dialog */}
       <Dialog open={stockOpen} onClose={closeStock} fullWidth maxWidth="sm">
-        <DialogTitle>Add Stock</DialogTitle>
+        <DialogTitle>Edit</DialogTitle>
         <DialogContent sx={{ pt: 2 }}>
           <Stack spacing={2}>
             <Alert severity="info">
               {canQuickPostStock && (
                 <>
-                  <b>Post</b> updates inventory + ledger immediately. <br />
+                  <b>Post Now</b> updates quantity via adjustment + ledger immediately. <br />
                 </>
               )}
               {canSaveDraftStock && (
                 <>
-                  <b>Save Draft</b> creates an adjustment you can review/approve/post later.
+                  <b>Save Draft</b> creates a quantity adjustment you can review/approve/post later.
+                </>
+              )}
+              {canEditWholesaleCost && (
+                <>
+                  <br />
+                  <b>Save Wholesale</b> updates wholesale cost only (no quantity adjustment required).
                 </>
               )}
               <br />
               Wholesale cost updates <b>weighted-average wholesale cost</b> across current stock. It will not always match
               the exact last wholesale cost entered.
-              {!canAdjustStock && <>You do not have stock adjustment permissions.</>}
+              {!canAdjustStock && <>You do not have quantity-adjustment permissions.</>}
             </Alert>
 
             <TextField
-              label="Qty delta (+/-)"
+              label="Qty delta (+/-) for adjustment"
               type="number"
               value={stockQty}
               onChange={(e) => setStockQty(e.target.value)}
+              disabled={!canAdjustStock}
             />
             <TextField
-              label="Wholesale cost for inbound qty (optional)"
+              label="Wholesale cost for qty adjustment (optional)"
               type="number"
               value={stockUnitCost}
               onChange={(e) => setStockUnitCost(e.target.value)}
               inputProps={{ step: '0.01', min: '0' }}
+              disabled={!canAdjustStock}
+            />
+            <TextField
+              label="Set Wholesale Cost (no qty needed)"
+              type="number"
+              value={editWholesaleValue}
+              onChange={(e) => setEditWholesaleValue(e.target.value)}
+              inputProps={{ step: '0.01', min: '0' }}
+              disabled={!canEditWholesaleCost}
             />
             <Typography variant="caption" color="text.secondary">
-              Tip: To directly set a fixed wholesale cost, edit the variant&apos;s wholesale cost. This field is used for
-              weighted average updates.
+              Tip: Use &quot;Set Wholesale Cost&quot; to directly update base wholesale cost. Use qty delta to create stock
+              adjustments.
             </Typography>
-            <TextField label="Notes (optional)" value={stockNotes} onChange={(e) => setStockNotes(e.target.value)} />
+            <TextField
+              label="Notes (optional)"
+              value={stockNotes}
+              onChange={(e) => setStockNotes(e.target.value)}
+              disabled={!canAdjustStock}
+            />
 
             {busy && <Alert severity="info">Working...</Alert>}
           </Stack>
@@ -852,6 +863,12 @@ export function InventoryPage() {
           <Button onClick={closeStock} disabled={busy}>
             Cancel
           </Button>
+
+          {canEditWholesaleCost && (
+            <Button variant="outlined" onClick={submitEditWholesale} disabled={busy}>
+              Save Wholesale
+            </Button>
+          )}
 
           {canSaveDraftStock && (
             <Button variant="outlined" onClick={handleSaveDraftStock} disabled={busy}>
@@ -864,33 +881,6 @@ export function InventoryPage() {
               Post Now
             </Button>
           )}
-        </DialogActions>
-      </Dialog>
-
-      <Dialog open={editWholesaleOpen} onClose={closeEditWholesale} fullWidth maxWidth="xs">
-        <DialogTitle>Edit Wholesale Cost</DialogTitle>
-        <DialogContent sx={{ pt: 2 }}>
-          <Stack spacing={2}>
-            <Alert severity="info">
-              This sets the variant&apos;s base wholesale cost and will auto-fill this value in Purchase Orders.
-            </Alert>
-            <TextField
-              label="Wholesale Cost *"
-              type="number"
-              value={editWholesaleValue}
-              onChange={(e) => setEditWholesaleValue(e.target.value)}
-              inputProps={{ step: '0.01', min: '0' }}
-            />
-            {updateVariantMut.isPending && <Alert severity="info">Updating wholesale cost...</Alert>}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={closeEditWholesale} disabled={updateVariantMut.isPending}>
-            Cancel
-          </Button>
-          <Button variant="contained" onClick={submitEditWholesale} disabled={updateVariantMut.isPending}>
-            Save
-          </Button>
         </DialogActions>
       </Dialog>
 
