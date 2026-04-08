@@ -145,7 +145,6 @@ export function InventoryPage() {
   const [selected, setSelected] = useState<SelectedItem | null>(null);
   const [stockOpen, setStockOpen] = useState(false);
   const [stockQty, setStockQty] = useState<string>('');
-  const [stockUnitCost, setStockUnitCost] = useState<string>('');
   const [stockNotes, setStockNotes] = useState<string>('');
   const [editWholesaleValue, setEditWholesaleValue] = useState<string>('');
 
@@ -278,7 +277,6 @@ export function InventoryPage() {
     }
 
     setStockQty('');
-    setStockUnitCost(String(Number(selected.default_cost ?? 0)));
     setStockNotes('');
     setEditWholesaleValue(String(Number(selected.default_cost ?? 0)));
     setStockOpen(true);
@@ -340,14 +338,7 @@ export function InventoryPage() {
       return { ok: false as const };
     }
 
-    const unitCost = stockUnitCost.trim() ? Number(stockUnitCost) : null;
-    if (unitCost !== null && (!Number.isFinite(unitCost) || unitCost < 0)) {
-      setSnack({ open: true, message: 'Wholesale cost must be a valid number (>= 0).', severity: 'error' });
-      playBeep('error');
-      return { ok: false as const };
-    }
-
-    return { ok: true as const, qty, unitCost };
+    return { ok: true as const, qty };
   };
 
   const afterStockAction = () => {
@@ -377,7 +368,7 @@ export function InventoryPage() {
           {
             product_variant_id: selected.product_variant_id,
             qty_delta: v.qty,
-            unit_cost: v.unitCost,
+            unit_cost: null,
             notes: null,
           },
         ],
@@ -415,7 +406,7 @@ export function InventoryPage() {
           {
             product_variant_id: selected.product_variant_id,
             qty_delta: v.qty,
-            unit_cost: v.unitCost,
+            unit_cost: null,
             notes: null,
           },
         ],
@@ -817,8 +808,7 @@ export function InventoryPage() {
                 </>
               )}
               <br />
-              Wholesale cost updates <b>weighted-average wholesale cost</b> across current stock. It will not always match
-              the exact last wholesale cost entered.
+              Qty actions change stock only. Use <b>Save Wholesale</b> to update base wholesale cost directly.
               {!canAdjustStock && <>You do not have quantity-adjustment permissions.</>}
             </Alert>
 
@@ -830,14 +820,6 @@ export function InventoryPage() {
               disabled={!canAdjustStock}
             />
             <TextField
-              label="Wholesale cost for qty adjustment (optional)"
-              type="number"
-              value={stockUnitCost}
-              onChange={(e) => setStockUnitCost(e.target.value)}
-              inputProps={{ step: '0.01', min: '0' }}
-              disabled={!canAdjustStock}
-            />
-            <TextField
               label="Set Wholesale Cost (no qty needed)"
               type="number"
               value={editWholesaleValue}
@@ -846,8 +828,7 @@ export function InventoryPage() {
               disabled={!canEditWholesaleCost}
             />
             <Typography variant="caption" color="text.secondary">
-              Tip: Use &quot;Set Wholesale Cost&quot; to directly update base wholesale cost. Use qty delta to create stock
-              adjustments.
+              Tip: Use qty delta for stock adjustments. Use &quot;Set Wholesale Cost&quot; for cost-only edits.
             </Typography>
             <TextField
               label="Notes (optional)"

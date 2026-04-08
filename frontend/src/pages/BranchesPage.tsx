@@ -8,6 +8,7 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
+  Pagination,
   Paper,
   Snackbar,
   Stack,
@@ -21,7 +22,7 @@ import {
   useMediaQuery,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   useBranchesQueryWithParams,
   useCreateBranchMutation,
@@ -60,6 +61,7 @@ export function BranchesPage() {
   const updateMut = useUpdateBranchMutation();
 
   const [open, setOpen] = useState(false);
+  const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<Branch | null>(null);
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
@@ -76,8 +78,18 @@ export function BranchesPage() {
   const rows = useMemo(() => {
     return [...(branchesQuery.data ?? [])].sort((a, b) => a.code.localeCompare(b.code));
   }, [branchesQuery.data]);
+  const pageSize = isCompact ? 10 : 20;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const pagedRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return rows.slice(start, start + pageSize);
+  }, [page, pageSize, rows]);
 
   const actionsBusy = createMut.isPending || updateMut.isPending;
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const resetForm = () => {
     setCode('');
@@ -208,7 +220,7 @@ export function BranchesPage() {
         <Alert severity="warning">No branches found.</Alert>
       ) : isCompact ? (
         <Stack spacing={1.1}>
-          {rows.map((row) => (
+          {pagedRows.map((row) => (
             <Paper
               key={row.id}
               variant="outlined"
@@ -293,7 +305,7 @@ export function BranchesPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {rows.map((row) => (
+              {pagedRows.map((row) => (
                 <TableRow key={row.id} hover sx={{ opacity: row.is_active ? 1 : 0.6 }}>
                   <TableCell>{row.id}</TableCell>
                   <TableCell>{row.code}</TableCell>
@@ -335,6 +347,12 @@ export function BranchesPage() {
             </TableBody>
           </Table>
         </Paper>
+      )}
+
+      {rows.length > 0 && totalPages > 1 && (
+        <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+          <Pagination count={totalPages} page={page} onChange={(_, next) => setPage(next)} showFirstButton showLastButton />
+        </Box>
       )}
 
       <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">

@@ -6,6 +6,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Pagination,
   Paper,
   Snackbar,
   Stack,
@@ -19,7 +20,7 @@ import {
   useMediaQuery,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   useCreateSupplierMutation,
   useDeleteSupplierMutation,
@@ -42,6 +43,7 @@ export function SuppliersPage() {
   const deleteMut = useDeleteSupplierMutation();
 
   const [open, setOpen] = useState(false);
+  const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<Supplier | null>(null);
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<Supplier | null>(null);
   const [name, setName] = useState('');
@@ -60,6 +62,16 @@ export function SuppliersPage() {
   const sorted = useMemo(() => {
     return [...rows].sort((a, b) => a.name.localeCompare(b.name));
   }, [rows]);
+  const pageSize = isCompact ? 12 : 20;
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const pagedRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return sorted.slice(start, start + pageSize);
+  }, [page, pageSize, sorted]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const openNew = () => {
     if (!canManage) {
@@ -165,7 +177,7 @@ export function SuppliersPage() {
         <Alert severity="warning">No suppliers yet. Create one.</Alert>
       ) : isCompact ? (
         <Stack spacing={1.1}>
-          {sorted.map((s) => (
+          {pagedRows.map((s) => (
             <Paper key={s.id} variant="outlined" sx={{ p: 1.2, borderRadius: 2 }}>
               <Stack spacing={0.75}>
                 <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
@@ -216,7 +228,7 @@ export function SuppliersPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {sorted.map((s) => (
+              {pagedRows.map((s) => (
                 <TableRow key={s.id} hover>
                   <TableCell>{s.id}</TableCell>
                   <TableCell>{s.name}</TableCell>
@@ -248,6 +260,12 @@ export function SuppliersPage() {
             </TableBody>
           </Table>
         </Paper>
+      )}
+
+      {sorted.length > 0 && totalPages > 1 && (
+        <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+          <Pagination count={totalPages} page={page} onChange={(_, next) => setPage(next)} showFirstButton showLastButton />
+        </Box>
       )}
 
       <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">

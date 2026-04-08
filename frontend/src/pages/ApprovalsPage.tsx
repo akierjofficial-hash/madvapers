@@ -7,6 +7,7 @@ import {
   InputLabel,
   LinearProgress,
   MenuItem,
+  Pagination,
   Paper,
   Select,
   Snackbar,
@@ -14,8 +15,9 @@ import {
   Tab,
   Tabs,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
-import { alpha } from '@mui/material/styles';
+import { alpha, useTheme } from '@mui/material/styles';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -159,6 +161,8 @@ function QueueCountCard({
 }
 
 export function ApprovalsPage() {
+  const theme = useTheme();
+  const isCompact = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user, can } = useAuth();
@@ -182,6 +186,7 @@ export function ApprovalsPage() {
     return fromStorage ?? (user?.branch_id ?? '');
   });
   const [tab, setTab] = useState<ApprovalTabKey>('staff_attendance_requests');
+  const [queuePage, setQueuePage] = useState(1);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [snack, setSnack] = useState<{
     open: boolean;
@@ -258,6 +263,22 @@ export function ApprovalsPage() {
     queueCounts.transfers +
     queueCounts.purchase_orders +
     queueCounts.void_requests;
+  const queuePageSize = isCompact ? 6 : 10;
+  const activeQueueCount = useMemo(() => {
+    if (tab === 'staff_attendance_requests') return queueStaffAttendance.length;
+    if (tab === 'adjustments') return queueAdjustments.length;
+    if (tab === 'transfers') return queueTransfers.length;
+    if (tab === 'purchase_orders') return queuePurchaseOrders.length;
+    return queueVoidRequests.length;
+  }, [
+    tab,
+    queueAdjustments.length,
+    queuePurchaseOrders.length,
+    queueStaffAttendance.length,
+    queueTransfers.length,
+    queueVoidRequests.length,
+  ]);
+  const queueTotalPages = Math.max(1, Math.ceil(activeQueueCount / queuePageSize));
   const branchAlertCountMap = useMemo(() => {
     const counts: Record<number, number> = {};
     const queue = branchDotQueueData?.approval_queue;
@@ -291,6 +312,19 @@ export function ApprovalsPage() {
   }, [branchDotQueueData?.approval_queue]);
   const hasBranchAlertDots = Object.keys(branchAlertCountMap).length > 0;
   const totalBranchAlertCount = Object.values(branchAlertCountMap).reduce((sum, count) => sum + Number(count ?? 0), 0);
+
+  useEffect(() => {
+    setQueuePage(1);
+  }, [tab, branchId]);
+
+  useEffect(() => {
+    if (queuePage > queueTotalPages) setQueuePage(queueTotalPages);
+  }, [queuePage, queueTotalPages]);
+
+  const sliceQueuePage = <T,>(rows: T[]) => {
+    const start = (queuePage - 1) * queuePageSize;
+    return rows.slice(start, start + queuePageSize);
+  };
 
   const showSnack = (message: string, severity: 'success' | 'error' | 'info') => {
     setSnack({ open: true, message, severity });
@@ -569,7 +603,7 @@ export function ApprovalsPage() {
 
       return (
         <Stack spacing={1}>
-          {queueStaffAttendance.map((row) => (
+          {sliceQueuePage(queueStaffAttendance).map((row) => (
             <Paper key={row.id} variant="outlined" sx={{ p: 1.2 }}>
               <Stack spacing={0.8}>
                 <Stack direction="row" justifyContent="space-between" spacing={1}>
@@ -658,7 +692,7 @@ export function ApprovalsPage() {
 
       return (
         <Stack spacing={1}>
-          {queueAdjustments.map((row) => (
+          {sliceQueuePage(queueAdjustments).map((row) => (
             <Paper key={row.id} variant="outlined" sx={{ p: 1.2 }}>
               <Stack spacing={0.8}>
                 <Stack direction="row" justifyContent="space-between" spacing={1}>
@@ -705,7 +739,7 @@ export function ApprovalsPage() {
 
       return (
         <Stack spacing={1}>
-          {queueTransfers.map((row) => (
+          {sliceQueuePage(queueTransfers).map((row) => (
             <Paper key={row.id} variant="outlined" sx={{ p: 1.2 }}>
               <Stack spacing={0.8}>
                 <Stack direction="row" justifyContent="space-between" spacing={1}>
@@ -752,7 +786,7 @@ export function ApprovalsPage() {
 
       return (
         <Stack spacing={1}>
-          {queuePurchaseOrders.map((row) => (
+          {sliceQueuePage(queuePurchaseOrders).map((row) => (
             <Paper key={row.id} variant="outlined" sx={{ p: 1.2 }}>
               <Stack spacing={0.8}>
                 <Stack direction="row" justifyContent="space-between" spacing={1}>
@@ -796,7 +830,7 @@ export function ApprovalsPage() {
 
     return (
       <Stack spacing={1}>
-        {queueVoidRequests.map((row) => (
+        {sliceQueuePage(queueVoidRequests).map((row) => (
           <Paper key={row.id} variant="outlined" sx={{ p: 1.2 }}>
             <Stack spacing={0.8}>
               <Stack direction="row" justifyContent="space-between" spacing={1}>
@@ -1016,6 +1050,17 @@ export function ApprovalsPage() {
           ))}
         </Tabs>
         <Box sx={{ p: 1.25 }}>{renderQueueCards()}</Box>
+        {activeQueueCount > 0 && queueTotalPages > 1 && (
+          <Box sx={{ px: 1.25, pb: 1.25, display: 'flex', justifyContent: 'center' }}>
+            <Pagination
+              count={queueTotalPages}
+              page={queuePage}
+              onChange={(_, next) => setQueuePage(next)}
+              showFirstButton
+              showLastButton
+            />
+          </Box>
+        )}
       </Paper>
 
       <Snackbar
