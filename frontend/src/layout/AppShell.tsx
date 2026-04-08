@@ -43,7 +43,6 @@ import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import GavelOutlinedIcon from '@mui/icons-material/GavelOutlined';
 import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
-import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
@@ -1128,17 +1127,18 @@ export function AppShell() {
                 </Tooltip>
               </>
             )}
-            {!isCashierRole && (
-              <Tooltip title="Settings">
+            <Tooltip title={isLoggingOut ? 'Logging out...' : 'Logout'}>
+              <span>
                 <IconButton
                   color="inherit"
-                  onClick={() => setMobileMenuOpen(true)}
+                  onClick={() => void handleLogout()}
+                  disabled={isLoggingOut}
                   sx={{ display: { xs: 'inline-flex', sm: 'none' } }}
                 >
-                  <SettingsRoundedIcon fontSize="small" />
+                  <LogoutRoundedIcon fontSize="small" />
                 </IconButton>
-              </Tooltip>
-            )}
+              </span>
+            </Tooltip>
             {canOfferInstall && (
               <Button
                 color="inherit"
