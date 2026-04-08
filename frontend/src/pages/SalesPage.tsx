@@ -421,6 +421,7 @@ export function SalesPage() {
   const variantLookup = useVariantsQuery(
     {
       page: 1,
+      per_page: 500,
       search: variantSearchDebounced || undefined,
       branch_id: typeof createBranchId === 'number' ? createBranchId : undefined,
     },
@@ -430,6 +431,7 @@ export function SalesPage() {
   const cashierCatalogQuery = useVariantsQuery(
     {
       page: 1,
+      per_page: 500,
       search: variantSearchDebounced || undefined,
       branch_id: typeof createBranchId === 'number' ? createBranchId : undefined,
     },

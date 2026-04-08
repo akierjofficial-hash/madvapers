@@ -203,6 +203,7 @@ export function TransfersPage() {
   const variantLookupQuery = useVariantsQuery(
     {
       page: 1,
+      per_page: 500,
       search: variantSearchDebounced || undefined,
       branch_id: typeof createFrom === 'number' ? createFrom : undefined,
     },
@@ -1035,7 +1036,7 @@ export function TransfersPage() {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {variantOptions.slice(0, 10).map((v: any) => {
+                    {variantOptions.map((v: any) => {
                       const id = Number(v?.id);
                       const sku = v?.sku ?? '-';
                       const prod = v?.product?.name ?? '-';

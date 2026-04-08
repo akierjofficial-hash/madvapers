@@ -15,6 +15,7 @@ export type ProductType = string;
 
 export type ProductsQuery = {
   page?: number;
+  per_page?: number;
   search?: string;
   brand_id?: number;
   product_type?: ProductType;

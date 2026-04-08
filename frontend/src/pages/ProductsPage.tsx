@@ -170,7 +170,7 @@ export function ProductsPage() {
     },
     canView
   );
-  const brandsQuery = useBrandsQuery({ page: 1 }, canView);
+  const brandsQuery = useBrandsQuery({ page: 1, per_page: 500 }, canView);
   const createMut = useCreateProductMutation();
   const createBrandMut = useCreateBrandMutation();
   const updateMut = useUpdateProductMutation();

@@ -30,6 +30,7 @@ class ProductVariantController extends Controller
             'search' => ['nullable', 'string', 'max:120'],
             'code' => ['nullable', 'string', 'max:120'],
             'include_inactive' => ['nullable', 'boolean'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:500'],
         ]);
 
         $branchId = $request->filled('branch_id') ? (int) $request->input('branch_id') : null;
@@ -97,7 +98,13 @@ class ProductVariantController extends Controller
                 });
         }
 
-        return $q->paginate(20);
+        $perPage = (int) $request->input('per_page', 20);
+        if ($perPage <= 0) {
+            $perPage = 20;
+        }
+        $perPage = min($perPage, 500);
+
+        return $q->paginate($perPage);
     }
 
     public function store(Request $request)

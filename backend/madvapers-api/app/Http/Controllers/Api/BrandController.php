@@ -18,7 +18,13 @@ class BrandController extends Controller
             $q->where('name', $like, '%' . trim((string) $request->input('search')) . '%');
         }
 
-        return $q->paginate(50);
+        $perPage = (int) $request->input('per_page', 50);
+        if ($perPage <= 0) {
+            $perPage = 50;
+        }
+        $perPage = min($perPage, 500);
+
+        return $q->paginate($perPage);
     }
 
     public function store(Request $request)

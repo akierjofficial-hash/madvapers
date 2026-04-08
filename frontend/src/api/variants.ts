@@ -4,6 +4,7 @@ import type { ProductVariant } from '../types/models';
 
 export type VariantsQuery = {
   page?: number;
+  per_page?: number;
   search?: string;
   code?: string;
   product_id?: number;

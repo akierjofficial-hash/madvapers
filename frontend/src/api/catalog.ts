@@ -4,6 +4,7 @@ import type { Brand } from '../types/models';
 
 export type CatalogQuery = {
   page?: number;
+  per_page?: number;
   search?: string;
 };
 

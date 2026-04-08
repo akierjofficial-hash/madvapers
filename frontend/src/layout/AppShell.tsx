@@ -43,6 +43,7 @@ import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import GavelOutlinedIcon from '@mui/icons-material/GavelOutlined';
 import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
+import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
@@ -753,6 +754,15 @@ export function AppShell() {
     const hit = availableNav.find((item) => isRouteActive(item.to));
     return hit?.label ?? (isCashierRole ? 'Sales' : 'Dashboard');
   }, [availableNav, isCashierRole, location.pathname]);
+  const isDashboardRoute = useMemo(() => isRouteActive('/dashboard'), [location.pathname]);
+  const firstName = useMemo(() => {
+    const raw = String(user?.name ?? '').trim();
+    if (!raw) return 'Admin';
+    return raw.split(/\s+/)[0] ?? 'Admin';
+  }, [user?.name]);
+  const headerSubtitle = isDashboardRoute
+    ? `Welcome back, ${firstName}`
+    : 'Fast retail operations with keyboard and scanner-first flow';
   const shouldShowEnableAlerts = isAdminRole && (!isPushSubscriptionActive || notificationPermission !== 'granted');
 
   const mobileQuickNav = useMemo(() => {
@@ -1044,28 +1054,43 @@ export function AppShell() {
     </Box>
   );
   const showDesktopDrawer = isDesktop && !isCashierRole;
+  const constrainMobileShell = !showDesktopDrawer;
 
   return (
-    <Box className="mobile-shell-root" sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
+    <Box
+      className="mobile-shell-root"
+      sx={{
+        minHeight: '100vh',
+        bgcolor: 'background.default',
+        width: '100%',
+      }}
+    >
       <AppBar
         className="mobile-shell-topbar"
         position="fixed"
         sx={{
           ml: showDesktopDrawer ? { lg: `${drawerWidth}px` } : undefined,
           width: showDesktopDrawer ? { lg: `calc(100% - ${drawerWidth}px)` } : undefined,
+          left: constrainMobileShell ? { xs: '50%', md: 0 } : undefined,
+          transform: constrainMobileShell ? { xs: 'translateX(-50%)', md: 'none' } : undefined,
+          maxWidth: constrainMobileShell ? { xs: 520, md: 'none' } : undefined,
           backgroundColor: alpha('#ffffff', 0.9),
+          borderRadius: 0,
         }}
       >
         <Toolbar sx={{ minHeight: { xs: 64, md: 68 }, px: { xs: 1, md: 2 } }}>
           <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-            <Typography variant="h6" noWrap>
+            <Typography variant="h6" noWrap sx={{ fontSize: { xs: '0.96rem', sm: '1.25rem' }, fontWeight: 700 }}>
               {activeLabel}
             </Typography>
             <Typography
               variant="caption"
-              sx={{ color: 'text.secondary', display: { xs: 'none', sm: 'block' } }}
+              sx={{
+                color: 'text.secondary',
+                display: { xs: isDashboardRoute ? 'block' : 'none', sm: 'block' },
+              }}
             >
-              Fast retail operations with keyboard and scanner-first flow
+              {headerSubtitle}
             </Typography>
           </Box>
 
@@ -1103,6 +1128,17 @@ export function AppShell() {
                 </Tooltip>
               </>
             )}
+            {!isCashierRole && (
+              <Tooltip title="Settings">
+                <IconButton
+                  color="inherit"
+                  onClick={() => setMobileMenuOpen(true)}
+                  sx={{ display: { xs: 'inline-flex', sm: 'none' } }}
+                >
+                  <SettingsRoundedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
             {canOfferInstall && (
               <Button
                 color="inherit"
@@ -1116,7 +1152,17 @@ export function AppShell() {
               </Button>
             )}
             <Tooltip title={user?.name ?? ''}>
-              <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main', fontSize: 13 }}>{initials}</Avatar>
+              <Avatar
+                sx={{
+                  width: 32,
+                  height: 32,
+                  bgcolor: { xs: '#1f2f4e', sm: 'primary.main' },
+                  color: { xs: '#a9c2ff', sm: '#ffffff' },
+                  fontSize: 13,
+                }}
+              >
+                {initials}
+              </Avatar>
             </Tooltip>
             <Button
               color="inherit"
@@ -1134,7 +1180,7 @@ export function AppShell() {
                   color="inherit"
                   onClick={() => void handleLogout()}
                   disabled={isLoggingOut}
-                  sx={{ display: { xs: 'inline-flex', sm: 'none' } }}
+                  sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
                 >
                   <LogoutRoundedIcon fontSize="small" />
                 </IconButton>
@@ -1172,7 +1218,7 @@ export function AppShell() {
           pb: { xs: 'calc(88px + env(safe-area-inset-bottom))', md: 3 },
         }}
       >
-        <Box sx={{ maxWidth: 1680, mx: 'auto' }}>
+        <Box sx={{ maxWidth: { xs: 520, md: 1680 }, width: '100%', mx: 'auto' }}>
           <Outlet />
         </Box>
       </Box>
@@ -1181,18 +1227,20 @@ export function AppShell() {
         <Box
           sx={{
             position: 'fixed',
-            left: 0,
-            right: 0,
+            left: isPhone ? '50%' : 0,
+            right: isPhone ? 'auto' : 0,
             bottom: 0,
             zIndex: (t) => t.zIndex.appBar,
+            width: isPhone ? 'min(100%, 520px)' : '100%',
+            transform: isPhone ? 'translateX(-50%)' : 'none',
             pb: 'env(safe-area-inset-bottom)',
-            px: isPhone ? 0.6 : 1,
+            px: isPhone ? 0 : 1,
           }}
         >
           <Box
             className="mobile-shell-bottom-nav"
             sx={{
-              borderRadius: '14px 14px 0 0',
+              borderRadius: 0,
               border: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
               borderBottom: 0,
               bgcolor: alpha('#ffffff', 0.96),

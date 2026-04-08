@@ -213,6 +213,7 @@ export function AdjustmentsPage() {
   const variantLookup = useVariantsQuery(
     {
       page: 1,
+      per_page: 500,
       search: variantSearchDebounced || undefined,
       branch_id: typeof createBranchId === 'number' ? createBranchId : undefined,
     },
@@ -585,13 +586,20 @@ export function AdjustmentsPage() {
   }
 
   return (
-    <Stack spacing={2}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between">
-        <Typography variant="h5">Stock Adjustments</Typography>
-        <Button variant="contained" onClick={openCreateDialog} disabled={!canCreatePerm}>
-          New Draft
-        </Button>
-      </Stack>
+    <Stack spacing={2} className="mobile-premium-page">
+      <Paper variant="outlined" sx={{ p: 1.35 }}>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1.2}>
+          <Box>
+            <Typography variant="h5">Adjustments</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Stock adjustment history and approval flow.
+            </Typography>
+          </Box>
+          <Button variant="contained" onClick={openCreateDialog} disabled={!canCreatePerm}>
+            New Adjustment
+          </Button>
+        </Stack>
+      </Paper>
 
       {canBranchView && branchesQuery.isError && <Alert severity="error">Failed to load branches.</Alert>}
 
@@ -678,6 +686,7 @@ export function AdjustmentsPage() {
             <Paper
               key={r.id}
               variant="outlined"
+              className="mobile-adjustment-item"
               role="button"
               tabIndex={0}
               onClick={() => openAdjustmentRow(r)}
@@ -688,7 +697,6 @@ export function AdjustmentsPage() {
                 }
               }}
               sx={{
-                p: 1.2,
                 cursor: 'pointer',
                 bgcolor: r.isNew ? 'rgba(211, 47, 47, 0.06)' : undefined,
               }}
@@ -710,7 +718,15 @@ export function AdjustmentsPage() {
                   Reason: {r.reason} | Ref: {r.ref}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Items: {r.itemsCount} | Qty Delta: {qty(r.totalDelta)} | By: {r.createdBy}
+                  Items: {r.itemsCount} | Qty Delta:{' '}
+                  <Box
+                    component="span"
+                    className={r.totalDelta >= 0 ? 'mobile-adjustment-delta-positive' : 'mobile-adjustment-delta-negative'}
+                  >
+                    {r.totalDelta >= 0 ? '+' : ''}
+                    {qty(r.totalDelta)}
+                  </Box>{' '}
+                  | By: {r.createdBy}
                 </Typography>
               </Stack>
             </Paper>
@@ -767,7 +783,16 @@ export function AdjustmentsPage() {
                   <TableCell>{r.reason}</TableCell>
                   <TableCell>{r.ref}</TableCell>
                   <TableCell align="right">{r.itemsCount}</TableCell>
-                  <TableCell align="right">{qty(r.totalDelta)}</TableCell>
+                  <TableCell
+                    align="right"
+                    sx={{
+                      color: r.totalDelta >= 0 ? 'success.main' : 'error.main',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {r.totalDelta >= 0 ? '+' : ''}
+                    {qty(r.totalDelta)}
+                  </TableCell>
                   <TableCell>{r.createdBy}</TableCell>
                 </TableRow>
               ))}
@@ -864,7 +889,7 @@ export function AdjustmentsPage() {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {variantOptions.slice(0, 10).map((v: any) => {
+                    {variantOptions.map((v: any) => {
                       const id = Number(v?.id);
                       const onHand = getVariantOnHand(v);
                       return (

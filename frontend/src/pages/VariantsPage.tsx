@@ -173,7 +173,10 @@ export function VariantsPage() {
     },
     true
   );
-  const productsQuery = useProductsQuery({ page: 1, include_inactive: false }, openCreate && canCreate);
+  const productsQuery = useProductsQuery(
+    { page: 1, per_page: 500, include_inactive: false },
+    openCreate && canCreate
+  );
   const createVariant = useCreateVariantMutation();
   const updateVariant = useUpdateVariantMutation();
   const disableVariant = useDisableVariantMutation();
@@ -183,7 +186,10 @@ export function VariantsPage() {
 
   const rows = variantsQuery.data?.data ?? [];
   const totalPages = variantsQuery.data?.last_page ?? 1;
-  const products = productsQuery.data?.data ?? [];
+  const products = useMemo(() => {
+    const source = productsQuery.data?.data ?? [];
+    return [...source].sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? ''), undefined, { sensitivity: 'base' }));
+  }, [productsQuery.data?.data]);
 
   const tableRows = useMemo(() => {
     return rows.map((v) => ({
@@ -845,6 +851,13 @@ export function VariantsPage() {
                   select
                   label="Product *"
                   value={productId}
+                  SelectProps={{
+                    MenuProps: {
+                      PaperProps: {
+                        sx: { maxHeight: 360 },
+                      },
+                    },
+                  }}
                   onChange={(e) => {
                     const nextProductId = e.target.value === '' ? '' : Number(e.target.value);
                     setProductId(nextProductId);

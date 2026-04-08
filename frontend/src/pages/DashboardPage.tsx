@@ -1,6 +1,7 @@
 import {
   Alert,
   Box,
+  ButtonBase,
   Button,
   Chip,
   Dialog,
@@ -27,8 +28,9 @@ import {
   TextField,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
-import { alpha } from '@mui/material/styles';
+import { alpha, useTheme } from '@mui/material/styles';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import RemoveShoppingCartOutlinedIcon from '@mui/icons-material/RemoveShoppingCartOutlined';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
@@ -38,8 +40,13 @@ import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalance
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import AutoGraphOutlinedIcon from '@mui/icons-material/AutoGraphOutlined';
 import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
-import { useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
+import GppGoodOutlinedIcon from '@mui/icons-material/GppGoodOutlined';
+import LoginRoundedIcon from '@mui/icons-material/LoginRounded';
+import ShoppingBagOutlinedIcon from '@mui/icons-material/ShoppingBagOutlined';
+import ViewInArOutlinedIcon from '@mui/icons-material/ViewInArOutlined';
+import TrendingDownRoundedIcon from '@mui/icons-material/TrendingDownRounded';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { authStorage } from '../auth/authStorage';
@@ -178,6 +185,16 @@ function formatShortDate(value: string): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+function formatWordDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+  });
+}
+
 function money(value: number): string {
   return Number(value ?? 0).toLocaleString(undefined, {
     style: 'currency',
@@ -295,6 +312,8 @@ function describePieSlice(
 }
 
 export function DashboardPage() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, can } = useAuth();
@@ -330,6 +349,8 @@ export function DashboardPage() {
   const [branchHealthDetailTab, setBranchHealthDetailTab] = useState<BranchHealthDetailTab>('low');
   const [activeAlertFilter, setActiveAlertFilter] = useState<AlertDetailFilter | null>(null);
   const [rangeAnchorEl, setRangeAnchorEl] = useState<HTMLElement | null>(null);
+  const dateFromInputRef = useRef<HTMLInputElement | null>(null);
+  const dateToInputRef = useRef<HTMLInputElement | null>(null);
 
   const branchesQuery = useBranchesQuery(canBranchView);
 
@@ -523,6 +544,54 @@ export function DashboardPage() {
     const requiredPermission = QUICK_ACTION_PERMISSION[action.path];
     return !requiredPermission || can(requiredPermission);
   });
+  const mobileQuickActions = useMemo(
+    () =>
+      [
+        canUseApprovalCenter
+          ? {
+              key: 'approvals',
+              label: 'Approvals',
+              to: '/approvals',
+              bg: alpha('#3B82F6', 0.2),
+              icon: <GppGoodOutlinedIcon sx={{ fontSize: 20, color: '#ffffff' }} />,
+            }
+          : null,
+        can('PO_VIEW')
+          ? {
+              key: 'purchase',
+              label: 'Purchase',
+              to: '/purchase-orders',
+              bg: alpha('#10B981', 0.22),
+              icon: <LoginRoundedIcon sx={{ fontSize: 20, color: '#ffffff' }} />,
+            }
+          : null,
+        can('SALES_CREATE')
+          ? {
+              key: 'sale',
+              label: 'Sale',
+              to: '/sales',
+              bg: alpha('#F59E0B', 0.22),
+              icon: <ShoppingBagOutlinedIcon sx={{ fontSize: 20, color: '#ffffff' }} />,
+            }
+          : null,
+        can('EXPENSE_CREATE')
+          ? {
+              key: 'expense',
+              label: 'Expense',
+              to: '/expenses',
+              bg: alpha('#EF4444', 0.2),
+              icon: <AccountBalanceWalletOutlinedIcon sx={{ fontSize: 20, color: '#ffffff' }} />,
+            }
+          : null,
+      ].filter(Boolean) as Array<{
+        key: string;
+        label: string;
+        to: string;
+        bg: string;
+        icon: ReactNode;
+      }>,
+    [can, canUseApprovalCenter]
+  );
 
   const maxBranchRisk = useMemo(() => {
     if (branchHealth.length === 0) return 1;
@@ -829,6 +898,18 @@ export function DashboardPage() {
     setRangeAnchorEl(null);
   };
 
+  const openDatePicker = (inputRef: RefObject<HTMLInputElement>) => {
+    const input = inputRef.current;
+    if (!input) return;
+    try {
+      (input as HTMLInputElement & { showPicker?: () => void }).showPicker?.();
+    } catch {
+      // Fallback for browsers without showPicker.
+    }
+    input.focus();
+    input.click();
+  };
+
   const openAdjustments = (targetBranchId?: number | null) => {
     const params = new URLSearchParams();
     params.set('status', 'SUBMITTED');
@@ -1071,34 +1152,31 @@ export function DashboardPage() {
   }
 
   return (
-    <Stack spacing={2}>
+    <Stack spacing={2} className="mobile-premium-page">
       <Paper
         sx={{
           ...SURFACE_SX,
           p: { xs: 1.5, md: 2 },
           backgroundImage: 'none',
+          borderColor: { xs: alpha('#2b3446', 0.95), md: SURFACE_BORDER },
+          bgcolor: { xs: alpha('#1b2230', 0.92), md: 'background.paper' },
+          boxShadow: { xs: '0 10px 24px rgba(4, 8, 18, 0.35)', md: '0 4px 14px rgba(16, 24, 40, 0.035)' },
         }}
       >
         <Stack spacing={1.5}>
-          <Stack
-            direction={{ xs: 'column', lg: 'row' }}
-            justifyContent="space-between"
-            alignItems={{ xs: 'stretch', lg: 'flex-start' }}
-            spacing={{ xs: 1.25, md: 1.5 }}
-          >
-            <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography variant="h5" sx={{ mb: 0.3 }}>
-                {can('BRANCH_MANAGE') ? 'Admin Dashboard' : 'Operations Dashboard'}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Operations command center for approvals, risk, and branch performance.
-              </Typography>
+          <Box sx={{ minWidth: 0, display: { xs: 'none', sm: 'block' } }}>
+            <Typography variant="h5" sx={{ mb: 0.3 }}>
+              {can('BRANCH_MANAGE') ? 'Admin Dashboard' : 'Operations Dashboard'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Operations command center for approvals, risk, and branch performance.
+            </Typography>
+            {!isMobile && (
               <Stack
                 direction={{ xs: 'column', sm: 'row' }}
                 spacing={0.75}
                 sx={{
                   mt: 1,
-                  display: { xs: 'none', sm: 'flex' },
                   '& .MuiChip-root': {
                     maxWidth: '100%',
                     justifyContent: 'flex-start',
@@ -1137,8 +1215,66 @@ export function DashboardPage() {
                   label={`Open Queue: ${queueTotalCount.toLocaleString()}`}
                 />
               </Stack>
-            </Box>
+            )}
+          </Box>
 
+          {isMobile ? (
+            <Paper
+              variant="outlined"
+              sx={{
+                p: 1.1,
+                borderRadius: 2.5,
+                borderColor: alpha('#3a465e', 0.82),
+                bgcolor: alpha('#242d3d', 0.92),
+                boxShadow: 'none',
+              }}
+            >
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.85, fontSize: '0.95rem' }}>
+                Quick Actions
+              </Typography>
+              {mobileQuickActions.length === 0 ? (
+                <Alert severity="info">No quick actions available for this account.</Alert>
+              ) : (
+                <Stack direction="row" spacing={1} justifyContent="space-between">
+                  {mobileQuickActions.map((action) => (
+                    <ButtonBase
+                      key={action.key}
+                      onClick={() => navigate(action.to)}
+                      sx={{
+                        flex: 1,
+                        minWidth: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'flex-start',
+                        gap: 0.55,
+                        py: 0.2,
+                        borderRadius: 2,
+                        color: 'inherit',
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          width: 48,
+                          height: 48,
+                          borderRadius: 2.2,
+                          bgcolor: alpha(action.bg, 0.92),
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {action.icon}
+                      </Box>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10.2 }}>
+                        {action.label}
+                      </Typography>
+                    </ButtonBase>
+                  ))}
+                </Stack>
+              )}
+            </Paper>
+          ) : (
             <Box
               sx={{
                 width: { xs: '100%', lg: 'auto' },
@@ -1164,21 +1300,7 @@ export function DashboardPage() {
               }}
             >
               {canUseApprovalCenter && (
-                <Button
-                  size="small"
-                  variant="contained"
-                  color="warning"
-                  onClick={() => navigate('/approvals')}
-                  sx={{
-                    bgcolor: { xs: '#F97316', lg: undefined },
-                    color: { xs: '#ffffff', lg: undefined },
-                    borderColor: { xs: alpha('#F97316', 0.55), lg: undefined },
-                    '&:hover': {
-                      bgcolor: { xs: '#EA580C', lg: undefined },
-                      borderColor: { xs: alpha('#EA580C', 0.65), lg: undefined },
-                    },
-                  }}
-                >
+                <Button size="small" variant="contained" color="warning" onClick={() => navigate('/approvals')}>
                   Open Approval Center
                 </Button>
               )}
@@ -1206,109 +1328,271 @@ export function DashboardPage() {
                 );
               })}
             </Box>
-          </Stack>
+          )}
 
-          <Box
+          <Paper
+            variant="outlined"
             sx={{
-              display: 'grid',
-              gap: 1.25,
-              gridTemplateColumns: {
-                xs: 'repeat(2, minmax(0, 1fr))',
-                sm: 'repeat(2, minmax(0, 1fr))',
-                lg: canBranchView ? '2fr 1fr 1fr auto' : '2fr 1fr auto',
-              },
-              alignItems: { xs: 'stretch', lg: 'center' },
+              p: { xs: 1.0, md: 1.35 },
+              borderRadius: 3,
+              borderColor: alpha('#3a465e', isMobile ? 0.82 : 0.35),
+              bgcolor: isMobile ? alpha('#242d3d', 0.86) : alpha('#0f766e', 0.03),
+              boxShadow: 'none',
             }}
           >
-            {canBranchView ? (
-              <FormControl size="small" fullWidth sx={{ gridColumn: { xs: '1 / -1', lg: 'auto' } }}>
-                <InputLabel id="dashboard-branch-label">Branch</InputLabel>
-                <Select
-                  labelId="dashboard-branch-label"
-                  value={branchId}
-                  label="Branch"
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    if (raw === '') {
-                      setBranchId('');
-                      authStorage.clearLastBranchId();
-                      return;
-                    }
-                    const parsed = Number(raw);
-                    if (Number.isFinite(parsed) && parsed > 0) {
-                      setBranchId(parsed);
-                      authStorage.setLastBranchId(parsed);
-                    }
-                  }}
-                >
-                  <MenuItem value="">All branches</MenuItem>
-                  {(branchesQuery.data ?? []).map((branch) => (
-                    <MenuItem key={branch.id} value={branch.id}>
-                      {branch.code} - {branch.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            ) : (
-              <TextField
-                size="small"
-                label="Branch"
-                value={branchLabel}
-                disabled
-                fullWidth
-                sx={{ gridColumn: { xs: '1 / -1', lg: 'auto' } }}
-              />
-            )}
-
-            <TextField
-              label="Date from"
-              type="date"
-              size="small"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-            />
-            <TextField
-              label="Date to"
-              type="date"
-              size="small"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-            />
-
-            <Stack
-              direction="row"
-              spacing={1}
-              justifyContent={{ xs: 'stretch', lg: 'flex-end' }}
+            <Box
               sx={{
-                gridColumn: { xs: '1 / -1', lg: 'auto' },
-                width: { xs: '100%', lg: 'auto' },
-                '& .MuiButton-root': {
-                  flex: { xs: '1 1 0', lg: '0 0 auto' },
-                  minHeight: 40,
-                  whiteSpace: 'nowrap',
+                display: 'grid',
+                gap: 0.9,
+                gridTemplateColumns: {
+                  xs: 'repeat(2, minmax(0, 1fr))',
+                  sm: 'repeat(2, minmax(0, 1fr))',
+                  lg: canBranchView ? '2fr 1fr 1fr auto' : '2fr 1fr auto',
                 },
+                alignItems: { xs: 'stretch', lg: 'center' },
               }}
             >
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={(event) => setRangeAnchorEl(event.currentTarget)}
+              {canBranchView ? (
+                <FormControl
+                  size="small"
+                  fullWidth
+                  sx={{
+                    gridColumn: { xs: '1 / -1', lg: 'auto' },
+                    '& .MuiInputLabel-root': isMobile
+                      ? {
+                          letterSpacing: '0.06em',
+                          textTransform: 'uppercase',
+                          fontSize: 10,
+                        }
+                      : undefined,
+                    '& .MuiSelect-select': isMobile
+                      ? {
+                          fontSize: '0.95rem',
+                          py: 1.05,
+                        }
+                      : undefined,
+                    '& .MuiOutlinedInput-root': isMobile
+                      ? {
+                          borderRadius: 1,
+                        }
+                      : undefined,
+                  }}
+                >
+                  <InputLabel id="dashboard-branch-label">Branch</InputLabel>
+                  <Select
+                    labelId="dashboard-branch-label"
+                    value={branchId}
+                    label="Branch"
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === '') {
+                        setBranchId('');
+                        authStorage.clearLastBranchId();
+                        return;
+                      }
+                      const parsed = Number(raw);
+                      if (Number.isFinite(parsed) && parsed > 0) {
+                        setBranchId(parsed);
+                        authStorage.setLastBranchId(parsed);
+                      }
+                    }}
+                  >
+                    <MenuItem value="">All branches</MenuItem>
+                    {(branchesQuery.data ?? []).map((branch) => (
+                      <MenuItem key={branch.id} value={branch.id}>
+                        {branch.code} - {branch.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : (
+                <TextField
+                  size="small"
+                  label="Branch"
+                  value={branchLabel}
+                  disabled
+                  fullWidth
+                  sx={{ gridColumn: { xs: '1 / -1', lg: 'auto' } }}
+                />
+              )}
+
+              {isMobile ? (
+                <>
+                  <Box sx={{ position: 'relative' }}>
+                    <ButtonBase
+                      onClick={() => openDatePicker(dateFromInputRef)}
+                      sx={{
+                        width: '100%',
+                        minHeight: 62,
+                        px: 1,
+                        py: 0.7,
+                        borderRadius: 1,
+                        border: `1px solid ${alpha('#3a465e', 0.82)}`,
+                        bgcolor: alpha('#242d3d', 0.94),
+                        justifyContent: 'flex-start',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <Stack spacing={0.1}>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            letterSpacing: '0.08em',
+                            textTransform: 'uppercase',
+                            color: alpha('#b8c4da', 0.88),
+                            fontSize: 9.5,
+                          }}
+                        >
+                          From
+                        </Typography>
+                        <Typography sx={{ fontWeight: 600, color: '#f4f7ff', fontSize: '0.9rem', lineHeight: 1.2 }}>
+                          {formatWordDate(dateFrom)}
+                        </Typography>
+                      </Stack>
+                    </ButtonBase>
+                    <Box
+                      component="input"
+                      ref={dateFromInputRef}
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => setDateFrom(e.target.value)}
+                      sx={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 }}
+                      tabIndex={-1}
+                      aria-hidden
+                    />
+                  </Box>
+                  <Box sx={{ position: 'relative' }}>
+                    <ButtonBase
+                      onClick={() => openDatePicker(dateToInputRef)}
+                      sx={{
+                        width: '100%',
+                        minHeight: 62,
+                        px: 1,
+                        py: 0.7,
+                        borderRadius: 1,
+                        border: `1px solid ${alpha('#3a465e', 0.82)}`,
+                        bgcolor: alpha('#242d3d', 0.94),
+                        justifyContent: 'flex-start',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <Stack spacing={0.1}>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            letterSpacing: '0.08em',
+                            textTransform: 'uppercase',
+                            color: alpha('#b8c4da', 0.88),
+                            fontSize: 9.5,
+                          }}
+                        >
+                          To
+                        </Typography>
+                        <Typography sx={{ fontWeight: 600, color: '#f4f7ff', fontSize: '0.9rem', lineHeight: 1.2 }}>
+                          {formatWordDate(dateTo)}
+                        </Typography>
+                      </Stack>
+                    </ButtonBase>
+                    <Box
+                      component="input"
+                      ref={dateToInputRef}
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => setDateTo(e.target.value)}
+                      sx={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 }}
+                      tabIndex={-1}
+                      aria-hidden
+                    />
+                  </Box>
+                </>
+              ) : (
+                <>
+                  <TextField
+                    label="Date from"
+                    type="date"
+                    size="small"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    InputLabelProps={{ shrink: true }}
+                    sx={{
+                      '& .MuiInputLabel-root': {
+                        letterSpacing: '0.06em',
+                        textTransform: 'uppercase',
+                        fontSize: 11,
+                      },
+                    }}
+                  />
+                  <TextField
+                    label="Date to"
+                    type="date"
+                    size="small"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    InputLabelProps={{ shrink: true }}
+                    sx={{
+                      '& .MuiInputLabel-root': {
+                        letterSpacing: '0.06em',
+                        textTransform: 'uppercase',
+                        fontSize: 11,
+                      },
+                    }}
+                  />
+                </>
+              )}
+
+              <Stack
+                direction="row"
+                spacing={1}
+                justifyContent={{ xs: 'stretch', lg: 'flex-end' }}
+                sx={{
+                  gridColumn: { xs: '1 / -1', lg: 'auto' },
+                  width: { xs: '100%', lg: 'auto' },
+                  '& .MuiButton-root': {
+                    flex: { xs: '1 1 0', lg: '0 0 auto' },
+                    minHeight: { xs: 34, lg: 40 },
+                    fontSize: { xs: '0.86rem', lg: '0.9rem' },
+                    borderRadius: { xs: 1, lg: 1.4 },
+                    whiteSpace: 'nowrap',
+                  },
+                }}
               >
-                Quick range
-              </Button>
-              <Button
-                size="small"
-                variant="contained"
-                startIcon={<RefreshRoundedIcon />}
-                onClick={() => void summaryQuery.refetch()}
-                disabled={summaryQuery.isFetching}
-              >
-                Refresh
-              </Button>
-            </Stack>
-          </Box>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={(event) => setRangeAnchorEl(event.currentTarget)}
+                  sx={
+                    isMobile
+                      ? {
+                          bgcolor: alpha('#1b273a', 0.72),
+                          borderColor: alpha('#3f5578', 0.9),
+                          color: '#f4f7ff',
+                        }
+                      : undefined
+                  }
+                >
+                  Quick range
+                </Button>
+                <Button
+                  size="small"
+                  variant="contained"
+                  startIcon={<RefreshRoundedIcon />}
+                  onClick={() => void summaryQuery.refetch()}
+                  disabled={summaryQuery.isFetching}
+                  sx={
+                    isMobile
+                      ? {
+                          bgcolor: '#3f6ed7',
+                          color: '#ffffff',
+                          '&:hover': { bgcolor: '#345fc0' },
+                        }
+                      : undefined
+                  }
+                >
+                  Refresh
+                </Button>
+              </Stack>
+            </Box>
+          </Paper>
 
           <Menu
             anchorEl={rangeAnchorEl}
@@ -1342,13 +1626,24 @@ export function DashboardPage() {
           gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', xl: '1.3fr 1.3fr 1fr 1fr' },
         }}
       >
-        <Paper sx={SECTION_PAPER_SX}>
-          <SectionHeader
-            title="Inventory Overview"
-            subtitle="Stock position and costing health"
-            icon={<AccountBalanceWalletOutlinedIcon sx={{ fontSize: 16 }} />}
-          />
-          <Box sx={{ display: 'grid', gap: 1, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' } }}>
+        <Paper
+          className="inventory-overview-section"
+          sx={{
+            ...SECTION_PAPER_SX,
+            border: { xs: 'none !important', md: `1px solid ${SURFACE_BORDER}` },
+            bgcolor: { xs: alpha('#1f2736', 0.96), md: 'background.paper' },
+            boxShadow: { xs: 'none', md: '0 4px 14px rgba(16, 24, 40, 0.035)' },
+          }}
+        >
+          <SectionHeader title="Inventory Overview" />
+          <Box
+            className="inventory-overview-grid"
+            sx={{
+              display: 'grid',
+              gap: 1,
+              gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', sm: 'repeat(2, 1fr)' },
+            }}
+          >
             <MetricTile
               label="Inventory Value"
               value={Number(summary?.kpis.inventory_value ?? 0).toLocaleString(undefined, {
@@ -1356,33 +1651,32 @@ export function DashboardPage() {
                 currency: 'PHP',
                 maximumFractionDigits: 2,
               })}
-              accent="#475569"
-              hint="Cost estimate"
+              accent="#3b82f6"
               icon={<AccountBalanceWalletOutlinedIcon sx={{ fontSize: 14 }} />}
+              clean
               onClick={() => setActiveKpiKey('inventory-value')}
             />
             <MetricTile
               label="Missing Cost"
               value={Number(summary?.kpis.missing_cost_count ?? 0).toLocaleString()}
-              accent="#78716c"
-              hint="Rows needing cost"
-              icon={<ReceiptLongOutlinedIcon sx={{ fontSize: 14 }} />}
+              accent="#f59e0b"
+              icon={<WarningAmberRoundedIcon sx={{ fontSize: 14 }} />}
+              clean
             />
             <MetricTile
               label="Low Stock"
               value={Number(summary?.kpis.low_stock_count ?? 0).toLocaleString()}
-              accent="#a16207"
-              hint="Needs replenishment"
-              icon={<WarningAmberRoundedIcon sx={{ fontSize: 14 }} />}
+              accent="#ef4444"
+              icon={<TrendingDownRoundedIcon sx={{ fontSize: 14 }} />}
+              clean
               onClick={() => setActiveKpiKey('low-stock')}
             />
             <MetricTile
-              label="Out Of Stock"
-              value={Number(summary?.kpis.out_of_stock_count ?? 0).toLocaleString()}
-              accent="#991b1b"
-              hint="Unavailable now"
-              icon={<RemoveShoppingCartOutlinedIcon sx={{ fontSize: 14 }} />}
-              onClick={() => setActiveKpiKey('out-of-stock')}
+              label="Total SKUs"
+              value={trackedVariantsCount.toLocaleString()}
+              accent="#10b981"
+              icon={<ViewInArOutlinedIcon sx={{ fontSize: 14 }} />}
+              clean
             />
           </Box>
         </Paper>
@@ -2215,6 +2509,8 @@ function SectionHeader({
   icon?: ReactNode;
   action?: ReactNode;
 }) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   return (
     <Stack
       direction={{ xs: 'column', sm: 'row' }}
@@ -2230,8 +2526,8 @@ function SectionHeader({
               width: 28,
               height: 28,
               borderRadius: 1,
-              bgcolor: alpha('#0f766e', 0.08),
-              color: 'primary.main',
+              bgcolor: isMobile ? alpha('#3a465e', 0.55) : alpha('#0f766e', 0.08),
+              color: isMobile ? '#d3def4' : 'primary.main',
               display: 'grid',
               placeItems: 'center',
               flexShrink: 0,
@@ -2241,7 +2537,10 @@ function SectionHeader({
           </Box>
         )}
         <Box>
-          <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+          <Typography
+            variant="subtitle1"
+            sx={{ fontWeight: 700, lineHeight: 1.2, fontSize: isMobile ? '0.95rem' : undefined }}
+          >
             {title}
           </Typography>
           {subtitle && (
@@ -2263,6 +2562,7 @@ function MetricTile({
   hint,
   icon,
   onClick,
+  clean,
 }: {
   label: string;
   value: string;
@@ -2270,7 +2570,71 @@ function MetricTile({
   hint?: string;
   icon?: ReactNode;
   onClick?: () => void;
+  clean?: boolean;
 }) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  if (clean) {
+    return (
+      <Paper
+        className={isMobile ? 'inventory-overview-tile' : undefined}
+        role={onClick ? 'button' : undefined}
+        tabIndex={onClick ? 0 : -1}
+        onClick={onClick}
+        onKeyDown={(event) => {
+          if (!onClick) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onClick();
+          }
+        }}
+        sx={{
+          p: 1.05,
+          border: isMobile ? 'none !important' : `1px solid ${SURFACE_BORDER}`,
+          borderRadius: isMobile ? 2.4 : 1.5,
+          minHeight: isMobile ? 110 : 100,
+          bgcolor: isMobile ? alpha('#242d3d', 0.96) : 'background.paper',
+          cursor: onClick ? 'pointer' : 'default',
+          transition: 'transform 120ms ease, box-shadow 120ms ease',
+          '&:hover': onClick
+            ? {
+                transform: 'translateY(-1px)',
+                boxShadow: isMobile
+                  ? '0 10px 18px rgba(2, 8, 20, 0.32)'
+                  : `0 0 0 1px ${alpha(accent, 0.12)}, 0 6px 16px rgba(16,24,40,0.06)`,
+              }
+            : undefined,
+        }}
+      >
+        <Stack spacing={0.7} sx={{ height: '100%' }}>
+          {icon && (
+            <Box
+              sx={{
+                width: 22,
+                height: 22,
+                borderRadius: 0.9,
+                bgcolor: alpha(accent, isMobile ? 0.2 : 0.11),
+                color: accent,
+                display: 'grid',
+                placeItems: 'center',
+                flexShrink: 0,
+              }}
+            >
+              {icon}
+            </Box>
+          )}
+          <Box sx={{ flexGrow: 1 }} />
+          <Typography variant="h5" sx={{ mt: 0.05, fontWeight: 700, lineHeight: 1.08, color: 'text.primary' }}>
+            {value}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.2, fontSize: isMobile ? '0.86rem' : undefined }}>
+            {label}
+          </Typography>
+        </Stack>
+      </Paper>
+    );
+  }
+
   return (
     <Paper
       role={onClick ? 'button' : undefined}
@@ -2285,16 +2649,19 @@ function MetricTile({
       }}
       sx={{
         p: 1.25,
-        border: `1px solid ${SURFACE_BORDER}`,
-        borderLeft: `3px solid ${alpha(accent, 0.45)}`,
+        border: `1px solid ${isMobile ? alpha('#3a465e', 0.82) : SURFACE_BORDER}`,
+        borderLeft: isMobile ? `1px solid ${alpha('#3a465e', 0.82)}` : `3px solid ${alpha(accent, 0.45)}`,
         borderRadius: 1.5,
         minHeight: 100,
+        bgcolor: isMobile ? alpha('#242d3d', 0.94) : 'background.paper',
         cursor: onClick ? 'pointer' : 'default',
         transition: 'border-color 120ms ease, box-shadow 120ms ease',
         '&:hover': onClick
           ? {
-              borderColor: alpha(accent, 0.55),
-              boxShadow: `0 0 0 1px ${alpha(accent, 0.12)}, 0 6px 16px rgba(16,24,40,0.06)`,
+              borderColor: isMobile ? alpha('#4a5a77', 0.9) : alpha(accent, 0.55),
+              boxShadow: isMobile
+                ? '0 8px 18px rgba(2, 8, 20, 0.35)'
+                : `0 0 0 1px ${alpha(accent, 0.12)}, 0 6px 16px rgba(16,24,40,0.06)`,
             }
           : undefined,
       }}
@@ -2309,8 +2676,8 @@ function MetricTile({
               width: 22,
               height: 22,
               borderRadius: 0.8,
-              bgcolor: alpha(accent, 0.11),
-              color: accent,
+              bgcolor: isMobile ? alpha('#3a465e', 0.55) : alpha(accent, 0.11),
+              color: isMobile ? '#d3def4' : accent,
               display: 'grid',
               placeItems: 'center',
               flexShrink: 0,
@@ -2320,7 +2687,7 @@ function MetricTile({
           </Box>
         )}
       </Stack>
-      <Typography variant="h6" sx={{ mt: 0.4, fontWeight: 700, lineHeight: 1.25, color: '#0f172a' }}>
+      <Typography variant="h6" sx={{ mt: 0.4, fontWeight: 700, lineHeight: 1.25, color: 'text.primary' }}>
         {value}
       </Typography>
       {hint && (

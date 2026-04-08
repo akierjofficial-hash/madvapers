@@ -1,44 +1,42 @@
-import { alpha } from '@mui/material/styles';
 import type { SxProps, Theme } from '@mui/material/styles';
 
-export const requestDialogSx: SxProps<Theme> = (theme) => ({
+export const requestDialogSx: SxProps<Theme> = (_theme) => ({
   '& .MuiDialog-paper': {
     borderRadius: 3,
-    border: `1px solid ${alpha(theme.palette.divider, 0.9)}`,
-    backgroundImage: `linear-gradient(180deg, ${alpha(theme.palette.background.paper, 0.985)} 0%, ${alpha(
-      theme.palette.background.default,
-      0.985
-    )} 100%)`,
-    boxShadow: '0 28px 72px rgba(15, 23, 42, 0.18)',
+    border: '1px solid #364156',
+    backgroundColor: 'rgba(10, 17, 30, 0.98)',
+    backgroundImage: 'none',
+    boxShadow: '0 28px 72px rgba(2, 8, 22, 0.58)',
     overflow: 'hidden',
+    color: '#f4f7ff',
   },
 });
 
-export const requestDialogTitleSx: SxProps<Theme> = (theme) => ({
+export const requestDialogTitleSx: SxProps<Theme> = () => ({
   px: { xs: 2.25, sm: 3 },
   py: 2,
-  borderBottom: `1px solid ${alpha(theme.palette.divider, 0.8)}`,
-  backgroundImage: `linear-gradient(120deg, ${alpha(theme.palette.primary.light, 0.14)} 0%, ${alpha(
-    theme.palette.background.paper,
-    0.94
-  )} 52%, ${alpha(theme.palette.background.paper, 0.98)} 100%)`,
+  borderBottom: '1px solid rgba(54, 65, 86, 0.9)',
+  background: 'rgba(14, 22, 36, 0.95)',
+  color: '#f4f7ff',
 });
 
 export const requestDialogContentSx: SxProps<Theme> = {
   px: { xs: 2, sm: 3 },
   py: 2.25,
+  background: 'rgba(10, 17, 30, 0.98)',
+  color: '#f4f7ff',
 };
 
-export const requestDialogActionsSx: SxProps<Theme> = (theme) => ({
+export const requestDialogActionsSx: SxProps<Theme> = () => ({
   px: { xs: 2, sm: 3 },
   py: 1.75,
-  borderTop: `1px solid ${alpha(theme.palette.divider, 0.85)}`,
-  backgroundColor: alpha(theme.palette.background.paper, 0.95),
+  borderTop: '1px solid rgba(54, 65, 86, 0.9)',
+  background: 'rgba(14, 22, 36, 0.95)',
 });
 
-export const requestSectionSx = (theme: Theme) => ({
+export const requestSectionSx = (_theme: Theme) => ({
   p: { xs: 1.2, sm: 1.5 },
   borderRadius: 2,
-  borderColor: alpha(theme.palette.divider, 0.9),
-  backgroundColor: alpha(theme.palette.background.paper, 0.72),
+  borderColor: 'rgba(54, 65, 86, 0.9)',
+  backgroundColor: 'rgba(34, 42, 56, 0.9)',
 });

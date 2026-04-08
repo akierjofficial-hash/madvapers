@@ -203,6 +203,7 @@ export function PurchaseOrdersPage() {
   const variantLookup = useVariantsQuery(
     {
       page: 1,
+      per_page: 500,
       search: variantSearchDebounced || undefined,
       branch_id: typeof createBranch === 'number' ? createBranch : undefined,
     },
@@ -944,7 +945,7 @@ export function PurchaseOrdersPage() {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {variantOptions.slice(0, 10).map((v: any) => {
+                    {variantOptions.map((v: any) => {
                       const id = Number(v?.id);
                       const onHand = getVariantOnHand(v);
                       return (

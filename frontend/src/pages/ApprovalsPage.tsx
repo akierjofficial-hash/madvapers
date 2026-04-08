@@ -128,6 +128,7 @@ function QueueCountCard({
   return (
     <Paper
       variant="outlined"
+      className="mobile-adjustment-item"
       role="button"
       tabIndex={0}
       onClick={onClick}
@@ -138,7 +139,7 @@ function QueueCountCard({
         }
       }}
       sx={{
-        p: 1.1,
+        p: 1.15,
         cursor: 'pointer',
         borderColor: active ? alpha('#0f766e', 0.5) : SURFACE_BORDER,
         bgcolor: active ? alpha('#0f766e', 0.06) : 'background.paper',
@@ -859,7 +860,7 @@ export function ApprovalsPage() {
   const activeTabLabel = visibleApprovalTabs.find((item) => item.key === tab)?.label ?? 'Approvals';
 
   return (
-    <Stack spacing={2}>
+    <Stack spacing={2} className="mobile-premium-page">
       <Paper sx={{ border: `1px solid ${SURFACE_BORDER}`, borderRadius: 2, p: { xs: 1.3, md: 1.6 } }}>
         <Stack spacing={1.2}>
           <Stack
@@ -1002,6 +1003,7 @@ export function ApprovalsPage() {
           onChange={(_, value: ApprovalTabKey) => setTab(value)}
           variant="scrollable"
           allowScrollButtonsMobile
+          className="mobile-approvals-tabs"
           sx={{ px: 1.2, minHeight: 42 }}
         >
           {visibleApprovalTabs.map((item) => (

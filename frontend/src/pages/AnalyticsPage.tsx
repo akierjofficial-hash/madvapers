@@ -15,7 +15,7 @@ import {
   Typography,
   useMediaQuery,
 } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
+import { alpha, useTheme } from '@mui/material/styles';
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useBranchesQuery, useDashboardSummaryQuery } from '../api/queries';
@@ -165,6 +165,7 @@ function MetricCard({
   return (
     <Paper
       variant="outlined"
+      className="mobile-analytics-kpi"
       sx={{
         p: 1.25,
         borderColor: `${tone}66`,
@@ -850,7 +851,7 @@ export function AnalyticsPage() {
   };
 
   return (
-    <Stack spacing={1.5}>
+    <Stack spacing={1.5} className="mobile-premium-page">
       <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1}>
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 700 }}>
@@ -1012,17 +1013,17 @@ export function AnalyticsPage() {
           <Chip
             size="small"
             label={`Voided Sales: ${numberFmt(finance.voided_sales_count)}`}
-            sx={{ bgcolor: '#fee2e2' }}
+            sx={{ bgcolor: alpha(theme.palette.error.main, 0.16) }}
           />
           <Chip
             size="small"
             label={`Voided Amount: ${money(finance.voided_sales_amount)}`}
-            sx={{ bgcolor: '#fee2e2' }}
+            sx={{ bgcolor: alpha(theme.palette.error.main, 0.16) }}
           />
           <Chip
             size="small"
             label={`Paid Amount on Voided: ${money(finance.voided_paid_amount)}`}
-            sx={{ bgcolor: '#ffedd5' }}
+            sx={{ bgcolor: alpha(theme.palette.warning.main, 0.16) }}
           />
         </Stack>
       </Paper>
@@ -1148,8 +1149,8 @@ export function AnalyticsPage() {
                   return (
                     <Stack key={point.date} spacing={0.3} alignItems="center" sx={{ minWidth: 18 }}>
                       <Stack direction="row" spacing={0.2} alignItems="flex-end">
-                        <Box sx={{ width: 6, height: inHeight, bgcolor: '#22c55e', borderRadius: 0.8 }} />
-                        <Box sx={{ width: 6, height: outHeight, bgcolor: '#ef4444', borderRadius: 0.8 }} />
+                        <Box sx={{ width: 6, height: inHeight, bgcolor: 'success.main', borderRadius: 0.8 }} />
+                        <Box sx={{ width: 6, height: outHeight, bgcolor: 'error.main', borderRadius: 0.8 }} />
                       </Stack>
                       <Typography variant="caption" sx={{ fontSize: 10, color: 'text.secondary' }}>
                         {dayText}
@@ -1162,12 +1163,20 @@ export function AnalyticsPage() {
           )}
 
           <Stack direction="row" spacing={0.8} sx={{ mt: 1 }}>
-            <Chip size="small" label={`Stock In (Qty): ${numberFmt(movementTotals.inQty)}`} sx={{ bgcolor: '#dcfce7' }} />
-            <Chip size="small" label={`Stock Out (Qty): ${numberFmt(movementTotals.outQty)}`} sx={{ bgcolor: '#fee2e2' }} />
+            <Chip
+              size="small"
+              label={`Stock In (Qty): ${numberFmt(movementTotals.inQty)}`}
+              sx={{ bgcolor: alpha(theme.palette.success.main, 0.16) }}
+            />
+            <Chip
+              size="small"
+              label={`Stock Out (Qty): ${numberFmt(movementTotals.outQty)}`}
+              sx={{ bgcolor: alpha(theme.palette.error.main, 0.16) }}
+            />
             <Chip
               size="small"
               label={`Adjustments: ${numberFmt(movementTotals.adjustments)}`}
-              sx={{ bgcolor: '#e0f2fe' }}
+              sx={{ bgcolor: alpha(theme.palette.info.main, 0.16) }}
             />
           </Stack>
         </Paper>

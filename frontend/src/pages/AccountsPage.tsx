@@ -1,7 +1,9 @@
 import {
   Alert,
+  Avatar,
   Box,
   Button,
+  Chip,
   Checkbox,
   Dialog,
   DialogActions,
@@ -449,8 +451,18 @@ export function AccountsPage() {
     return <Alert severity="error">Not authorized to view users (USER_VIEW).</Alert>;
   }
 
+  const getInitials = (name?: string | null) => {
+    const parts = String(name ?? '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    if (parts.length === 0) return 'U';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
+  };
+
   return (
-    <Stack spacing={2}>
+    <Stack spacing={2} className="mobile-premium-page">
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
         alignItems={{ xs: 'stretch', sm: 'center' }}
@@ -475,73 +487,75 @@ export function AccountsPage() {
       {canRoleView && rolesQuery.isError && <Alert severity="error">Failed to load roles.</Alert>}
       {canBranchView && branchesQuery.isError && <Alert severity="error">Failed to load branches.</Alert>}
 
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ md: 'center' }}>
-        <TextField
-          size="small"
-          label="Search name/email"
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(1);
-          }}
-          sx={{ minWidth: { md: 280 }, flex: 1 }}
-        />
+      <Paper variant="outlined" sx={{ p: 1.25 }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ md: 'center' }}>
+          <TextField
+            size="small"
+            label="Search name/email"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            sx={{ minWidth: { md: 280 }, flex: 1 }}
+          />
 
-        <TextField
-          select
-          size="small"
-          label="Role"
-          value={roleFilter}
-          onChange={(e) => {
-            setRoleFilter(e.target.value === '' ? '' : Number(e.target.value));
-            setPage(1);
-          }}
-          sx={{ width: { xs: '100%', md: 220 } }}
-          disabled={!canRoleView || rolesQuery.isLoading}
-        >
-          <MenuItem value="">All roles</MenuItem>
-          {(rolesQuery.data ?? []).map((role) => (
-            <MenuItem key={role.id} value={role.id}>
-              {role.name}
-            </MenuItem>
-          ))}
-        </TextField>
-
-        {canBranchView && (
           <TextField
             select
             size="small"
-            label="Branch"
-            value={branchFilter}
+            label="Role"
+            value={roleFilter}
             onChange={(e) => {
-              setBranchFilter(e.target.value === '' ? '' : Number(e.target.value));
+              setRoleFilter(e.target.value === '' ? '' : Number(e.target.value));
               setPage(1);
             }}
             sx={{ width: { xs: '100%', md: 220 } }}
-            disabled={branchesQuery.isLoading}
+            disabled={!canRoleView || rolesQuery.isLoading}
           >
-            <MenuItem value="">All branches</MenuItem>
-            {(branchesQuery.data ?? []).map((branch) => (
-              <MenuItem key={branch.id} value={branch.id}>
-                {branch.name}
+            <MenuItem value="">All roles</MenuItem>
+            {(rolesQuery.data ?? []).map((role) => (
+              <MenuItem key={role.id} value={role.id}>
+                {role.name}
               </MenuItem>
             ))}
           </TextField>
-        )}
 
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={includeInactive}
+          {canBranchView && (
+            <TextField
+              select
+              size="small"
+              label="Branch"
+              value={branchFilter}
               onChange={(e) => {
-                setIncludeInactive(e.target.checked);
+                setBranchFilter(e.target.value === '' ? '' : Number(e.target.value));
                 setPage(1);
               }}
-            />
-          }
-          label="Include inactive"
-        />
-      </Stack>
+              sx={{ width: { xs: '100%', md: 220 } }}
+              disabled={branchesQuery.isLoading}
+            >
+              <MenuItem value="">All branches</MenuItem>
+              {(branchesQuery.data ?? []).map((branch) => (
+                <MenuItem key={branch.id} value={branch.id}>
+                  {branch.name}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
+
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={includeInactive}
+                onChange={(e) => {
+                  setIncludeInactive(e.target.checked);
+                  setPage(1);
+                }}
+              />
+            }
+            label="Include inactive"
+          />
+        </Stack>
+      </Paper>
 
       {usersQuery.isLoading ? (
         <Alert severity="info">Loading users...</Alert>
@@ -554,34 +568,55 @@ export function AccountsPage() {
           {rows.map((row) => {
             const isActive = row.is_active ?? true;
             return (
-              <Paper key={row.id} variant="outlined" sx={{ p: 1.2, opacity: isActive ? 1 : 0.72, borderRadius: 2 }}>
-                <Stack spacing={0.7}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
-                    <Typography sx={{ fontWeight: 700, minWidth: 0 }}>{row.name || '-'}</Typography>
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        px: 1,
-                        py: 0.2,
-                        borderRadius: 999,
-                        border: '1px solid',
-                        borderColor: isActive ? 'success.light' : 'warning.light',
-                        color: isActive ? 'success.dark' : 'warning.dark',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {isActive ? 'Active' : 'Inactive'}
-                    </Typography>
+              <Paper
+                key={row.id}
+                variant="outlined"
+                className="mobile-accounts-card"
+                sx={{ opacity: isActive ? 1 : 0.72, borderRadius: 2 }}
+              >
+                <Stack spacing={1.05}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1.2}>
+                    <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+                      <Avatar
+                        sx={{
+                          width: 36,
+                          height: 36,
+                          fontSize: 13,
+                          fontWeight: 700,
+                          bgcolor: 'primary.main',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {getInitials(row.name)}
+                      </Avatar>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography sx={{ fontWeight: 700, minWidth: 0 }} noWrap>
+                          {row.name || '-'}
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          className="mobile-premium-muted"
+                          sx={{ display: 'block', wordBreak: 'break-word' }}
+                        >
+                          {row.email || '-'}
+                        </Typography>
+                      </Box>
+                    </Stack>
+                    <Chip
+                      size="small"
+                      className={isActive ? 'mobile-premium-badge-success' : 'mobile-premium-badge-warning'}
+                      label={isActive ? 'Active' : 'Inactive'}
+                    />
                   </Stack>
-                  <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
-                    {row.email || '-'}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Role: {row.role?.name ?? row.role?.code ?? '-'}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Branches: {getUserBranchLabel(row, 'compact')} | ID {row.id}
-                  </Typography>
+                  <Stack direction="row" spacing={0.7} useFlexGap flexWrap="wrap" alignItems="center">
+                    <Chip
+                      size="small"
+                      className="mobile-premium-badge-accent"
+                      label={row.role?.name ?? row.role?.code ?? '-'}
+                    />
+                    <Chip size="small" label={getUserBranchLabel(row, 'compact')} />
+                    <Chip size="small" label={`ID ${row.id}`} />
+                  </Stack>
                   <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ pt: 0.3 }}>
                     {canUpdate && (
                       <Button size="small" variant="outlined" onClick={() => openEditDialog(row)} disabled={actionsBusy}>
