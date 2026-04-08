@@ -520,7 +520,6 @@ export function AdjustmentsPage() {
 
       closeCreateDialog();
       setStatus('DRAFT');
-      setPage(1);
       setSelected(created);
       adjustmentsQuery.refetch();
       setSnack({ open: true, message: `Draft adjustment #${created.id} created.`, severity: 'success' });

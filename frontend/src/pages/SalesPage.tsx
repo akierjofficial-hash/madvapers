@@ -5,6 +5,7 @@ import {
   BottomNavigation,
   BottomNavigationAction,
   Button,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
@@ -12,6 +13,7 @@ import {
   DialogTitle,
   Divider,
   Drawer,
+  FormControlLabel,
   Menu,
   MenuItem,
   Pagination,
@@ -164,6 +166,16 @@ function checkoutActivityTimeText(row: any): string {
   return d.toLocaleString();
 }
 
+function saleItemDisplayName(item: any): string {
+  const productName = String(item?.variant?.product?.name ?? '').trim();
+  const variantName = String(item?.variant?.variant_name ?? '').trim();
+  const flavor = String(item?.variant?.flavor ?? '').trim();
+  const main = productName || variantName || String(item?.product_variant_id ?? '-');
+  const variantSuffix = variantName && variantName !== productName ? ` - ${variantName}` : '';
+  const flavorSuffix = flavor ? ` (${flavor})` : '';
+  return `${main}${variantSuffix}${flavorSuffix}`;
+}
+
 function variantOnHand(variant: any): number {
   return toNum(variant?.qty_on_hand ?? 0);
 }
@@ -307,6 +319,7 @@ export function SalesPage() {
   const [paymentAmount, setPaymentAmount] = useState<string>('');
   const [paymentRef, setPaymentRef] = useState<string>('');
   const [paymentNotes, setPaymentNotes] = useState<string>('');
+  const [applyDiscountToSettle, setApplyDiscountToSettle] = useState(false);
   const [paymentClientTxnId, setPaymentClientTxnId] = useState<string>(() => createClientTxnId());
   const [cashierMobileView, setCashierMobileView] = useState<CashierMobileView>('CATALOG');
   const [snack, setSnack] = useState<{ severity: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -430,6 +443,7 @@ export function SalesPage() {
       payment_status: isCashierRole ? undefined : paymentStatus || undefined,
       void_request_status: isCashierRole ? undefined : voidRequestStatus || undefined,
       search: isCashierRole ? undefined : searchDebounced || undefined,
+      include_items: isCashierRole ? undefined : 1,
     },
     branchId !== '' && canSalesView
   );
@@ -517,6 +531,10 @@ export function SalesPage() {
   const selectedSfCharge = toNum(selected?.sf_charge);
   const selectedPaidTotal = toNum(selected?.paid_total);
   const dueAmount = Math.max(0, selectedGrandTotal - selectedPaidTotal);
+  const enteredPaymentAmount = Number(paymentAmount);
+  const enteredPaymentIsValid = Number.isFinite(enteredPaymentAmount) && enteredPaymentAmount > 0;
+  const enteredBelowDue = enteredPaymentIsValid && enteredPaymentAmount + 1e-9 < dueAmount;
+  const discountPreviewAmount = enteredBelowDue ? Math.max(0, dueAmount - enteredPaymentAmount) : 0;
   const selectedVoidRequestStatus = String(selected?.void_request_status ?? '').toUpperCase();
   const hasPendingVoidRequest = selectedVoidRequestStatus === 'PENDING';
   const selectedNotes = String(selected?.notes ?? '').trim();
@@ -531,6 +549,16 @@ export function SalesPage() {
     : '';
   const selectedVoidRequestNotes = String(selected?.void_request_notes ?? '').trim();
   const selectedVoidRejectionNotes = String(selected?.void_rejection_notes ?? '').trim();
+
+  useEffect(() => {
+    if (!enteredBelowDue && applyDiscountToSettle) {
+      setApplyDiscountToSettle(false);
+    }
+  }, [applyDiscountToSettle, enteredBelowDue]);
+
+  useEffect(() => {
+    setApplyDiscountToSettle(false);
+  }, [selected?.id]);
 
   const cashierCategoryOptions = useMemo(() => {
     const set = new Set<string>();
@@ -1089,12 +1117,15 @@ export function SalesPage() {
       return;
     }
 
+    const shouldApplyDiscountToSettle = applyDiscountToSettle && amount + 1e-9 < dueAmount;
+
     try {
       await paymentMut.mutateAsync({
         id: selected.id,
         input: {
           method: paymentMethod,
           amount,
+          apply_discount_to_settle: shouldApplyDiscountToSettle,
           reference_no: paymentRef.trim() || null,
           client_txn_id: paymentClientTxnId,
           notes: paymentNotes.trim() || null,
@@ -1103,8 +1134,14 @@ export function SalesPage() {
       setPaymentAmount('');
       setPaymentRef('');
       setPaymentNotes('');
+      setApplyDiscountToSettle(false);
       setPaymentClientTxnId(createClientTxnId());
-      setSnack({ severity: 'success', message: 'Payment recorded.' });
+      setSnack({
+        severity: 'success',
+        message: shouldApplyDiscountToSettle
+          ? 'Payment recorded and loyal discount applied.'
+          : 'Payment recorded.',
+      });
       void Promise.allSettled([saleQuery.refetch(), salesQuery.refetch()]);
     } catch (error: any) {
       const message = error?.response?.data?.message || 'Failed to add payment.';
@@ -2186,6 +2223,9 @@ export function SalesPage() {
                 <Typography variant="caption" color="text.secondary">
                   Branch: {row.branch?.name ?? row.branch_id}
                 </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Cashier: {row.cashier?.name ?? row.cashier_user_id ?? '-'}
+                </Typography>
                 <Stack direction="row" spacing={1.2} useFlexGap flexWrap="wrap">
                   <Typography variant="caption" color="text.secondary">
                     Qty: {qtyFmt(row.total_qty ?? 0)}
@@ -2194,9 +2234,52 @@ export function SalesPage() {
                     Total: {money(row.grand_total)}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
+                    Discount: {money(row.discount_total)}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
                     Paid: {money(row.paid_total)}
                   </Typography>
                 </Stack>
+                {Array.isArray(row.items) && row.items.length > 0 ? (
+                  <Box sx={{ pt: 0.15 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.3 }}>
+                      Products sold:
+                    </Typography>
+                    <Stack spacing={0.2}>
+                      {row.items.map((item: any, index: number) => (
+                        <Stack
+                          key={`sale-${row.id}-item-${item?.id ?? index}`}
+                          direction="row"
+                          justifyContent="space-between"
+                          spacing={1}
+                          alignItems="flex-start"
+                        >
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              flex: 1,
+                              minWidth: 0,
+                              color: 'text.secondary',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                            title={saleItemDisplayName(item)}
+                          >
+                            {saleItemDisplayName(item)} x{qtyFmt(item?.qty ?? 0)}
+                          </Typography>
+                          <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                            {money(item?.line_total ?? 0)}
+                          </Typography>
+                        </Stack>
+                      ))}
+                    </Stack>
+                  </Box>
+                ) : (
+                  <Typography variant="caption" color="text.secondary">
+                    Products sold: Open this sale to view item details.
+                  </Typography>
+                )}
                 {String(row.void_request_status ?? '').toUpperCase() && (
                   <Stack direction="row" justifyContent="flex-end">
                     <Chip
@@ -2212,7 +2295,7 @@ export function SalesPage() {
         </Stack>
       ) : (
         <Paper variant="outlined" sx={{ overflowX: 'auto' }}>
-          <Table size="small" sx={{ minWidth: 920 }}>
+          <Table size="small" sx={{ minWidth: 1280 }}>
             <TableHead>
               <TableRow>
                 <TableCell>ID</TableCell>
@@ -2221,8 +2304,11 @@ export function SalesPage() {
                 <TableCell>Status</TableCell>
                 <TableCell>Payment</TableCell>
                 <TableCell>Branch</TableCell>
+                <TableCell>Cashier</TableCell>
+                <TableCell>Products Sold</TableCell>
                 <TableCell align="right">Qty</TableCell>
                 <TableCell align="right">Grand Total</TableCell>
+                <TableCell align="right">Discount</TableCell>
                 <TableCell align="right">Paid</TableCell>
               </TableRow>
             </TableHead>
@@ -2252,8 +2338,47 @@ export function SalesPage() {
                     </Stack>
                   </TableCell>
                   <TableCell>{row.branch?.name ?? row.branch_id}</TableCell>
+                  <TableCell>{row.cashier?.name ?? row.cashier_user_id ?? '-'}</TableCell>
+                  <TableCell>
+                    {Array.isArray(row.items) && row.items.length > 0 ? (
+                      <Stack spacing={0.2} sx={{ minWidth: 240 }}>
+                        {row.items.map((item: any, index: number) => (
+                          <Stack
+                            key={`sale-table-${row.id}-item-${item?.id ?? index}`}
+                            direction="row"
+                            justifyContent="space-between"
+                            spacing={0.8}
+                            alignItems="flex-start"
+                          >
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{
+                                flex: 1,
+                                minWidth: 0,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                              title={saleItemDisplayName(item)}
+                            >
+                              {saleItemDisplayName(item)} x{qtyFmt(item?.qty ?? 0)}
+                            </Typography>
+                            <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                              {money(item?.line_total ?? 0)}
+                            </Typography>
+                          </Stack>
+                        ))}
+                      </Stack>
+                    ) : (
+                      <Typography variant="caption" color="text.secondary">
+                        Open sale for item details
+                      </Typography>
+                    )}
+                  </TableCell>
                   <TableCell align="right">{qtyFmt(row.total_qty ?? 0)}</TableCell>
                   <TableCell align="right">{money(row.grand_total)}</TableCell>
+                  <TableCell align="right">{money(row.discount_total)}</TableCell>
                   <TableCell align="right">{money(row.paid_total)}</TableCell>
                 </TableRow>
               ))}
@@ -2885,7 +3010,13 @@ export function SalesPage() {
                         label="Amount"
                         value={paymentAmount}
                         onChange={(event) => setPaymentAmount(event.target.value)}
-                        helperText={isCashierRole ? 'Enter exact amount received.' : undefined}
+                        helperText={
+                          isCashierRole
+                            ? enteredBelowDue
+                              ? `Lower than due by ${money(discountPreviewAmount)}.`
+                              : 'Enter exact amount received.'
+                            : undefined
+                        }
                         sx={{ width: { sm: 160 } }}
                       />
                       <TextField
@@ -2896,6 +3027,24 @@ export function SalesPage() {
                         sx={{ flex: 1 }}
                       />
                     </Stack>
+                    {isCashierRole && enteredBelowDue && (
+                      <Alert severity={applyDiscountToSettle ? 'success' : 'info'}>
+                        {applyDiscountToSettle
+                          ? `Discount preview: ${money(discountPreviewAmount)}. This sale will be finalized at ${money(enteredPaymentAmount)}.`
+                          : 'Lower payment currently means partial payment. Enable discount mode below if this is a loyal customer discount.'}
+                      </Alert>
+                    )}
+                    {isCashierRole && enteredBelowDue && (
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={applyDiscountToSettle}
+                            onChange={(event) => setApplyDiscountToSettle(event.target.checked)}
+                          />
+                        }
+                        label="Treat entered amount as final total (apply loyal discount)"
+                      />
+                    )}
                     <TextField
                       size="small"
                       label="Notes (optional)"

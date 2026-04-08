@@ -1174,18 +1174,6 @@ export function AppShell() {
             >
               {isLoggingOut ? 'Logging out...' : 'Logout'}
             </Button>
-            <Tooltip title={isLoggingOut ? 'Logging out...' : 'Logout'}>
-              <span>
-                <IconButton
-                  color="inherit"
-                  onClick={() => void handleLogout()}
-                  disabled={isLoggingOut}
-                  sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
-                >
-                  <LogoutRoundedIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
           </Stack>
         </Toolbar>
       </AppBar>

@@ -129,7 +129,6 @@ export function AttendancePage() {
     try {
       await requestTimeInMut.mutateAsync(undefined);
       showSnack('Time-in request submitted. Waiting for admin approval.', 'success');
-      setPage(1);
     } catch (error) {
       showSnack(parseError(error, 'Failed to request time-in.'), 'error');
     }
@@ -139,7 +138,6 @@ export function AttendancePage() {
     try {
       await requestTimeOutMut.mutateAsync(undefined);
       showSnack('Time-out recorded.', 'success');
-      setPage(1);
     } catch (error) {
       showSnack(parseError(error, 'Failed to record time-out.'), 'error');
     }

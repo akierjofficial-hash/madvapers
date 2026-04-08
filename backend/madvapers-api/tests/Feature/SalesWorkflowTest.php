@@ -41,7 +41,7 @@ class SalesWorkflowTest extends TestCase
         $qtySold = 1.0;
         $unitPrice = 199.0;
 
-        $this->actingAsUser('manager@madvapers.local');
+        $this->actingAsUser('admin@madvapers.local');
 
         $created = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
@@ -263,6 +263,82 @@ class SalesWorkflowTest extends TestCase
         ])
             ->assertStatus(422)
             ->assertJsonValidationErrors(['amount']);
+    }
+
+    public function test_payment_can_apply_discount_to_settle_sale(): void
+    {
+        $branch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();
+        $balance = InventoryBalance::query()
+            ->where('branch_id', $branch->id)
+            ->where('qty_on_hand', '>', 0)
+            ->orderBy('id')
+            ->firstOrFail();
+
+        $startingQty = 5.0;
+        $unitPrice = 600.0;
+        $discountedFinalTotal = 550.0;
+
+        $balance->qty_on_hand = $startingQty;
+        $balance->save();
+
+        $this->actingAsUser('manager@madvapers.local');
+
+        $sale = $this->postJson('/api/sales', [
+            'branch_id' => $branch->id,
+            'items' => [
+                [
+                    'product_variant_id' => $balance->product_variant_id,
+                    'qty' => 1,
+                    'unit_price' => $unitPrice,
+                ],
+            ],
+        ])->assertCreated()->json();
+
+        $saleId = (int) ($sale['id'] ?? 0);
+        $this->assertGreaterThan(0, $saleId);
+
+        $this->postJson("/api/sales/{$saleId}/post")->assertOk();
+
+        $this->postJson("/api/sales/{$saleId}/payments", [
+            'method' => 'CASH',
+            'amount' => $discountedFinalTotal,
+            'apply_discount_to_settle' => true,
+        ])
+            ->assertOk()
+            ->assertJsonPath('sale.payment_status', 'PAID')
+            ->assertJsonPath('sale.grand_total', $discountedFinalTotal)
+            ->assertJsonPath('sale.paid_total', $discountedFinalTotal)
+            ->assertJsonPath('sale.discount_total', $unitPrice - $discountedFinalTotal);
+
+        $afterPaidQty = (float) InventoryBalance::query()
+            ->where('branch_id', $branch->id)
+            ->where('product_variant_id', $balance->product_variant_id)
+            ->value('qty_on_hand');
+        $this->assertSame($startingQty - 1.0, $afterPaidQty);
+
+        $this->assertDatabaseHas('sales', [
+            'id' => $saleId,
+            'status' => 'POSTED',
+            'payment_status' => 'PAID',
+            'grand_total' => $discountedFinalTotal,
+            'paid_total' => $discountedFinalTotal,
+            'discount_total' => $unitPrice - $discountedFinalTotal,
+        ]);
+
+        $this->assertDatabaseHas('sale_payments', [
+            'sale_id' => $saleId,
+            'amount' => $discountedFinalTotal,
+        ]);
+
+        $this->assertTrue(
+            StockLedger::query()
+                ->where('branch_id', $branch->id)
+                ->where('product_variant_id', $balance->product_variant_id)
+                ->where('movement_type', 'SALE')
+                ->where('ref_type', 'sales')
+                ->where('ref_id', $saleId)
+                ->exists()
+        );
     }
 
     public function test_voiding_paid_sale_restores_stock_and_prevents_double_reversal(): void

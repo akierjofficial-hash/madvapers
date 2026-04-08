@@ -85,6 +85,7 @@ export type SalesQuery = {
   payment_status?: string;
   void_request_status?: string;
   search?: string;
+  include_items?: boolean | 0 | 1;
 };
 
 export type CreateSaleInput = {
@@ -104,6 +105,7 @@ export type CreateSaleInput = {
 export type AddSalePaymentInput = {
   method: string;
   amount: number;
+  apply_discount_to_settle?: boolean;
   paid_at?: string;
   reference_no?: string | null;
   client_txn_id?: string | null;

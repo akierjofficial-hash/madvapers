@@ -342,10 +342,9 @@ export function InventoryPage() {
   };
 
   const afterStockAction = () => {
-    // keep scanner flow clean
+    // keep scanner flow clean, but preserve current pagination context
     setSearch('');
     setDebouncedSearch('');
-    setPage(1);
     focusSearchInput();
   };
 

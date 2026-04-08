@@ -34,6 +34,8 @@ class SalesController extends Controller
             'payment_status' => ['nullable', 'string', 'max:30'],
             'void_request_status' => ['nullable', 'string', 'max:30'],
             'search' => ['nullable', 'string', 'max:120'],
+            // Accept query-string booleans like "true"/"false" from frontend params.
+            'include_items' => ['nullable', 'in:0,1,true,false'],
         ]);
 
         $driver = DB::getDriverName();
@@ -46,6 +48,15 @@ class SalesController extends Controller
             ->withCount('items')
             ->withSum('items as total_qty', 'qty')
             ->orderByDesc('id');
+
+        if (filter_var($request->input('include_items', false), FILTER_VALIDATE_BOOLEAN)) {
+            $q->with([
+                'items' => function ($items) {
+                    $items->orderBy('id');
+                },
+                'items.variant.product',
+            ]);
+        }
 
         $this->scopeToAssignedBranch($request, $q, 'branch_id');
 
@@ -273,6 +284,7 @@ class SalesController extends Controller
         $data = $request->validate([
             'method' => ['required', 'string', 'max:30'],
             'amount' => ['required', 'numeric', 'gt:0'],
+            'apply_discount_to_settle' => ['nullable', 'boolean'],
             'paid_at' => ['nullable', 'date'],
             'reference_no' => ['nullable', 'string', 'max:80'],
             'client_txn_id' => ['nullable', 'string', 'max:80'],
@@ -322,10 +334,12 @@ class SalesController extends Controller
                 }
             }
 
+            $paymentAmount = round((float) $data['amount'], 2);
             $grandTotal = (float) ($locked->grand_total ?? 0);
             $paidTotal = (float) SalePayment::query()
                 ->where('sale_id', $locked->id)
                 ->sum('amount');
+            $dueBeforePayment = max(0, $grandTotal - $paidTotal);
 
             if ($grandTotal <= 0 || $paidTotal + 1e-9 >= $grandTotal) {
                 throw ValidationException::withMessages([
@@ -333,10 +347,36 @@ class SalesController extends Controller
                 ]);
             }
 
+            $discountAppliedAmount = 0.0;
+            $applyDiscountToSettle = (bool) ($data['apply_discount_to_settle'] ?? false);
+            if ($applyDiscountToSettle && $paymentAmount + 1e-9 < $dueBeforePayment) {
+                $targetGrandTotal = round($paidTotal + $paymentAmount, 2);
+
+                if ($targetGrandTotal <= 0) {
+                    throw ValidationException::withMessages([
+                        'amount' => ['Discounted total must stay above zero.'],
+                    ]);
+                }
+
+                if ($targetGrandTotal + 1e-9 < $paidTotal) {
+                    throw ValidationException::withMessages([
+                        'amount' => ['Discounted total cannot be below payments already recorded.'],
+                    ]);
+                }
+
+                $discountAppliedAmount = round(max(0, $grandTotal - $targetGrandTotal), 2);
+                if ($discountAppliedAmount > 0) {
+                    $locked->discount_total = round(max(0, (float) ($locked->discount_total ?? 0) + $discountAppliedAmount), 2);
+                    $locked->grand_total = round(max(0, $targetGrandTotal), 2);
+                    $locked->save();
+                    $grandTotal = (float) ($locked->grand_total ?? 0);
+                }
+            }
+
             $payment = SalePayment::create([
                 'sale_id' => $locked->id,
                 'method' => strtoupper(trim((string) $data['method'])),
-                'amount' => round((float) $data['amount'], 2),
+                'amount' => $paymentAmount,
                 'paid_at' => $data['paid_at'] ?? now(),
                 'reference_no' => $data['reference_no'] ?? null,
                 'client_txn_id' => $clientTxnId !== '' ? $clientTxnId : null,
@@ -356,6 +396,7 @@ class SalesController extends Controller
             $paymentAmount = round((float) $payment->amount, 2);
             $paidTotal = round((float) ($refreshed->paid_total ?? 0), 2);
             $grandTotal = round((float) ($refreshed->grand_total ?? 0), 2);
+            $discountAppliedAmount = round($discountAppliedAmount, 2);
 
             AuditTrail::record([
                 'event_type' => 'SALE_PAYMENT_ADDED',
@@ -364,11 +405,12 @@ class SalesController extends Controller
                 'branch_id' => (int) $locked->branch_id,
                 'user_id' => $request->user()?->id,
                 'summary' => sprintf(
-                    'Sale payment %.2f (paid %.2f/%.2f, qty %.3f)',
+                    'Sale payment %.2f (paid %.2f/%.2f, qty %.3f%s)',
                     $paymentAmount,
                     $paidTotal,
                     $grandTotal,
-                    (float) ($saleAudit['sale_total_qty'] ?? 0)
+                    (float) ($saleAudit['sale_total_qty'] ?? 0),
+                    $discountAppliedAmount > 0 ? sprintf(', discount %.2f', $discountAppliedAmount) : ''
                 ),
                 'meta' => [
                     'sale_number' => (string) ($locked->sale_number ?? ''),
@@ -376,6 +418,8 @@ class SalesController extends Controller
                     'method' => (string) $payment->method,
                     'amount' => $paymentAmount,
                     'client_txn_id' => $payment->client_txn_id,
+                    'apply_discount_to_settle' => $applyDiscountToSettle,
+                    'discount_applied_amount' => $discountAppliedAmount,
                     'payment_status' => (string) ($refreshed->payment_status ?? ''),
                     'paid_total' => $paidTotal,
                     'sale_grand_total' => $grandTotal,
