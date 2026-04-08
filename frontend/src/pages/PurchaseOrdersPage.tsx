@@ -422,7 +422,7 @@ export function PurchaseOrdersPage() {
     const rawCost = itemUnitCost.trim();
     const cost = rawCost === '' ? 0 : Number(rawCost);
     if (!Number.isFinite(cost) || cost < 0) {
-      showSnack('Unit cost must be a valid number (>= 0).');
+      showSnack('Wholesale cost must be a valid number (>= 0).');
       return;
     }
 
@@ -1023,7 +1023,7 @@ export function PurchaseOrdersPage() {
                   />
                   <TextField
                     size="small"
-                    label="Unit cost (required, 0 ok)"
+                    label="Wholesale cost (required, 0 ok)"
                     value={itemUnitCost}
                     onChange={(e) => setItemUnitCost(e.target.value)}
                     sx={{ width: { xs: '100%', sm: 220 } }}
@@ -1068,7 +1068,7 @@ export function PurchaseOrdersPage() {
                         Qty
                       </TableCell>
                       <TableCell align="right" width={140}>
-                        Unit cost
+                        Wholesale cost
                       </TableCell>
                       <TableCell align="right" width={90}>
                         Remove

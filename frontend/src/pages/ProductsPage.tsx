@@ -267,7 +267,7 @@ export function ProductsPage() {
     if (basePrice && (!Number.isFinite(Number(basePrice)) || Number(basePrice) < 0)) {
       setSnack({
         open: true,
-        message: 'Base price must be a valid number greater than or equal to 0.',
+        message: 'Retail cost must be a valid number greater than or equal to 0.',
         severity: 'error',
       });
       return;
@@ -602,7 +602,7 @@ export function ProductsPage() {
                     Brand: {row.brand?.name ?? '-'}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Base Price: {formatMoney(row.base_price)} • Variants: {row.variants_count ?? 0}
+                    Retail Cost: {formatMoney(row.base_price)} • Variants: {row.variants_count ?? 0}
                   </Typography>
                   {(canUpdate || canDisable || canDelete) && (
                     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ pt: 0.3 }}>
@@ -678,7 +678,7 @@ export function ProductsPage() {
                 <TableCell>Name</TableCell>
                 <TableCell width={180}>Type</TableCell>
                 <TableCell>Brand</TableCell>
-                <TableCell align="right" width={120}>Base Price</TableCell>
+                <TableCell align="right" width={120}>Retail Cost</TableCell>
                 <TableCell align="right" width={100}>
                   Variants
                 </TableCell>
@@ -882,14 +882,14 @@ export function ProductsPage() {
                 />
 
                 <TextField
-                  label="Base Price (optional)"
+                  label="Retail Cost (optional)"
                   type="number"
                   value={form.base_price}
                   onChange={(e) => setForm((prev) => ({ ...prev, base_price: e.target.value }))}
                   inputProps={{ step: '0.01', min: '0' }}
                   fullWidth
                   disabled={busy}
-                  helperText="Template price used to prefill new variants for this product."
+                  helperText="Template retail cost used to prefill new variants for this product."
                 />
 
                 <FormControlLabel

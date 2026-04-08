@@ -290,7 +290,7 @@ export function InventoryPage() {
 
     const unitCost = stockUnitCost.trim() ? Number(stockUnitCost) : null;
     if (unitCost !== null && (!Number.isFinite(unitCost) || unitCost < 0)) {
-      setSnack({ open: true, message: 'Unit cost must be a valid number (>= 0).', severity: 'error' });
+      setSnack({ open: true, message: 'Wholesale cost must be a valid number (>= 0).', severity: 'error' });
       playBeep('error');
       return { ok: false as const };
     }
@@ -582,7 +582,7 @@ export function InventoryPage() {
                               Barcode: {variant.barcode}
                             </Typography>
                             <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
-                              Supply Cost: {formatMoney(variant.default_cost)} | Sale Price: {formatMoney(variant.default_price)}
+                              Avg Wholesale Cost: {formatMoney(variant.default_cost)} | Retail Cost: {formatMoney(variant.default_price)}
                             </Typography>
                             <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
                               Stock value: {formatMoney(variant.stock_value)}
@@ -607,8 +607,8 @@ export function InventoryPage() {
                 <TableCell>Variant</TableCell>
                 <TableCell>Flavor</TableCell>
                 <TableCell>SKU</TableCell>
-                <TableCell align="right">Supply Cost</TableCell>
-                <TableCell align="right">Sale Price</TableCell>
+                <TableCell align="right">Avg Wholesale Cost</TableCell>
+                <TableCell align="right">Retail Cost</TableCell>
                 <TableCell align="right">Selected Qty</TableCell>
                 <TableCell align="right">Stock Value</TableCell>
               </TableRow>
@@ -702,10 +702,13 @@ export function InventoryPage() {
                 Brand: {selected.brand}
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                Supply Cost: {formatMoney(selected.default_cost)}
+                Avg Wholesale Cost: {formatMoney(selected.default_cost)}
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.75 }}>
+                Cost shown here is weighted-average wholesale cost, not the latest single entry.
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                Sale Price: {formatMoney(selected.default_price)}
+                Retail Cost: {formatMoney(selected.default_price)}
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>
                 Stock value: {formatMoney(selected.stock_value)}
@@ -755,6 +758,9 @@ export function InventoryPage() {
                   <b>Save Draft</b> creates an adjustment you can review/approve/post later.
                 </>
               )}
+              <br />
+              Wholesale cost updates <b>weighted-average wholesale cost</b> across current stock. It will not always match
+              the exact last wholesale cost entered.
               {!canAdjustStock && <>You do not have stock adjustment permissions.</>}
             </Alert>
 
@@ -765,12 +771,16 @@ export function InventoryPage() {
               onChange={(e) => setStockQty(e.target.value)}
             />
             <TextField
-              label="Unit cost (optional)"
+              label="Wholesale cost for inbound qty (optional)"
               type="number"
               value={stockUnitCost}
               onChange={(e) => setStockUnitCost(e.target.value)}
               inputProps={{ step: '0.01', min: '0' }}
             />
+            <Typography variant="caption" color="text.secondary">
+              Tip: To directly set a fixed wholesale cost, edit the variant&apos;s wholesale cost. This field is used for
+              weighted average updates.
+            </Typography>
             <TextField label="Notes (optional)" value={stockNotes} onChange={(e) => setStockNotes(e.target.value)} />
 
             {busy && <Alert severity="info">Working...</Alert>}

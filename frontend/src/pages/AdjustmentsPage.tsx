@@ -429,7 +429,7 @@ export function AdjustmentsPage() {
     const unitCostRaw = itemUnitCost.trim();
     const unitCost = unitCostRaw === '' ? null : Number(unitCostRaw);
     if (unitCost !== null && (!Number.isFinite(unitCost) || unitCost < 0)) {
-      setSnack({ open: true, message: 'Unit cost must be a valid number (>= 0).', severity: 'error' });
+      setSnack({ open: true, message: 'Wholesale cost must be a valid number (>= 0).', severity: 'error' });
       return;
     }
 
@@ -939,7 +939,7 @@ export function AdjustmentsPage() {
                 />
                 <TextField
                   size="small"
-                  label="Unit cost (optional)"
+                  label="Wholesale cost (optional)"
                   value={itemUnitCost}
                   onChange={(e) => setItemUnitCost(e.target.value)}
                   sx={{ width: 180 }}
@@ -986,7 +986,7 @@ export function AdjustmentsPage() {
                       <TableCell>Variant+Flavor</TableCell>
                       <TableCell align="right" width={120}>On hand</TableCell>
                       <TableCell align="right" width={120}>Qty delta</TableCell>
-                      <TableCell align="right" width={120}>Unit cost</TableCell>
+                      <TableCell align="right" width={120}>Wholesale cost</TableCell>
                       <TableCell align="right" width={100}>Remove</TableCell>
                     </TableRow>
                   </TableHead>

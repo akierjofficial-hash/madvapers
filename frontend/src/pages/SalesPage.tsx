@@ -858,7 +858,7 @@ export function SalesPage() {
       return;
     }
     if (!Number.isFinite(unitPrice) || unitPrice < 0) {
-      setSnack({ severity: 'error', message: 'Unit price must be zero or higher.' });
+      setSnack({ severity: 'error', message: 'Retail cost must be zero or higher.' });
       return;
     }
     if (!Number.isFinite(lineDiscount) || lineDiscount < 0 || !Number.isFinite(lineTax) || lineTax < 0) {
@@ -2332,7 +2332,7 @@ export function SalesPage() {
                         <TableCell>SKU</TableCell>
                         <TableCell>Product</TableCell>
                         <TableCell>Variant</TableCell>
-                        <TableCell align="right">Default Price</TableCell>
+                        <TableCell align="right">Default Retail Cost</TableCell>
                         <TableCell align="right">Action</TableCell>
                       </TableRow>
                     </TableHead>
@@ -2387,7 +2387,7 @@ export function SalesPage() {
                 />
                 <TextField
                   size="small"
-                  label="Unit price"
+                  label="Retail Cost"
                   value={itemPrice}
                   onChange={(e) => setItemPrice(e.target.value)}
                   sx={{ width: 140 }}
@@ -2440,7 +2440,7 @@ export function SalesPage() {
                       <TableCell>Product</TableCell>
                       <TableCell>Variant</TableCell>
                       <TableCell align="right">Qty</TableCell>
-                      <TableCell align="right">Price</TableCell>
+                      <TableCell align="right">Retail Cost</TableCell>
                       <TableCell align="right">Discount</TableCell>
                       <TableCell align="right">Tax</TableCell>
                       <TableCell align="right">Line Total</TableCell>
@@ -2766,7 +2766,7 @@ export function SalesPage() {
                         <TableCell>Product</TableCell>
                         <TableCell>Variant</TableCell>
                         <TableCell align="right">Qty</TableCell>
-                        <TableCell align="right">Unit Price</TableCell>
+                        <TableCell align="right">Retail Cost</TableCell>
                         <TableCell align="right">Line Total</TableCell>
                         <TableCell align="right">COGS</TableCell>
                       </TableRow>

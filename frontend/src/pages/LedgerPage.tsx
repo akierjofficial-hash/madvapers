@@ -514,10 +514,10 @@ export function LedgerPage() {
                 <b>Qty Δ:</b> {qty((selected as any).qty_delta)}
               </Typography>
               <Typography variant="body2">
-                <b>Unit cost:</b> {money((selected as any).unit_cost)}
+                <b>Wholesale Cost:</b> {money((selected as any).unit_cost)}
               </Typography>
               <Typography variant="body2">
-                <b>Unit price:</b> {money((selected as any).unit_price)}
+                <b>Retail Cost:</b> {money((selected as any).unit_price)}
               </Typography>
 
               <Typography variant="body2">

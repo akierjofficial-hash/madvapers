@@ -253,12 +253,12 @@ export function VariantsPage() {
       return;
     }
     if (!defaultPrice.trim()) {
-      setSnack({ open: true, message: 'Price is required.', severity: 'error' });
+      setSnack({ open: true, message: 'Retail cost is required.', severity: 'error' });
       return;
     }
     const parsedDefaultPrice = Number(defaultPrice);
     if (!Number.isFinite(parsedDefaultPrice) || parsedDefaultPrice <= 0) {
-      setSnack({ open: true, message: 'Price must be a valid number > 0.', severity: 'error' });
+      setSnack({ open: true, message: 'Retail cost must be a valid number > 0.', severity: 'error' });
       return;
     }
 
@@ -329,12 +329,12 @@ export function VariantsPage() {
       return;
     }
     if (!editDefaultPrice.trim()) {
-      setSnack({ open: true, message: 'Price is required.', severity: 'error' });
+      setSnack({ open: true, message: 'Retail cost is required.', severity: 'error' });
       return;
     }
     const parsedEditDefaultPrice = Number(editDefaultPrice);
     if (!Number.isFinite(parsedEditDefaultPrice) || parsedEditDefaultPrice <= 0) {
-      setSnack({ open: true, message: 'Price must be a valid number > 0.', severity: 'error' });
+      setSnack({ open: true, message: 'Retail cost must be a valid number > 0.', severity: 'error' });
       return;
     }
 
@@ -505,7 +505,7 @@ export function VariantsPage() {
 
     const unitCost = stockUnitCost.trim() ? Number(stockUnitCost) : null;
     if (unitCost !== null && (!Number.isFinite(unitCost) || unitCost < 0)) {
-      setSnack({ open: true, message: 'Unit cost must be >= 0.', severity: 'error' });
+      setSnack({ open: true, message: 'Wholesale cost must be >= 0.', severity: 'error' });
       return;
     }
 
@@ -641,7 +641,7 @@ export function VariantsPage() {
                   {row.productType} • {row.brand}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Price: {formatMoney(row.price)}
+                  Retail Cost: {formatMoney(row.price)}
                 </Typography>
                 {(canUpdate || canDisable || canDelete || canQuickAdjustStock) && (
                   <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ pt: 0.3 }}>
@@ -728,7 +728,7 @@ export function VariantsPage() {
                 <TableCell>Type</TableCell>
                 <TableCell>Variant</TableCell>
                 <TableCell>Flavor</TableCell>
-                <TableCell align="right" width={120}>Price</TableCell>
+                <TableCell align="right" width={120}>Retail Cost</TableCell>
                 <TableCell>Brand</TableCell>
                 {(canUpdate || canDisable || canDelete || canQuickAdjustStock) && (
                   <TableCell align="right">Actions</TableCell>
@@ -908,12 +908,12 @@ export function VariantsPage() {
                 />
 
                 <TextField
-                  label="Price *"
+                  label="Retail Cost *"
                   type="number"
                   value={defaultPrice}
                   onChange={(e) => setDefaultPrice(e.target.value)}
                   inputProps={{ step: '0.01', min: '0.01' }}
-                  helperText="Auto-filled from Product Base Price. Required for variant creation."
+                  helperText="Auto-filled from Product Retail Cost. Required for variant creation."
                   disabled={!canCreate}
                 />
               </Stack>
@@ -969,7 +969,7 @@ export function VariantsPage() {
             />
 
             <TextField
-              label="Price *"
+              label="Retail Cost *"
               type="number"
               value={editDefaultPrice}
               onChange={(e) => setEditDefaultPrice(e.target.value)}
@@ -1039,12 +1039,12 @@ export function VariantsPage() {
               disabled={!canQuickAdjustStock}
             />
             <TextField
-              label="Unit cost (optional)"
+              label="Wholesale cost (optional)"
               type="number"
               value={stockUnitCost}
               onChange={(e) => setStockUnitCost(e.target.value)}
               inputProps={{ step: '0.01', min: '0' }}
-              helperText="Auto-filled from variant default cost. If cost is 0, it falls back to variant price."
+              helperText="Auto-filled from variant wholesale cost. If wholesale cost is 0, it falls back to variant retail cost."
               disabled={!canQuickAdjustStock}
             />
             <TextField

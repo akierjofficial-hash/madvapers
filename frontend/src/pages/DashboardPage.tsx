@@ -874,7 +874,7 @@ export function DashboardPage() {
         currency: 'PHP',
         maximumFractionDigits: 2,
       }),
-      hint: 'Cost-based estimate',
+      hint: 'Wholesale cost estimate',
       icon: <AccountBalanceWalletOutlinedIcon fontSize="small" />,
       accent: '#0f766e',
     },
@@ -1657,7 +1657,7 @@ export function DashboardPage() {
               onClick={() => setActiveKpiKey('inventory-value')}
             />
             <MetricTile
-              label="Missing Cost"
+              label="Missing Wholesale Cost"
               value={Number(summary?.kpis.missing_cost_count ?? 0).toLocaleString()}
               accent="#f59e0b"
               icon={<WarningAmberRoundedIcon sx={{ fontSize: 14 }} />}
@@ -3230,7 +3230,7 @@ function InventoryKpiTable({
             <TableCell>Product</TableCell>
             <TableCell>Variant</TableCell>
             <TableCell align="right">Qty</TableCell>
-            <TableCell align="right">Unit Cost</TableCell>
+            <TableCell align="right">Wholesale Cost</TableCell>
             <TableCell align="right">Stock Value</TableCell>
           </TableRow>
         </TableHead>
