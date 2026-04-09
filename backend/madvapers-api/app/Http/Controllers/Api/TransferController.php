@@ -65,11 +65,35 @@ class TransferController extends Controller
         // Non-admin users can only see transfers touching their assigned branch.
         $this->scopeTransfersToAssignedBranch($request, $q);
 
-        if ($request->filled('from_branch_id')) {
-            $q->where('from_branch_id', (int)$request->from_branch_id);
+        $fromBranchId = $request->filled('from_branch_id')
+            ? (int) $request->input('from_branch_id')
+            : null;
+        $toBranchId = $request->filled('to_branch_id')
+            ? (int) $request->input('to_branch_id')
+            : null;
+
+        if ($fromBranchId !== null) {
+            $assigned = $this->assignedBranchIds($request);
+            $isSelfBranchFilter =
+                !$this->isPrivilegedUser($request->user()) &&
+                in_array($fromBranchId, $assigned, true) &&
+                $toBranchId === null;
+
+            if ($isSelfBranchFilter) {
+                // Staff commonly keep their own branch selected in the "From branch" filter.
+                // Treat this as "transfers touching my branch" so incoming IN_TRANSIT rows
+                // remain visible and receivable.
+                $q->where(function ($w) use ($fromBranchId) {
+                    $w->where('from_branch_id', $fromBranchId)
+                        ->orWhere('to_branch_id', $fromBranchId);
+                });
+            } else {
+                $q->where('from_branch_id', $fromBranchId);
+            }
         }
-        if ($request->filled('to_branch_id')) {
-            $q->where('to_branch_id', (int)$request->to_branch_id);
+
+        if ($toBranchId !== null) {
+            $q->where('to_branch_id', $toBranchId);
         }
         if ($request->filled('status')) {
             $q->where('status', strtoupper((string)$request->status));
