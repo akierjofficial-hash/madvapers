@@ -141,6 +141,48 @@ body {
     color: var(--mv-muted) !important;
   }
 
+  /* Force all mobile create/edit dialogs and sheets to the light theme */
+  .MuiDialog-paper,
+  .MuiDrawer-paper {
+    background: #ffffff !important;
+    color: var(--mv-text) !important;
+    border: 1px solid var(--mv-border) !important;
+    background-image: none !important;
+  }
+
+  .MuiDialogTitle-root,
+  .MuiDialogContent-root,
+  .MuiDialogActions-root {
+    background: #ffffff !important;
+    color: var(--mv-text) !important;
+  }
+
+  .MuiDialogTitle-root {
+    border-bottom: 1px solid var(--mv-border) !important;
+  }
+
+  .MuiDialogActions-root {
+    border-top: 1px solid var(--mv-border) !important;
+  }
+
+  .MuiDialogContent-root .MuiTypography-root,
+  .MuiDialogContent-root .MuiFormLabel-root,
+  .MuiDialogContent-root .MuiFormHelperText-root,
+  .MuiDialogContent-root .MuiInputBase-input,
+  .MuiDialogContent-root .MuiInputBase-input::placeholder,
+  .MuiDialogContent-root .MuiSelect-select {
+    color: var(--mv-text) !important;
+    opacity: 1 !important;
+  }
+
+  .MuiDialogContent-root .MuiOutlinedInput-root {
+    background: var(--mv-surface-soft) !important;
+  }
+
+  .MuiDialogContent-root .MuiOutlinedInput-notchedOutline {
+    border-color: var(--mv-border) !important;
+  }
+
   .MuiBackdrop-root {
     background-color: rgba(16, 24, 40, 0.45) !important;
   }
