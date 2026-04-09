@@ -125,6 +125,29 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+async function getServiceWorkerRegistrationSafe(timeoutMs = 2000): Promise<ServiceWorkerRegistration | null> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return null;
+
+  try {
+    const existing = await navigator.serviceWorker.getRegistration();
+    if (existing) return existing;
+  } catch {
+    // Ignore and fallback to ready timeout below.
+  }
+
+  try {
+    const readyOrTimeout = await Promise.race<ServiceWorkerRegistration | null>([
+      navigator.serviceWorker.ready,
+      new Promise<null>((resolve) => {
+        window.setTimeout(() => resolve(null), timeoutMs);
+      }),
+    ]);
+    return readyOrTimeout ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function AppShell() {
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('lg'));
@@ -526,7 +549,8 @@ export function AppShell() {
     }
 
     try {
-      const registration = await navigator.serviceWorker.ready;
+      const registration = await getServiceWorkerRegistrationSafe();
+      if (!registration) return;
       const subscription = await registration.pushManager.getSubscription();
       if (subscription) {
         try {
@@ -828,9 +852,11 @@ export function AppShell() {
     .toUpperCase();
 
   const handleLogout = async () => {
-    if (isAdminRole) {
-      await unregisterAdminPushSubscription();
-    }
+    if (isLoggingOut) return;
+
+    // Never block logout on push cleanup; do this as best effort.
+    if (isAdminRole) void unregisterAdminPushSubscription();
+
     await logout();
   };
 
@@ -1156,8 +1182,8 @@ export function AppShell() {
                 sx={{
                   width: 32,
                   height: 32,
-                  bgcolor: { xs: '#1f2f4e', sm: 'primary.main' },
-                  color: { xs: '#a9c2ff', sm: '#ffffff' },
+                  bgcolor: 'primary.main',
+                  color: '#ffffff',
                   fontSize: 13,
                 }}
               >

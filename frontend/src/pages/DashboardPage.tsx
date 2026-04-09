@@ -1335,8 +1335,8 @@ export function DashboardPage() {
             sx={{
               p: { xs: 1.0, md: 1.35 },
               borderRadius: 3,
-              borderColor: alpha('#3a465e', isMobile ? 0.82 : 0.35),
-              bgcolor: isMobile ? alpha('#242d3d', 0.86) : alpha('#0f766e', 0.03),
+              borderColor: alpha(theme.palette.divider, isMobile ? 0.95 : 0.35),
+              bgcolor: alpha('#0f766e', 0.03),
               boxShadow: 'none',
             }}
           >
@@ -1427,8 +1427,8 @@ export function DashboardPage() {
                         px: 1,
                         py: 0.7,
                         borderRadius: 1,
-                        border: `1px solid ${alpha('#3a465e', 0.82)}`,
-                        bgcolor: alpha('#242d3d', 0.94),
+                        border: `1px solid ${alpha(theme.palette.divider, 0.95)}`,
+                        bgcolor: alpha(theme.palette.background.paper, 0.98),
                         justifyContent: 'flex-start',
                         textAlign: 'left',
                       }}
@@ -1439,13 +1439,13 @@ export function DashboardPage() {
                           sx={{
                             letterSpacing: '0.08em',
                             textTransform: 'uppercase',
-                            color: alpha('#b8c4da', 0.88),
+                            color: 'text.secondary',
                             fontSize: 9.5,
                           }}
                         >
                           From
                         </Typography>
-                        <Typography sx={{ fontWeight: 600, color: '#f4f7ff', fontSize: '0.9rem', lineHeight: 1.2 }}>
+                        <Typography sx={{ fontWeight: 600, color: 'text.primary', fontSize: '0.9rem', lineHeight: 1.2 }}>
                           {formatWordDate(dateFrom)}
                         </Typography>
                       </Stack>
@@ -1470,8 +1470,8 @@ export function DashboardPage() {
                         px: 1,
                         py: 0.7,
                         borderRadius: 1,
-                        border: `1px solid ${alpha('#3a465e', 0.82)}`,
-                        bgcolor: alpha('#242d3d', 0.94),
+                        border: `1px solid ${alpha(theme.palette.divider, 0.95)}`,
+                        bgcolor: alpha(theme.palette.background.paper, 0.98),
                         justifyContent: 'flex-start',
                         textAlign: 'left',
                       }}
@@ -1482,13 +1482,13 @@ export function DashboardPage() {
                           sx={{
                             letterSpacing: '0.08em',
                             textTransform: 'uppercase',
-                            color: alpha('#b8c4da', 0.88),
+                            color: 'text.secondary',
                             fontSize: 9.5,
                           }}
                         >
                           To
                         </Typography>
-                        <Typography sx={{ fontWeight: 600, color: '#f4f7ff', fontSize: '0.9rem', lineHeight: 1.2 }}>
+                        <Typography sx={{ fontWeight: 600, color: 'text.primary', fontSize: '0.9rem', lineHeight: 1.2 }}>
                           {formatWordDate(dateTo)}
                         </Typography>
                       </Stack>
@@ -1563,9 +1563,9 @@ export function DashboardPage() {
                   sx={
                     isMobile
                       ? {
-                          bgcolor: alpha('#1b273a', 0.72),
-                          borderColor: alpha('#3f5578', 0.9),
-                          color: '#f4f7ff',
+                          bgcolor: alpha(theme.palette.background.paper, 0.98),
+                          borderColor: alpha(theme.palette.divider, 0.95),
+                          color: 'text.primary',
                         }
                       : undefined
                   }
