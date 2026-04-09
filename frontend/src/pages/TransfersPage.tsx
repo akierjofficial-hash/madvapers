@@ -92,6 +92,17 @@ function getVariantOnHand(v: any): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function getTransferItemDisplay(it: any): string {
+  const variant = it?.variant ?? null;
+  const productName = String(variant?.product?.name ?? '').trim() || `Variant #${Number(it?.product_variant_id ?? 0) || '-'}`;
+  const variantLabelRaw = String(getVariantLabel(variant) ?? '').trim();
+  const variantLabel = variantLabelRaw && variantLabelRaw !== 'Standard' ? variantLabelRaw : '-';
+  const flavor = String(variant?.flavor ?? '').trim() || '-';
+  const qty = qtyFmt(it?.qty);
+
+  return `${productName} / ${variantLabel} / ${flavor} (Qty: ${qty})`;
+}
+
 type DraftItem = {
   product_variant_id: number;
   qty: number;
@@ -408,6 +419,7 @@ export function TransfersPage() {
       const items = (t as any).items ?? [];
       const itemsCount = items.length;
       const totalQty = items.reduce((sum: number, it: any) => sum + Number(it.qty ?? 0), 0);
+      const itemDisplays = items.map((it: any) => getTransferItemDisplay(it));
       const statusText = String((t as any).status ?? '-');
       const transferId = Number(t.id ?? 0);
       const isNew = statusText === 'REQUESTED' && transferId > seenRequestedTransferId;
@@ -422,6 +434,7 @@ export function TransfersPage() {
         to: resolveBranchLabel(toBranchIdValue, (t as any).toBranch?.name),
         itemsCount,
         totalQty,
+        itemDisplays,
         notes: (t as any).notes ?? '',
       };
     });
@@ -857,6 +870,24 @@ export function TransfersPage() {
                   </Stack>
                 </Stack>
                 <Typography variant="body2">{`${r.from} -> ${r.to}`}</Typography>
+                {r.itemDisplays.length > 0 ? (
+                  <Stack spacing={0.2}>
+                    {r.itemDisplays.slice(0, 2).map((line: string, idx: number) => (
+                      <Typography key={`${r.id}-line-${idx}`} variant="caption" color="text.secondary">
+                        {line}
+                      </Typography>
+                    ))}
+                    {r.itemDisplays.length > 2 && (
+                      <Typography variant="caption" color="text.secondary">
+                        +{r.itemDisplays.length - 2} more item(s)
+                      </Typography>
+                    )}
+                  </Stack>
+                ) : (
+                  <Typography variant="caption" color="text.secondary">
+                    No item details available.
+                  </Typography>
+                )}
                 <Typography variant="caption" color="text.secondary">
                   Items: {r.itemsCount} | Qty: {qtyFmt(r.totalQty)}
                 </Typography>
@@ -876,6 +907,7 @@ export function TransfersPage() {
                 <TableCell>Status</TableCell>
                 <TableCell>From</TableCell>
                 <TableCell>To</TableCell>
+                <TableCell>Transferred Items (Product / Variant / Flavor)</TableCell>
                 <TableCell align="right">Items</TableCell>
                 <TableCell align="right">Qty</TableCell>
                 <TableCell>Notes</TableCell>
@@ -915,6 +947,26 @@ export function TransfersPage() {
                   </TableCell>
                   <TableCell>{r.from}</TableCell>
                   <TableCell>{r.to}</TableCell>
+                  <TableCell sx={{ minWidth: 280 }}>
+                    {r.itemDisplays.length > 0 ? (
+                      <Stack spacing={0.2}>
+                        {r.itemDisplays.slice(0, 2).map((line: string, idx: number) => (
+                          <Typography key={`${r.id}-item-${idx}`} variant="caption">
+                            {line}
+                          </Typography>
+                        ))}
+                        {r.itemDisplays.length > 2 && (
+                          <Typography variant="caption" color="text.secondary">
+                            +{r.itemDisplays.length - 2} more item(s)
+                          </Typography>
+                        )}
+                      </Stack>
+                    ) : (
+                      <Typography variant="caption" color="text.secondary">
+                        No item details
+                      </Typography>
+                    )}
+                  </TableCell>
                   <TableCell align="right">{r.itemsCount}</TableCell>
                   <TableCell align="right">{qtyFmt(r.totalQty)}</TableCell>
                   <TableCell>{r.notes?.trim() ? r.notes : '-'}</TableCell>

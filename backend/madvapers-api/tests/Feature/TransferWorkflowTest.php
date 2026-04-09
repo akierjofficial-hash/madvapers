@@ -218,6 +218,68 @@ class TransferWorkflowTest extends TestCase
         $this->assertSame($activeBranchIds, $toBranchIds);
     }
 
+    public function test_clerk_can_see_incoming_transfer_in_from_branch_filtered_list(): void
+    {
+        $clerk = User::query()->where('email', 'clerk@madvapers.local')->firstOrFail();
+
+        $assignedBranchIds = $clerk->branches()->pluck('branches.id')->map(fn ($id) => (int) $id)->all();
+        if ($clerk->branch_id) {
+            $assignedBranchIds[] = (int) $clerk->branch_id;
+        }
+        $assignedBranchIds = array_values(array_unique(array_filter($assignedBranchIds, fn ($id) => $id > 0)));
+        sort($assignedBranchIds);
+
+        $toBranchId = $assignedBranchIds[0] ?? 0;
+        $this->assertGreaterThan(0, $toBranchId, 'Clerk must have at least one assigned branch.');
+
+        $fromBranchId = (int) Branch::query()
+            ->where('is_active', true)
+            ->where('id', '!=', $toBranchId)
+            ->orderBy('id')
+            ->value('id');
+        $this->assertGreaterThan(0, $fromBranchId);
+
+        $sourceBalance = InventoryBalance::query()
+            ->where('branch_id', $fromBranchId)
+            ->where('qty_on_hand', '>', 0)
+            ->orderBy('id')
+            ->firstOrFail();
+
+        $this->actingAsUser('admin@madvapers.local');
+        $created = $this->postJson('/api/transfers', [
+            'from_branch_id' => $fromBranchId,
+            'to_branch_id' => $toBranchId,
+            'notes' => 'Incoming transfer visibility test',
+            'items' => [
+                [
+                    'product_variant_id' => (int) $sourceBalance->product_variant_id,
+                    'qty' => 1,
+                    'unit_cost' => 0,
+                ],
+            ],
+        ])->assertCreated()->json();
+
+        $transferId = (int) ($created['id'] ?? 0);
+        $this->assertGreaterThan(0, $transferId);
+
+        $this->postJson("/api/transfers/{$transferId}/request")->assertOk();
+        $this->postJson("/api/transfers/{$transferId}/approve")->assertOk();
+        $this->postJson("/api/transfers/{$transferId}/dispatch")->assertOk();
+
+        $this->actingAsUser('clerk@madvapers.local');
+        $rows = $this->getJson("/api/transfers?from_branch_id={$toBranchId}&status=IN_TRANSIT")
+            ->assertOk()
+            ->json('data');
+
+        $hasTransfer = collect(is_array($rows) ? $rows : [])->contains(function ($row) use ($transferId, $toBranchId) {
+            return (int) ($row['id'] ?? 0) === $transferId
+                && (int) ($row['to_branch_id'] ?? 0) === $toBranchId
+                && strtoupper((string) ($row['status'] ?? '')) === 'IN_TRANSIT';
+        });
+
+        $this->assertTrue($hasTransfer, 'Incoming IN_TRANSIT transfer should be visible in clerk list.');
+    }
+
     public function test_transfer_request_blocks_when_source_stock_is_insufficient(): void
     {
         $sourceBalance = InventoryBalance::query()

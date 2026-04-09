@@ -60,7 +60,7 @@ class TransferController extends Controller
 
     public function index(Request $request)
     {
-        $q = Transfer::query()->with(['items', 'fromBranch', 'toBranch']);
+        $q = Transfer::query()->with(['items.variant.product', 'fromBranch', 'toBranch']);
 
         // Non-admin users can only see transfers touching their assigned branch.
         $this->scopeTransfersToAssignedBranch($request, $q);
