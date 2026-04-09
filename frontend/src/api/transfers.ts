@@ -17,6 +17,9 @@ export type Transfer = {
   status: string;
   reference_no?: string | null;
   notes?: string | null;
+  approved_at?: string | null;
+  dispatched_at?: string | null;
+  received_at?: string | null;
 
   created_at?: string;
   updated_at?: string;

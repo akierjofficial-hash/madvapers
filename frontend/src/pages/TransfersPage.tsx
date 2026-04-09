@@ -2,6 +2,7 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
@@ -27,6 +28,7 @@ import {
   useMediaQuery,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
@@ -69,6 +71,19 @@ function qtyFmt(v: string | number | null | undefined) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 3 });
 }
 
+function dateTimeFmt(v: string | null | undefined) {
+  if (!v) return '-';
+  const dt = new Date(v);
+  if (Number.isNaN(dt.getTime())) return '-';
+  return dt.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 function getVariantLabel(v: any): string {
   const byName = String(v?.variant_name ?? '').trim();
   if (byName) return byName;
@@ -109,6 +124,7 @@ type DraftItem = {
   sku?: string | null;
   productName?: string | null;
   variantName?: string | null;
+  flavor?: string | null;
   onHand?: number | null;
 };
 
@@ -173,16 +189,7 @@ export function TransfersPage() {
   // Variant picker state
   const [variantSearch, setVariantSearch] = useState('');
   const [variantSearchDebounced, setVariantSearchDebounced] = useState('');
-  const [createVariantId, setCreateVariantId] = useState<string>(''); // fallback/manual
-  const [createQty, setCreateQty] = useState<string>('1');
-
-  const [pickedVariant, setPickedVariant] = useState<{
-    id: number;
-    sku?: string | null;
-    productName?: string | null;
-    variantName?: string | null;
-    onHand?: number | null;
-  } | null>(null);
+  const [variantLookupPage, setVariantLookupPage] = useState(1);
 
   // Draft items (multi-item support)
   const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
@@ -211,106 +218,83 @@ export function TransfersPage() {
     return () => clearTimeout(t);
   }, [variantSearch, openCreate]);
 
+  useEffect(() => {
+    if (!openCreate) return;
+    setVariantLookupPage(1);
+  }, [variantSearchDebounced, createFrom, openCreate]);
+
   const variantLookupQuery = useVariantsQuery(
     {
-      page: 1,
-      per_page: 500,
+      page: variantLookupPage,
+      per_page: 25,
       search: variantSearchDebounced || undefined,
       branch_id: typeof createFrom === 'number' ? createFrom : undefined,
     },
-    openCreate && canTransferCreate && variantSearchDebounced.length >= 2
+    openCreate && canTransferCreate && typeof createFrom === 'number'
   );
   const variantOptions: any[] = variantLookupQuery.data?.data ?? [];
+  const variantLookupTotalPages = variantLookupQuery.data?.last_page ?? 1;
   const approvalQueueQuery = useDashboardApprovalQueueQuery({}, canDashboardView);
-
-  const pickVariant = (v: any) => {
-    const id = Number(v?.id);
-    if (!Number.isFinite(id) || id <= 0) return;
-
-    const sku = v?.sku ?? null;
-    const productName = v?.product?.name ?? null;
-    const variantName = getVariantLabel(v);
-    const onHand = getVariantOnHand(v);
-
-    setPickedVariant({ id, sku, productName, variantName, onHand });
-    setCreateVariantId(String(id));
-    setVariantSearch(sku ?? String(id));
-  };
-
-  const clearPickedVariant = () => {
-    setPickedVariant(null);
-    setCreateVariantId('');
-  };
-
-  const addDraftItem = () => {
-    if (!canTransferCreate) {
-      showSnack('Not authorized: TRANSFER_CREATE');
-      return;
-    }
-
-    const variantId = Number(createVariantId);
-    const qty = Number(createQty);
-
-    if (!Number.isFinite(variantId) || variantId <= 0) {
-      showSnack('Select a variant (or enter a valid Variant ID).');
-      return;
-    }
-    if (!Number.isFinite(qty) || qty <= 0) {
-      showSnack('Enter a valid Qty (> 0).');
-      return;
-    }
-
-    const fromPicked =
-      pickedVariant?.id === variantId
-        ? {
-            sku: pickedVariant.sku ?? null,
-            productName: pickedVariant.productName ?? null,
-            variantName: pickedVariant.variantName ?? null,
-            onHand: pickedVariant.onHand ?? null,
-          }
-        : null;
-
-    const fromLookup = (() => {
-      const found = variantOptions.find((x) => Number(x?.id) === variantId);
-      if (!found) return null;
-      return {
-        sku: found?.sku ?? null,
-        productName: found?.product?.name ?? null,
-        variantName: getVariantLabel(found),
-        onHand: getVariantOnHand(found),
-      };
-    })();
-
-    const meta = fromPicked ?? fromLookup ?? { sku: null, productName: null, variantName: null, onHand: null };
-
-    setDraftItems((prev) => {
-      const idx = prev.findIndex((x) => x.product_variant_id === variantId);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = { ...next[idx], qty: next[idx].qty + qty };
-        return next;
-      }
-      return [
-        ...prev,
-        {
-          product_variant_id: variantId,
-          qty,
-          sku: meta.sku,
-          productName: meta.productName,
-          variantName: meta.variantName,
-          onHand: meta.onHand,
-        },
-      ];
-    });
-
-    setCreateQty('1');
-  };
 
   const removeDraftItem = (variantId: number) => {
     setDraftItems((prev) => prev.filter((x) => x.product_variant_id !== variantId));
   };
 
   const clearDraft = () => setDraftItems([]);
+
+  const isVariantMarked = (variantId: number) =>
+    draftItems.some((item) => item.product_variant_id === variantId);
+
+  const markVariantForTransfer = (variant: any, nextChecked: boolean) => {
+    const variantId = Number(variant?.id);
+    if (!Number.isFinite(variantId) || variantId <= 0) return;
+
+    if (!nextChecked) {
+      removeDraftItem(variantId);
+      return;
+    }
+
+    const onHand = getVariantOnHand(variant);
+    const defaultQty = onHand !== null && onHand > 0 ? 1 : 0;
+    if (defaultQty <= 0) {
+      showSnack('This variant has no available stock to transfer.');
+      return;
+    }
+
+    setDraftItems((prev) => {
+      const existing = prev.find((item) => item.product_variant_id === variantId);
+      if (existing) {
+        return prev;
+      }
+
+      return [
+        ...prev,
+        {
+          product_variant_id: variantId,
+          qty: defaultQty,
+          sku: variant?.sku ?? null,
+          productName: variant?.product?.name ?? null,
+          variantName: getVariantLabel(variant),
+          flavor: String(variant?.flavor ?? '').trim() || null,
+          onHand,
+        },
+      ];
+    });
+  };
+
+  const updateDraftItemQty = (variantId: number, rawValue: string) => {
+    if (rawValue.trim() === '') return;
+    const qty = Number(rawValue);
+    if (!Number.isFinite(qty) || qty <= 0) return;
+
+    setDraftItems((prev) =>
+      prev.map((item) =>
+        item.product_variant_id === variantId
+          ? { ...item, qty }
+          : item
+      )
+    );
+  };
 
   const draftTotals = useMemo(() => {
     const itemsCount = draftItems.length;
@@ -421,6 +405,7 @@ export function TransfersPage() {
       const totalQty = items.reduce((sum: number, it: any) => sum + Number(it.qty ?? 0), 0);
       const itemDisplays = items.map((it: any) => getTransferItemDisplay(it));
       const statusText = String((t as any).status ?? '-');
+      const postedAt = dateTimeFmt((t as any).dispatched_at ?? null);
       const transferId = Number(t.id ?? 0);
       const isNew = statusText === 'REQUESTED' && transferId > seenRequestedTransferId;
       const fromBranchIdValue = Number((t as any).from_branch_id ?? 0);
@@ -435,6 +420,7 @@ export function TransfersPage() {
         itemsCount,
         totalQty,
         itemDisplays,
+        postedAt,
         notes: (t as any).notes ?? '',
       };
     });
@@ -566,9 +552,7 @@ export function TransfersPage() {
 
     setVariantSearch('');
     setVariantSearchDebounced('');
-    setCreateVariantId('');
-    setCreateQty('1');
-    setPickedVariant(null);
+    setVariantLookupPage(1);
     setDraftItems([]);
     setCreateErrorMessage('');
 
@@ -892,6 +876,9 @@ export function TransfersPage() {
                   Items: {r.itemsCount} | Qty: {qtyFmt(r.totalQty)}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
+                  Posted at: {r.postedAt}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
                   Notes: {r.notes?.trim() ? r.notes : '-'}
                 </Typography>
               </Stack>
@@ -910,6 +897,7 @@ export function TransfersPage() {
                 <TableCell>Transferred Items (Product / Variant / Flavor)</TableCell>
                 <TableCell align="right">Items</TableCell>
                 <TableCell align="right">Qty</TableCell>
+                <TableCell>Posted at</TableCell>
                 <TableCell>Notes</TableCell>
               </TableRow>
             </TableHead>
@@ -969,6 +957,7 @@ export function TransfersPage() {
                   </TableCell>
                   <TableCell align="right">{r.itemsCount}</TableCell>
                   <TableCell align="right">{qtyFmt(r.totalQty)}</TableCell>
+                  <TableCell>{r.postedAt}</TableCell>
                   <TableCell>{r.notes?.trim() ? r.notes : '-'}</TableCell>
                 </TableRow>
               ))}
@@ -1032,123 +1021,128 @@ export function TransfersPage() {
 
             <TextField
               size="small"
-              label="Scan/search SKU or barcode"
+              label="Search SKU / product / variant / flavor"
               value={variantSearch}
               onChange={(e) => setVariantSearch(e.target.value)}
               disabled={!canTransferCreate}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  const first = variantOptions[0];
-                  if (first) pickVariant(first);
-                }
-              }}
-              placeholder="Scan barcode or type SKU…"
-              helperText="Tip: press Enter to auto-select the first match."
+              placeholder="Type to filter available stock..."
+              helperText="Mark the stock items you want to transfer, then enter each quantity."
             />
 
-            {variantSearchDebounced.length >= 2 && variantLookupQuery.isLoading && (
-              <Alert severity="info">Searching variants…</Alert>
+            <Alert severity="info">
+              One transfer request can include multiple variants and quantities. Choose everything here, then create once.
+            </Alert>
+
+            {variantLookupQuery.isLoading && (
+              <Alert severity="info">
+                {variantSearchDebounced ? 'Searching variants...' : 'Loading available variants...'}
+              </Alert>
             )}
 
-            {pickedVariant && (
-              <Paper variant="outlined" sx={requestSectionSx}>
-                <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
-                  <Box>
-                    <Typography variant="body2">
-                      <b>Last picked Variant ID:</b> {pickedVariant.id}
-                    </Typography>
-                    <Typography variant="body2" sx={{ opacity: 0.8 }}>
-                      {pickedVariant.sku ? `SKU: ${pickedVariant.sku}` : ''}
-                      {pickedVariant.productName ? ` • ${pickedVariant.productName}` : ''}
-                    </Typography>
-                  </Box>
-                  <Button
-                    size="small"
-                    onClick={clearPickedVariant}
-                    sx={{ textTransform: 'none' }}
-                    disabled={!canTransferCreate}
-                  >
-                    Clear
-                  </Button>
-                </Stack>
+            {variantLookupQuery.isError && (
+              <Alert severity="error">Failed to load available variants for this branch.</Alert>
+            )}
+
+            {!variantLookupQuery.isLoading && variantOptions.length > 0 && (
+              <Paper variant="outlined" sx={[requestSectionSx, { p: 0 }]}> 
+                <Box sx={{ maxHeight: 280, overflow: 'auto' }}>
+                  <Table size="small" stickyHeader>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell padding="checkbox" width={56}>Pick</TableCell>
+                        <TableCell>SKU</TableCell>
+                        <TableCell>Product</TableCell>
+                        <TableCell>Variant</TableCell>
+                        <TableCell>Flavor</TableCell>
+                        <TableCell align="right" width={120}>On hand</TableCell>
+                        <TableCell align="right" width={132}>Qty to transfer</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {variantOptions.map((v: any) => {
+                        const id = Number(v?.id);
+                        if (!Number.isFinite(id) || id <= 0) return null;
+
+                        const sku = v?.sku ?? '-';
+                        const prod = v?.product?.name ?? '-';
+                        const variant = getVariantLabel(v);
+                        const flavor = String(v?.flavor ?? '').trim() || '-';
+                        const onHand = getVariantOnHand(v);
+                        const isMarked = isVariantMarked(id);
+                        const selectedDraft = draftItems.find((item) => item.product_variant_id === id);
+                        const disablePick = onHand !== null && onHand <= 0;
+
+                        return (
+                          <TableRow
+                            key={id}
+                            hover
+                            sx={{
+                              cursor: disablePick ? 'not-allowed' : 'pointer',
+                              backgroundColor: isMarked ? 'rgba(0,0,0,0.04)' : undefined,
+                              opacity: disablePick && !isMarked ? 0.6 : 1,
+                            }}
+                            onClick={() => markVariantForTransfer(v, !isMarked)}
+                          >
+                            <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
+                              <Checkbox
+                                checked={isMarked}
+                                disabled={!canTransferCreate || disablePick}
+                                onChange={(_, checked) => markVariantForTransfer(v, checked)}
+                              />
+                            </TableCell>
+                            <TableCell>{sku}</TableCell>
+                            <TableCell>{prod}</TableCell>
+                            <TableCell>{variant}</TableCell>
+                            <TableCell>{flavor}</TableCell>
+                            <TableCell align="right">{onHand === null ? '-' : qtyFmt(onHand)}</TableCell>
+                            <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                              <TextField
+                                size="small"
+                                type="number"
+                                value={selectedDraft?.qty ?? ''}
+                                disabled={!canTransferCreate || !isMarked}
+                                onChange={(e) => updateDraftItemQty(id, e.target.value)}
+                                inputProps={{
+                                  min: 1,
+                                  step: 1,
+                                  inputMode: 'numeric',
+                                }}
+                                sx={{ width: 110 }}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </Box>
               </Paper>
             )}
 
-            {variantSearchDebounced.length >= 2 && !variantLookupQuery.isLoading && variantOptions.length > 0 && (
-              <Paper variant="outlined" sx={[requestSectionSx, { maxHeight: 220, overflow: 'auto', p: 0 }]}>
-                <Table size="small" stickyHeader>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell width={110}>ID</TableCell>
-                      <TableCell>SKU</TableCell>
-                      <TableCell>Product</TableCell>
-                      <TableCell>Variant</TableCell>
-                      <TableCell align="right" width={120}>On hand</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {variantOptions.map((v: any) => {
-                      const id = Number(v?.id);
-                      const sku = v?.sku ?? '-';
-                      const prod = v?.product?.name ?? '-';
-                      const variant = getVariantLabel(v);
-                      const onHand = getVariantOnHand(v);
-                      const isPicked = pickedVariant?.id === id;
-
-                      return (
-                        <TableRow
-                          key={id}
-                          hover
-                          sx={{ cursor: 'pointer', backgroundColor: isPicked ? 'rgba(0,0,0,0.04)' : undefined }}
-                          onClick={() => pickVariant(v)}
-                        >
-                          <TableCell sx={{ fontFamily: 'monospace' }}>{id}</TableCell>
-                          <TableCell>{sku}</TableCell>
-                          <TableCell>{prod}</TableCell>
-                          <TableCell>{variant}</TableCell>
-                          <TableCell align="right">{onHand === null ? '-' : qtyFmt(onHand)}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </Paper>
+            {!variantLookupQuery.isLoading && !variantLookupQuery.isError && variantOptions.length === 0 && (
+              <Alert severity="warning">
+                {variantSearchDebounced
+                  ? 'No variants matched your search in this branch.'
+                  : 'No available variants were found for this branch.'}
+              </Alert>
             )}
 
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}>
-              <TextField
-                fullWidth
-                size="small"
-                label="Variant ID (fallback/manual)"
-                value={createVariantId}
-                onChange={(e) => setCreateVariantId(e.target.value)}
-                placeholder="e.g. 5"
-                helperText="If you picked above, this is already filled."
-                disabled={!canTransferCreate}
-              />
-              <TextField
-                size="small"
-                label="Qty"
-                value={createQty}
-                onChange={(e) => setCreateQty(e.target.value)}
-                sx={{ width: 140 }}
-                disabled={!canTransferCreate}
-              />
-              <Button
-                variant="outlined"
-                onClick={addDraftItem}
-                sx={{ whiteSpace: 'nowrap', textTransform: 'none' }}
-                disabled={!canTransferCreate}
-              >
-                Add item
-              </Button>
-            </Stack>
+            {variantLookupTotalPages > 1 && (
+              <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                <Pagination
+                  count={variantLookupTotalPages}
+                  page={variantLookupPage}
+                  onChange={(_, nextPage) => setVariantLookupPage(nextPage)}
+                  showFirstButton
+                  showLastButton
+                />
+              </Box>
+            )}
 
             <Paper variant="outlined" sx={requestSectionSx}>
               <Stack direction="row" alignItems="center" justifyContent="space-between">
                 <Typography variant="body2">
-                  <b>Draft:</b> {draftTotals.itemsCount} item(s), total qty {qtyFmt(draftTotals.totalQty)}
+                  <b>Marked for transfer:</b> {draftTotals.itemsCount} item(s), total qty {qtyFmt(draftTotals.totalQty)}
                 </Typography>
                 <Button
                   size="small"
@@ -1170,6 +1164,7 @@ export function TransfersPage() {
                       <TableCell>SKU</TableCell>
                       <TableCell>Product</TableCell>
                       <TableCell>Variant</TableCell>
+                      <TableCell>Flavor</TableCell>
                       <TableCell align="right" width={120}>On hand</TableCell>
                       <TableCell align="right" width={120}>Qty</TableCell>
                       <TableCell align="right" width={90}>Remove</TableCell>
@@ -1182,11 +1177,12 @@ export function TransfersPage() {
                         <TableCell>{it.sku ?? '-'}</TableCell>
                         <TableCell>{it.productName ?? '-'}</TableCell>
                         <TableCell>{it.variantName ?? '-'}</TableCell>
+                        <TableCell>{it.flavor ?? '-'}</TableCell>
                         <TableCell align="right">{it.onHand === null || it.onHand === undefined ? '-' : qtyFmt(it.onHand)}</TableCell>
                         <TableCell align="right">{qtyFmt(it.qty)}</TableCell>
                         <TableCell align="right">
                           <IconButton size="small" onClick={() => removeDraftItem(it.product_variant_id)} disabled={!canTransferCreate}>
-                            <span style={{ fontSize: 14, lineHeight: 1 }}>🗑️</span>
+                            <CloseRoundedIcon fontSize="small" />
                           </IconButton>
                         </TableCell>
                       </TableRow>
@@ -1250,6 +1246,9 @@ export function TransfersPage() {
               </Typography>
               <Typography variant="body2">
                 <b>To:</b> {resolveBranchLabel(selected.to_branch_id, (selected as any).toBranch?.name)}
+              </Typography>
+              <Typography variant="body2">
+                <b>Posted at:</b> {dateTimeFmt((selected as any).dispatched_at ?? null)}
               </Typography>
               <Typography variant="body2"><b>Notes:</b> {selected.notes?.trim() ? selected.notes : '-'}</Typography>
 
