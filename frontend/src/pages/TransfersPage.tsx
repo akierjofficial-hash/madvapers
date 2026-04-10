@@ -431,7 +431,9 @@ export function TransfersPage() {
       const totalQty = items.reduce((sum: number, it: any) => sum + Number(it.qty ?? 0), 0);
       const itemDisplays = items.map((it: any) => getTransferItemDisplay(it));
       const statusText = String((t as any).status ?? '-');
+      const createdAt = dateTimeFmt((t as any).created_at ?? null);
       const postedAt = dateTimeFmt((t as any).dispatched_at ?? null);
+      const receivedAt = dateTimeFmt((t as any).received_at ?? null);
       const transferId = Number(t.id ?? 0);
       const isNew = statusText === 'REQUESTED' && transferId > seenRequestedTransferId;
       const fromBranchIdValue = Number((t as any).from_branch_id ?? 0);
@@ -446,7 +448,9 @@ export function TransfersPage() {
         itemsCount,
         totalQty,
         itemDisplays,
+        createdAt,
         postedAt,
+        receivedAt,
         notes: (t as any).notes ?? '',
       };
     });
@@ -905,9 +909,17 @@ export function TransfersPage() {
                 <Typography variant="caption" color="text.secondary">
                   Items: {r.itemsCount} | Qty: {qtyFmt(r.totalQty)}
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Posted at: {r.postedAt}
-                </Typography>
+                <Stack spacing={0.15}>
+                  <Typography variant="caption" color="text.secondary">
+                    Created: {r.createdAt}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Posted: {r.postedAt}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Received: {r.receivedAt}
+                  </Typography>
+                </Stack>
                 <Typography variant="caption" color="text.secondary">
                   Notes: {r.notes?.trim() ? r.notes : '-'}
                 </Typography>
@@ -927,7 +939,7 @@ export function TransfersPage() {
                 <TableCell>Transferred Items (Product / Variant / Flavor)</TableCell>
                 <TableCell align="right">Items</TableCell>
                 <TableCell align="right">Qty</TableCell>
-                <TableCell>Posted at</TableCell>
+                <TableCell>Timeline</TableCell>
                 <TableCell>Notes</TableCell>
               </TableRow>
             </TableHead>
@@ -987,7 +999,13 @@ export function TransfersPage() {
                   </TableCell>
                   <TableCell align="right">{r.itemsCount}</TableCell>
                   <TableCell align="right">{qtyFmt(r.totalQty)}</TableCell>
-                  <TableCell>{r.postedAt}</TableCell>
+                  <TableCell sx={{ minWidth: 190 }}>
+                    <Stack spacing={0.15}>
+                      <Typography variant="caption">Created: {r.createdAt}</Typography>
+                      <Typography variant="caption">Posted: {r.postedAt}</Typography>
+                      <Typography variant="caption">Received: {r.receivedAt}</Typography>
+                    </Stack>
+                  </TableCell>
                   <TableCell>{r.notes?.trim() ? r.notes : '-'}</TableCell>
                 </TableRow>
               ))}
@@ -1288,7 +1306,13 @@ export function TransfersPage() {
                 <b>To:</b> {resolveBranchLabel(selected.to_branch_id, (selected as any).toBranch?.name)}
               </Typography>
               <Typography variant="body2">
+                <b>Created at:</b> {dateTimeFmt((selected as any).created_at ?? null)}
+              </Typography>
+              <Typography variant="body2">
                 <b>Posted at:</b> {dateTimeFmt((selected as any).dispatched_at ?? null)}
+              </Typography>
+              <Typography variant="body2">
+                <b>Received at:</b> {dateTimeFmt((selected as any).received_at ?? null)}
               </Typography>
               <Typography variant="body2"><b>Notes:</b> {selected.notes?.trim() ? selected.notes : '-'}</Typography>
 
