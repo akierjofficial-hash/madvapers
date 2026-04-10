@@ -42,6 +42,7 @@ import QueryStatsOutlinedIcon from '@mui/icons-material/QueryStatsOutlined';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import GavelOutlinedIcon from '@mui/icons-material/GavelOutlined';
 import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
+import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
@@ -67,7 +68,7 @@ type NavItem = {
 };
 
 const drawerWidth = 248;
-const SECONDARY_NAV_PATHS = new Set(['/suppliers', '/branches', '/accounts', '/staff-attendance', '/audit-logs', '/ledger']);
+const SECONDARY_NAV_PATHS = new Set(['/suppliers', '/branches', '/accounts', '/staff-attendance', '/audit-logs', '/ledger', '/stock-history']);
 const ADMIN_MOBILE_FIXED_PATHS = ['/dashboard', '/approvals', '/analytics'] as const;
 const ADMIN_MOBILE_MENU_VALUE = '__menu__';
 const INSTALL_PROMPT_DISMISSED_KEY = 'mv_install_prompt_dismissed_v1';
@@ -363,6 +364,7 @@ export function AppShell() {
     },
     { to: '/audit-logs', label: 'Audit Logs', perm: 'AUDIT_VIEW', icon: <FactCheckOutlinedIcon /> },
     { to: '/ledger', label: 'Ledger', perm: 'LEDGER_VIEW', icon: <AccountTreeOutlinedIcon /> },
+    { to: '/stock-history', label: 'Stock History', perm: 'INVENTORY_VIEW', icon: <CalendarMonthOutlinedIcon /> },
   ];
 
   const availableNav = navItems.filter((item) => {

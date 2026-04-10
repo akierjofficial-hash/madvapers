@@ -28,6 +28,7 @@ import {
 } from './catalog';
 import { getInventory, type InventoryQuery } from './inventory';
 import { getLedger, type LedgerQuery } from './ledger';
+import { getStockHistory, type StockHistoryQuery, type StockHistoryResponse } from './stockHistory';
 import { login, logout, me, type LoginInput, type LoginResponse, type MeResponse } from './auth';
 import {
   getRoles,
@@ -207,6 +208,7 @@ export const qk = {
 
   inventory: (params: InventoryQuery) => ['inventory', params] as const,
   ledger: (params: LedgerQuery) => ['ledger', params] as const,
+  stockHistory: (params: StockHistoryQuery) => ['stockHistory', params] as const,
 
   transfers: (params: TransfersQuery) => ['transfers', params] as const,
   transfer: (id: number) => ['transfer', id] as const,
@@ -569,6 +571,16 @@ export function useLedgerQuery(params: LedgerQuery, enabled = true) {
     placeholderData: keepPreviousData,
     refetchInterval: realtimeInterval(enabled, POLL_MS.ledger),
     refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useStockHistoryQuery(params: StockHistoryQuery, enabled = true) {
+  return useQuery<StockHistoryResponse>({
+    queryKey: qk.stockHistory(params),
+    queryFn: () => getStockHistory(params),
+    enabled,
+    placeholderData: keepPreviousData,
     refetchOnWindowFocus: true,
   });
 }

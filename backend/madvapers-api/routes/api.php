@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\InventoryController;
 use App\Http\Controllers\Api\LedgerController;
+use App\Http\Controllers\Api\StockHistoryController;
 use App\Http\Controllers\Api\StockAdjustmentController;
 use App\Http\Controllers\Api\TransferController;
 use App\Http\Controllers\Api\SupplierController;
@@ -69,6 +70,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     // Inventory
     Route::get('/inventory', [InventoryController::class, 'index'])->middleware('perm:INVENTORY_VIEW');
     Route::get('/ledger', [LedgerController::class, 'index'])->middleware('perm:LEDGER_VIEW');
+    Route::get('/stock-history', [StockHistoryController::class, 'index'])->middleware('perm:INVENTORY_VIEW');
 
     // Branches
     Route::get('/branches', [BranchController::class, 'index'])->middleware('perm:BRANCH_VIEW');

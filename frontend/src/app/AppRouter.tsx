@@ -5,6 +5,7 @@ import { HomeRedirect } from '../auth/HomeRedirect';
 import { AppShell } from '../layout/AppShell';
 import { InventoryPage } from '../pages/InventoryPage';
 import { LedgerPage } from '../pages/LedgerPage';
+import { StockHistoryPage } from '../pages/StockHistoryPage';
 import { LoginPage } from '../pages/LoginPage';
 import { VariantsPage } from '../pages/VariantsPage';
 import { AdjustmentsPage } from '../pages/AdjustmentsPage';
@@ -167,6 +168,14 @@ export function AppRouter() {
             element={
               <RequirePermission perm="LEDGER_VIEW" denyRoleCodes={['CASHIER']}>
                 <LedgerPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="/stock-history"
+            element={
+              <RequirePermission perm="INVENTORY_VIEW" denyRoleCodes={['CASHIER']}>
+                <StockHistoryPage />
               </RequirePermission>
             }
           />
