@@ -120,7 +120,8 @@ function getTransferItemDisplay(it: any): string {
 
 type DraftItem = {
   product_variant_id: number;
-  qty: number;
+  qty: number | null;
+  qtyInput: string;
   sku?: string | null;
   productName?: string | null;
   variantName?: string | null;
@@ -272,6 +273,7 @@ export function TransfersPage() {
         {
           product_variant_id: variantId,
           qty: defaultQty,
+          qtyInput: String(defaultQty),
           sku: variant?.sku ?? null,
           productName: variant?.product?.name ?? null,
           variantName: getVariantLabel(variant),
@@ -283,14 +285,17 @@ export function TransfersPage() {
   };
 
   const updateDraftItemQty = (variantId: number, rawValue: string) => {
-    if (rawValue.trim() === '') return;
-    const qty = Number(rawValue);
-    if (!Number.isFinite(qty) || qty <= 0) return;
-
     setDraftItems((prev) =>
       prev.map((item) =>
         item.product_variant_id === variantId
-          ? { ...item, qty }
+          ? {
+              ...item,
+              qtyInput: rawValue,
+              qty:
+                rawValue.trim() !== '' && Number.isFinite(Number(rawValue)) && Number(rawValue) > 0
+                  ? Number(rawValue)
+                  : null,
+            }
           : item
       )
     );
@@ -298,9 +303,13 @@ export function TransfersPage() {
 
   const draftTotals = useMemo(() => {
     const itemsCount = draftItems.length;
-    const totalQty = draftItems.reduce((sum, it) => sum + Number(it.qty ?? 0), 0);
+    const totalQty = draftItems.reduce((sum, it) => sum + (it.qty ?? 0), 0);
     return { itemsCount, totalQty };
   }, [draftItems]);
+  const hasInvalidDraftQty = useMemo(
+    () => draftItems.some((item) => item.qty === null || item.qty <= 0),
+    [draftItems]
+  );
 
   /**
    * ✅ FIX #1: Hydrate safely.
@@ -580,6 +589,10 @@ export function TransfersPage() {
       showSnack('Add at least 1 item to the draft.');
       return;
     }
+    if (draftItems.some((it) => it.qty === null || it.qty <= 0)) {
+      showSnack('Enter a valid quantity for every marked transfer item.');
+      return;
+    }
 
     try {
       setCreateErrorMessage('');
@@ -587,7 +600,7 @@ export function TransfersPage() {
         from_branch_id: fromId,
         to_branch_id: toId,
         notes: createNotes?.trim() ? createNotes.trim() : null,
-        items: draftItems.map((it) => ({ product_variant_id: it.product_variant_id, qty: it.qty })),
+        items: draftItems.map((it) => ({ product_variant_id: it.product_variant_id, qty: it.qty as number })),
       });
 
       setOpenCreate(false);
@@ -1099,9 +1112,10 @@ export function TransfersPage() {
                               <TextField
                                 size="small"
                                 type="number"
-                                value={selectedDraft?.qty ?? ''}
+                                value={selectedDraft?.qtyInput ?? ''}
                                 disabled={!canTransferCreate || !isMarked}
                                 onChange={(e) => updateDraftItemQty(id, e.target.value)}
+                                error={isMarked && selectedDraft?.qty === null}
                                 inputProps={{
                                   min: 1,
                                   step: 1,
@@ -1179,7 +1193,7 @@ export function TransfersPage() {
                         <TableCell>{it.variantName ?? '-'}</TableCell>
                         <TableCell>{it.flavor ?? '-'}</TableCell>
                         <TableCell align="right">{it.onHand === null || it.onHand === undefined ? '-' : qtyFmt(it.onHand)}</TableCell>
-                        <TableCell align="right">{qtyFmt(it.qty)}</TableCell>
+                        <TableCell align="right">{it.qtyInput.trim() || '-'}</TableCell>
                         <TableCell align="right">
                           <IconButton size="small" onClick={() => removeDraftItem(it.product_variant_id)} disabled={!canTransferCreate}>
                             <CloseRoundedIcon fontSize="small" />
@@ -1214,7 +1228,7 @@ export function TransfersPage() {
           <Button
             variant="contained"
             onClick={submitCreate}
-            disabled={createMut.isPending || draftItems.length < 1 || !canTransferCreate}
+            disabled={createMut.isPending || draftItems.length < 1 || !canTransferCreate || hasInvalidDraftQty}
           >
             Create
           </Button>
