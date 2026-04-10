@@ -93,7 +93,12 @@ class ProductVariantController extends Controller
         }
 
         if ($request->boolean('only_inactive', false)) {
-            $q->where('is_active', false);
+            $q->where(function ($inactiveQuery) {
+                $inactiveQuery->where('is_active', false)
+                    ->orWhereHas('product', function ($productQuery) {
+                        $productQuery->where('is_active', false);
+                    });
+            });
         } elseif (!$request->boolean('include_inactive', false)) {
             $q->where('is_active', true)
                 ->whereHas('product', function ($productQuery) {

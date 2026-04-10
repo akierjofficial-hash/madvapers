@@ -163,6 +163,27 @@ class VariantStockOnHandTest extends TestCase
         $ids = collect($response->json('data', []))->pluck('id')->all();
 
         $this->assertContains($inactiveVariant->id, $ids);
+        $inactiveProduct = Product::query()->create([
+            'name' => 'Only Inactive Product ' . uniqid(),
+            'product_type' => 'DEVICE',
+            'is_active' => false,
+        ]);
+        $inactiveProductVariant = ProductVariant::query()->create([
+            'product_id' => $inactiveProduct->id,
+            'sku' => 'VAR-INACTIVE-PRODUCT-' . strtoupper(substr(uniqid(), -6)),
+            'variant_name' => 'Active Variant Hidden By Product',
+            'default_cost' => 0,
+            'default_price' => 0,
+            'is_active' => true,
+        ]);
+
+        $response = $this->getJson('/api/variants?only_inactive=1')
+            ->assertOk();
+
+        $ids = collect($response->json('data', []))->pluck('id')->all();
+
+        $this->assertContains($inactiveVariant->id, $ids);
+        $this->assertContains($inactiveProductVariant->id, $ids);
         $this->assertNotContains($activeVariant->id, $ids);
     }
 }

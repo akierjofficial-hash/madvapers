@@ -126,7 +126,8 @@ export function InactiveItemsPage() {
       page: productPage,
       per_page: 20,
       search: debouncedSearch || undefined,
-      only_inactive: true,
+      include_inactive: 1,
+      only_inactive: 1,
     },
     canView
   );
@@ -136,7 +137,8 @@ export function InactiveItemsPage() {
       page: variantPage,
       per_page: 20,
       search: debouncedSearch || undefined,
-      only_inactive: true,
+      include_inactive: 1,
+      only_inactive: 1,
     },
     canView
   );
@@ -151,7 +153,10 @@ export function InactiveItemsPage() {
     [productsQuery.data?.data]
   );
   const inactiveVariants = useMemo(
-    () => (variantsQuery.data?.data ?? []).filter((row) => row.is_active === false),
+    () =>
+      (variantsQuery.data?.data ?? []).filter(
+        (row) => row.is_active === false || row.product?.is_active === false
+      ),
     [variantsQuery.data?.data]
   );
 
@@ -422,8 +427,8 @@ export function InactiveItemsPage() {
             onChange={(_, next: TabValue) => setTab(next)}
             variant={isCompact ? 'fullWidth' : 'standard'}
           >
-            <Tab label={`Products (${productsQuery.data?.total ?? 0})`} value="products" />
-            <Tab label={`Variants (${variantsQuery.data?.total ?? 0})`} value="variants" />
+            <Tab label={`Products (${inactiveProducts.length})`} value="products" />
+            <Tab label={`Variants (${inactiveVariants.length})`} value="variants" />
           </Tabs>
 
           {activeBusy ? <LinearProgress /> : null}
