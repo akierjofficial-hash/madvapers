@@ -5,6 +5,7 @@ export type StockHistoryDay = {
   date: string;
   label: string;
   day: number;
+  is_future?: boolean;
 };
 
 export type StockHistoryRow = {

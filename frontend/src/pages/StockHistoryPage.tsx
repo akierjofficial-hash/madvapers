@@ -1,6 +1,10 @@
 import {
   Alert,
   Box,
+  Button,
+  Chip,
+  Divider,
+  Drawer,
   Pagination,
   Paper,
   Stack,
@@ -16,7 +20,8 @@ import {
 import { useTheme } from '@mui/material/styles';
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useBranchesQuery, useStockHistoryQuery } from '../api/queries';
+import { useBranchesQuery, useLedgerQuery, useStockHistoryQuery } from '../api/queries';
+import type { StockHistoryRow } from '../api/stockHistory';
 import { authStorage } from '../auth/authStorage';
 import { useAuth } from '../auth/AuthProvider';
 import { BranchSelect } from '../components/BranchSelect';
@@ -48,6 +53,32 @@ const STICKY_COLUMN_SX = {
   boxShadow: '1px 0 0 rgba(224, 224, 224, 0.9)',
 } as const;
 
+type HistoryDrawerState = {
+  row: StockHistoryRow;
+  date: string | null;
+};
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return '-';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString();
+}
+
+function formatMovementType(value: string | null | undefined): string {
+  return String(value ?? '-')
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatReason(value: string | null | undefined): string {
+  return String(value ?? '-')
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 export function StockHistoryPage() {
   const theme = useTheme();
   const isCompact = useMediaQuery(theme.breakpoints.down('md'));
@@ -66,6 +97,7 @@ export function StockHistoryPage() {
   const [search, setSearch] = useState<string>(() => searchParams.get('search') ?? '');
   const [debouncedSearch, setDebouncedSearch] = useState<string>(() => searchParams.get('search') ?? '');
   const [month, setMonth] = useState<string>(() => monthValueOrNow(searchParams.get('month')));
+  const [selectedHistory, setSelectedHistory] = useState<HistoryDrawerState | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
@@ -115,6 +147,11 @@ export function StockHistoryPage() {
   const totalPages = stockHistoryQuery.data?.last_page ?? 1;
 
   const monthLabel = stockHistoryQuery.data?.month_label ?? 'Monthly stock sheet';
+  const visibleDays = useMemo(
+    () => days.filter((day) => !day.is_future),
+    [days]
+  );
+  const lastVisibleDate = visibleDays.length > 0 ? visibleDays[visibleDays.length - 1]?.date ?? null : null;
 
   const selectedBranchName = useMemo(() => {
     const branch = branchesQuery.data?.find((item) => item.id === branchId);
@@ -122,6 +159,38 @@ export function StockHistoryPage() {
     if (user?.branch?.id === branchId) return `${user.branch.code} - ${user.branch.name}`;
     return 'Selected branch';
   }, [branchId, branchesQuery.data, user?.branch]);
+
+  const historyRange = useMemo(() => {
+    if (!selectedHistory) return null;
+    if (selectedHistory.date) {
+      return {
+        date_from: selectedHistory.date,
+        date_to: selectedHistory.date,
+        label: `Movements on ${selectedHistory.date}`,
+      };
+    }
+
+    const monthStart = `${month}-01`;
+    const monthEnd = lastVisibleDate ?? monthStart;
+    return {
+      date_from: monthStart,
+      date_to: monthEnd,
+      label: `Month movements (${monthLabel})`,
+    };
+  }, [lastVisibleDate, month, monthLabel, selectedHistory]);
+
+  const movementQuery = useLedgerQuery(
+    {
+      branch_id: branchId === '' ? 0 : branchId,
+      product_variant_id: selectedHistory?.row.product_variant_id,
+      date_from: historyRange?.date_from,
+      date_to: historyRange?.date_to,
+      per_page: 100,
+    },
+    branchId !== '' && !!selectedHistory && !!historyRange
+  );
+
+  const selectedMovementRows = movementQuery.data?.data ?? [];
 
   return (
     <Stack spacing={2}>
@@ -188,8 +257,8 @@ export function StockHistoryPage() {
 
           <Alert severity="info">
             {isCompact
-              ? 'Swipe horizontally to see all days of the month.'
-              : 'Scroll horizontally if needed to see all day columns for the selected month.'}
+              ? 'Swipe horizontally to see all days. Tap a day stock cell to inspect its movement lines.'
+              : 'Scroll horizontally if needed. Click a row for month movements or click a day stock cell for that exact day.'}
           </Alert>
 
           <Box>
@@ -232,7 +301,12 @@ export function StockHistoryPage() {
                   </TableHead>
                   <TableBody>
                     {rows.map((row) => (
-                      <TableRow key={row.product_variant_id} hover>
+                      <TableRow
+                        key={row.product_variant_id}
+                        hover
+                        onClick={() => setSelectedHistory({ row, date: null })}
+                        sx={{ cursor: 'pointer' }}
+                      >
                         <TableCell sx={{ ...STICKY_COLUMN_SX, left: 0, minWidth: 220, zIndex: 3 }}>
                           <Stack spacing={0.3}>
                             <Typography variant="body2" sx={{ fontWeight: 700 }}>
@@ -263,7 +337,19 @@ export function StockHistoryPage() {
                           {formatQty(row.opening_qty)}
                         </TableCell>
                         {days.map((day) => (
-                          <TableCell key={`${row.product_variant_id}-${day.date}`} align="right">
+                          <TableCell
+                            key={`${row.product_variant_id}-${day.date}`}
+                            align="right"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedHistory({ row, date: day.date });
+                            }}
+                            sx={{
+                              cursor: 'pointer',
+                              backgroundColor: day.is_future ? '#fafafa' : undefined,
+                              color: day.is_future ? 'text.disabled' : 'inherit',
+                            }}
+                          >
                             {formatQty(row.closing_by_day?.[day.date])}
                           </TableCell>
                         ))}
@@ -298,6 +384,128 @@ export function StockHistoryPage() {
           )}
         </Stack>
       </Paper>
+
+      <Drawer anchor="right" open={!!selectedHistory} onClose={() => setSelectedHistory(null)}>
+        <Box sx={{ width: { xs: '100vw', sm: 460 }, maxWidth: '100vw', p: { xs: 2, sm: 2.5 } }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1.5}>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="h6">Stock Movements</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {historyRange?.label ?? 'Movement details'}
+              </Typography>
+            </Box>
+            <Button onClick={() => setSelectedHistory(null)}>Close</Button>
+          </Stack>
+
+          <Divider sx={{ my: 1.5 }} />
+
+          {selectedHistory ? (
+            <Stack spacing={1.5}>
+              <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2.5 }}>
+                <Stack spacing={0.6}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                    {selectedHistory.row.product_name}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Variant: {selectedHistory.row.variant_name || '-'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Flavor: {selectedHistory.row.flavor || '-'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    SKU: {selectedHistory.row.sku}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Branch: {selectedBranchName}
+                  </Typography>
+                </Stack>
+              </Paper>
+
+              {movementQuery.isLoading ? (
+                <Alert severity="info">Loading movement details...</Alert>
+              ) : movementQuery.isError ? (
+                <Alert severity="error">Failed to load movement details.</Alert>
+              ) : selectedMovementRows.length === 0 ? (
+                <Alert severity="warning">
+                  No stock ledger entries found for this {selectedHistory.date ? 'day' : 'month'}.
+                </Alert>
+              ) : (
+                <>
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    <Chip
+                      size="small"
+                      label={`Entries: ${selectedMovementRows.length}`}
+                      color="primary"
+                      variant="outlined"
+                    />
+                    <Chip
+                      size="small"
+                      label={`Net movement: ${formatQty(
+                        selectedMovementRows.reduce((sum, entry) => sum + Number(entry.qty_delta ?? 0), 0)
+                      )}`}
+                      color="default"
+                      variant="outlined"
+                    />
+                  </Stack>
+
+                  <Stack spacing={1.1}>
+                    {selectedMovementRows.map((entry) => (
+                      <Paper key={entry.id} variant="outlined" sx={{ p: 1.5, borderRadius: 2.5 }}>
+                        <Stack spacing={0.8}>
+                          <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+                            <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+                              <Chip
+                                size="small"
+                                label={formatMovementType(entry.movement_type)}
+                                color="primary"
+                                variant="outlined"
+                              />
+                              <Typography variant="body2" color="text.secondary" noWrap>
+                                {formatDateTime(entry.posted_at)}
+                              </Typography>
+                            </Stack>
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                fontWeight: 700,
+                                color: Number(entry.qty_delta ?? 0) < 0 ? 'error.main' : 'success.main',
+                              }}
+                            >
+                              {Number(entry.qty_delta ?? 0) > 0 ? '+' : ''}
+                              {formatQty(entry.qty_delta)}
+                            </Typography>
+                          </Stack>
+
+                          <Typography variant="body2">
+                            <b>Reason:</b> {formatReason(entry.reason_code)}
+                          </Typography>
+                          <Typography variant="body2">
+                            <b>Reference:</b>{' '}
+                            {entry.ref_type
+                              ? `${formatReason(entry.ref_type)}${entry.ref_id ? ` #${entry.ref_id}` : ''}`
+                              : '-'}
+                          </Typography>
+                          <Typography variant="body2">
+                            <b>Wholesale:</b> {entry.unit_cost ? Number(entry.unit_cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                            {'  '}
+                            <b>Retail:</b> {entry.unit_price ? Number(entry.unit_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
+                          </Typography>
+                          <Typography variant="body2">
+                            <b>By:</b> {entry.performed_by?.name ?? entry.performedBy?.name ?? '-'}
+                          </Typography>
+                          <Typography variant="body2">
+                            <b>Notes:</b> {entry.notes?.trim() ? entry.notes : '-'}
+                          </Typography>
+                        </Stack>
+                      </Paper>
+                    ))}
+                  </Stack>
+                </>
+              )}
+            </Stack>
+          ) : null}
+        </Box>
+      </Drawer>
     </Stack>
   );
 }

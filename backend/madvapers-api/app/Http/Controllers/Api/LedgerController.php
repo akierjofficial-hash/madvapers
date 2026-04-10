@@ -16,11 +16,14 @@ class LedgerController extends Controller
     {
         $request->validate([
             'branch_id' => ['required', 'integer', 'exists:branches,id'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
             'movement_type' => ['nullable', 'string', 'max:50'],
             'product_variant_id' => ['nullable', 'integer', 'exists:product_variants,id'],
             'ref_type' => ['nullable', 'string', 'max:80'],
             'ref_id' => ['nullable', 'integer'],
             'search' => ['nullable', 'string', 'max:120'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:200'],
         ]);
 
         $driver = DB::getDriverName();
@@ -35,6 +38,14 @@ class LedgerController extends Controller
             ->with(['variant.product.brand', 'variant.product.category', 'performedBy', 'branch'])
             ->where('branch_id', $branchId)
             ->orderByDesc('id');
+
+        if ($request->filled('date_from')) {
+            $q->where('posted_at', '>=', (string) $request->input('date_from') . ' 00:00:00');
+        }
+
+        if ($request->filled('date_to')) {
+            $q->where('posted_at', '<=', (string) $request->input('date_to') . ' 23:59:59');
+        }
 
         if ($request->filled('movement_type')) {
             $q->where('movement_type', $request->string('movement_type'));
@@ -91,6 +102,6 @@ class LedgerController extends Controller
             }
         }
 
-        return $q->paginate(30);
+        return $q->paginate($request->integer('per_page', 30));
     }
 }
