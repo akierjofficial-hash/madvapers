@@ -17,11 +17,13 @@ import {
   Typography,
   useMediaQuery,
 } from '@mui/material';
+import { useQueries } from '@tanstack/react-query';
 import { useTheme } from '@mui/material/styles';
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useBranchesQuery, useLedgerQuery, useStockHistoryQuery } from '../api/queries';
 import type { StockHistoryRow } from '../api/stockHistory';
+import { getTransfer, type Transfer } from '../api/transfers';
 import { authStorage } from '../auth/authStorage';
 import { useAuth } from '../auth/AuthProvider';
 import { BranchSelect } from '../components/BranchSelect';
@@ -160,6 +162,24 @@ export function StockHistoryPage() {
     return 'Selected branch';
   }, [branchId, branchesQuery.data, user?.branch]);
 
+  const branchMap = useMemo(() => {
+    const map = new Map<number, { id: number; code?: string | null; name: string }>();
+    for (const branch of branchesQuery.data ?? []) {
+      map.set(branch.id, branch);
+    }
+    if (user?.branch_id && user?.branch?.name) {
+      map.set(user.branch_id, user.branch);
+    }
+    return map;
+  }, [branchesQuery.data, user?.branch, user?.branch_id]);
+
+  const branchLabel = (id?: number | null) => {
+    if (!id) return '-';
+    const branch = branchMap.get(id);
+    if (!branch) return String(id);
+    return branch.code ? `${branch.code} - ${branch.name}` : branch.name;
+  };
+
   const historyRange = useMemo(() => {
     if (!selectedHistory) return null;
     if (selectedHistory.date) {
@@ -191,6 +211,36 @@ export function StockHistoryPage() {
   );
 
   const selectedMovementRows = movementQuery.data?.data ?? [];
+
+  const transferIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const entry of selectedMovementRows) {
+      if (entry.ref_type === 'transfers' && entry.ref_id) {
+        ids.add(Number(entry.ref_id));
+      }
+    }
+    return Array.from(ids);
+  }, [selectedMovementRows]);
+
+  const transferQueries = useQueries({
+    queries: transferIds.map((id) => ({
+      queryKey: ['transfer', id],
+      queryFn: () => getTransfer(id),
+      enabled: !!selectedHistory && branchId !== '' && !!id,
+      staleTime: 60_000,
+    })),
+  });
+
+  const transferById = useMemo(() => {
+    const map = new Map<number, Transfer>();
+    for (const query of transferQueries) {
+      const transfer = query.data as Transfer | undefined;
+      if (transfer?.id) {
+        map.set(transfer.id, transfer);
+      }
+    }
+    return map;
+  }, [transferQueries]);
 
   return (
     <Stack spacing={2}>
@@ -451,6 +501,17 @@ export function StockHistoryPage() {
                   <Stack spacing={1.1}>
                     {selectedMovementRows.map((entry) => (
                       <Paper key={entry.id} variant="outlined" sx={{ p: 1.5, borderRadius: 2.5 }}>
+                        {(() => {
+                          const transfer =
+                            entry.ref_type === 'transfers' && entry.ref_id
+                              ? transferById.get(Number(entry.ref_id))
+                              : null;
+                          const transferFrom =
+                            (transfer as any)?.fromBranch?.id ?? (transfer as any)?.from_branch_id ?? null;
+                          const transferTo =
+                            (transfer as any)?.toBranch?.id ?? (transfer as any)?.to_branch_id ?? null;
+
+                          return (
                         <Stack spacing={0.8}>
                           <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
                             <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
@@ -485,6 +546,18 @@ export function StockHistoryPage() {
                               ? `${formatReason(entry.ref_type)}${entry.ref_id ? ` #${entry.ref_id}` : ''}`
                               : '-'}
                           </Typography>
+                          {entry.ref_type === 'transfers' ? (
+                            <>
+                              <Typography variant="body2">
+                                <b>From:</b>{' '}
+                                {transfer ? branchLabel(transferFrom) : 'Loading transfer route...'}
+                              </Typography>
+                              <Typography variant="body2">
+                                <b>To:</b>{' '}
+                                {transfer ? branchLabel(transferTo) : 'Loading transfer route...'}
+                              </Typography>
+                            </>
+                          ) : null}
                           <Typography variant="body2">
                             <b>Wholesale:</b> {entry.unit_cost ? Number(entry.unit_cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}
                             {'  '}
@@ -497,6 +570,8 @@ export function StockHistoryPage() {
                             <b>Notes:</b> {entry.notes?.trim() ? entry.notes : '-'}
                           </Typography>
                         </Stack>
+                          );
+                        })()}
                       </Paper>
                     ))}
                   </Stack>

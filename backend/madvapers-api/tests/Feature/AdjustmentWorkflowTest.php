@@ -169,7 +169,7 @@ class AdjustmentWorkflowTest extends TestCase
         ]);
     }
 
-    public function test_clerk_can_submit_approve_and_post_adjustment(): void
+    public function test_clerk_cannot_view_or_create_adjustments(): void
     {
         $branch = Branch::query()->where('code', 'MOTONG')->firstOrFail();
         $balance = InventoryBalance::query()
@@ -187,7 +187,9 @@ class AdjustmentWorkflowTest extends TestCase
 
         $this->actingAsUser('clerk@madvapers.local');
 
-        $created = $this->postJson('/api/adjustments', [
+        $this->getJson('/api/adjustments')->assertStatus(403);
+
+        $this->postJson('/api/adjustments', [
             'branch_id' => $branch->id,
             'reason_code' => 'CORRECTION',
             'items' => [
@@ -197,20 +199,7 @@ class AdjustmentWorkflowTest extends TestCase
                     'unit_cost' => 0,
                 ],
             ],
-        ])->assertCreated()->json();
-
-        $adjustmentId = (int) ($created['id'] ?? 0);
-        $this->assertGreaterThan(0, $adjustmentId);
-
-        $this->postJson("/api/adjustments/{$adjustmentId}/submit")->assertOk();
-
-        $this->postJson("/api/adjustments/{$adjustmentId}/approve")->assertOk();
-        $this->postJson("/api/adjustments/{$adjustmentId}/post")->assertOk();
-
-        $this->assertDatabaseHas('stock_adjustments', [
-            'id' => $adjustmentId,
-            'status' => 'POSTED',
-        ]);
+        ])->assertStatus(403);
     }
 
     public function test_cashier_cannot_view_adjustments(): void

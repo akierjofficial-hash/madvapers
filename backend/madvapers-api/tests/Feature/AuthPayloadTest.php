@@ -100,6 +100,30 @@ class AuthPayloadTest extends TestCase
         $this->assertNotContains('EXPENSE_VIEW', $perms);
     }
 
+    public function test_me_returns_clerk_permissions_without_adjustment_access(): void
+    {
+        $clerk = User::where('email', 'clerk@madvapers.local')->firstOrFail();
+        Sanctum::actingAs($clerk);
+
+        $res = $this->getJson('/api/auth/me');
+
+        $res->assertOk()
+            ->assertJsonPath('user.email', 'clerk@madvapers.local')
+            ->assertJsonPath('user.role.code', 'CLERK');
+
+        $perms = $res->json('permissions', []);
+        $this->assertContains('INVENTORY_VIEW', $perms);
+        $this->assertContains('TRANSFER_VIEW', $perms);
+        $this->assertContains('TRANSFER_CREATE', $perms);
+        $this->assertContains('TRANSFER_DISPATCH', $perms);
+        $this->assertContains('TRANSFER_RECEIVE', $perms);
+        $this->assertNotContains('ADJUSTMENT_VIEW', $perms);
+        $this->assertNotContains('ADJUSTMENT_CREATE', $perms);
+        $this->assertNotContains('ADJUSTMENT_SUBMIT', $perms);
+        $this->assertNotContains('ADJUSTMENT_APPROVE', $perms);
+        $this->assertNotContains('ADJUSTMENT_POST', $perms);
+    }
+
     public function test_logout_does_not_crash_for_cookie_or_transient_auth(): void
     {
         $admin = User::where('email', $this->seededAdminEmail())->firstOrFail();
