@@ -29,6 +29,14 @@ class StockHistoryController extends Controller
         $monthValue = (string) ($data['month'] ?? now()->format('Y-m'));
         $monthStart = Carbon::createFromFormat('Y-m', $monthValue, config('app.timezone'))->startOfMonth();
         $monthEnd = $monthStart->copy()->endOfMonth();
+        $today = now(config('app.timezone'))->startOfDay();
+        $todayEnd = $today->copy()->endOfDay();
+        $historicalWindowStart = $monthStart->copy()->startOfDay();
+        $historicalWindowEnd = $monthEnd->copy()->endOfDay();
+        $effectiveHistoryEnd = $historicalWindowEnd->lessThan($todayEnd)
+            ? $historicalWindowEnd->copy()
+            : $todayEnd->copy();
+        $hasHistoricalRange = $historicalWindowStart->lessThanOrEqualTo($effectiveHistoryEnd);
         $perPage = (int) ($data['per_page'] ?? 25);
         $search = trim((string) ($data['search'] ?? ''));
 
@@ -44,7 +52,11 @@ class StockHistoryController extends Controller
         $monthNetSub = DB::table('stock_ledgers')
             ->selectRaw('product_variant_id, COALESCE(SUM(qty_delta), 0) as month_net_qty')
             ->where('branch_id', $branchId)
-            ->whereBetween('posted_at', [$monthStart->copy()->startOfDay(), $monthEnd->copy()->endOfDay()])
+            ->when(
+                $hasHistoricalRange,
+                fn ($query) => $query->whereBetween('posted_at', [$historicalWindowStart, $effectiveHistoryEnd]),
+                fn ($query) => $query->whereRaw('1 = 0')
+            )
             ->groupBy('product_variant_id');
 
         $rowsQuery = DB::table('product_variants as pv')
@@ -112,7 +124,11 @@ class StockHistoryController extends Controller
                 ->selectRaw('product_variant_id, DATE(posted_at) as movement_date, COALESCE(SUM(qty_delta), 0) as net_qty')
                 ->where('branch_id', $branchId)
                 ->whereIn('product_variant_id', $variantIds)
-                ->whereBetween('posted_at', [$monthStart->copy()->startOfDay(), $monthEnd->copy()->endOfDay()])
+                ->when(
+                    $hasHistoricalRange,
+                    fn ($query) => $query->whereBetween('posted_at', [$historicalWindowStart, $effectiveHistoryEnd]),
+                    fn ($query) => $query->whereRaw('1 = 0')
+                )
                 ->groupBy('product_variant_id', DB::raw('DATE(posted_at)'))
                 ->orderBy('movement_date')
                 ->get();
@@ -129,6 +145,7 @@ class StockHistoryController extends Controller
                 'date' => $day->toDateString(),
                 'label' => $day->format('M j'),
                 'day' => (int) $day->day,
+                'is_future' => $day->greaterThan($today),
             ])
             ->values()
             ->all();
@@ -138,13 +155,23 @@ class StockHistoryController extends Controller
             $runningQty = round((float) $row->opening_qty, 3);
             $dailyNet = [];
             $closingByDay = [];
+            $lastHistoricalClosing = $runningQty;
+            $hasHistoricalDay = false;
 
             foreach ($days as $day) {
                 $date = (string) $day['date'];
+                if ((bool) ($day['is_future'] ?? false)) {
+                    $dailyNet[$date] = 0.0;
+                    $closingByDay[$date] = 0.0;
+                    continue;
+                }
+
                 $netQty = round((float) ($dailyMovementMap[$variantId][$date] ?? 0), 3);
                 $runningQty = round($runningQty + $netQty, 3);
                 $dailyNet[$date] = $netQty;
                 $closingByDay[$date] = $runningQty;
+                $lastHistoricalClosing = $runningQty;
+                $hasHistoricalDay = true;
             }
 
             return [
@@ -161,9 +188,9 @@ class StockHistoryController extends Controller
                 'variant_is_active' => (bool) $row->variant_is_active,
                 'opening_qty' => round((float) $row->opening_qty, 3),
                 'month_net_qty' => round((float) $row->month_net_qty, 3),
-                'ending_qty' => !empty($days)
-                    ? (float) $closingByDay[(string) data_get(end($days), 'date')]
-                    : round((float) $row->opening_qty, 3),
+                'ending_qty' => $hasHistoricalDay
+                    ? $lastHistoricalClosing
+                    : 0.0,
                 'daily_net' => $dailyNet,
                 'closing_by_day' => $closingByDay,
             ];
