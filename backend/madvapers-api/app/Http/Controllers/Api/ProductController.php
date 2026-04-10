@@ -76,7 +76,9 @@ class ProductController extends Controller
             ->withCount('variants')
             ->orderBy('id', 'desc');
 
-        if (!$request->boolean('include_inactive', false)) {
+        if ($request->boolean('only_inactive', false)) {
+            $q->where('is_active', false);
+        } elseif (!$request->boolean('include_inactive', false)) {
             $q->where('is_active', true);
         }
 

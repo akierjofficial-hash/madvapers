@@ -23,6 +23,7 @@ import { ExpensesPage } from '../pages/ExpensesPage';
 import { AuditLogsPage } from '../pages/AuditLogsPage';
 import { StaffAttendancePage } from '../pages/StaffAttendancePage';
 import { AttendancePage } from '../pages/AttendancePage';
+import { InactiveItemsPage } from '../pages/InactiveItemsPage';
 
 export function AppRouter() {
   return (
@@ -176,6 +177,14 @@ export function AppRouter() {
             element={
               <RequirePermission perm="INVENTORY_VIEW" denyRoleCodes={['CASHIER']}>
                 <StockHistoryPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="/inactive-items"
+            element={
+              <RequirePermission perm="PRODUCT_VIEW" denyRoleCodes={['CASHIER']}>
+                <InactiveItemsPage />
               </RequirePermission>
             }
           />

@@ -30,6 +30,7 @@ class ProductVariantController extends Controller
             'search' => ['nullable', 'string', 'max:120'],
             'code' => ['nullable', 'string', 'max:120'],
             'include_inactive' => ['nullable', 'boolean'],
+            'only_inactive' => ['nullable', 'boolean'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:500'],
         ]);
 
@@ -91,7 +92,9 @@ class ProductVariantController extends Controller
             $q->where('product_id', $request->integer('product_id'));
         }
 
-        if (!$request->boolean('include_inactive', false)) {
+        if ($request->boolean('only_inactive', false)) {
+            $q->where('is_active', false);
+        } elseif (!$request->boolean('include_inactive', false)) {
             $q->where('is_active', true)
                 ->whereHas('product', function ($productQuery) {
                     $productQuery->where('is_active', true);

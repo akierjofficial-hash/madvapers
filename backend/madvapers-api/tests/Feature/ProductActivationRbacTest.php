@@ -143,4 +143,26 @@ class ProductActivationRbacTest extends TestCase
             ->assertStatus(422)
             ->assertJsonPath('message', 'Cannot delete product while it has active variants. Disable variants first.');
     }
+
+    public function test_product_index_can_return_only_inactive_products(): void
+    {
+        $this->actingAsAdmin();
+
+        $activeProduct = $this->makeProduct([
+            'name' => 'Active Product ' . uniqid(),
+            'is_active' => true,
+        ]);
+        $inactiveProduct = $this->makeProduct([
+            'name' => 'Inactive Product ' . uniqid(),
+            'is_active' => false,
+        ]);
+
+        $response = $this->getJson('/api/products?only_inactive=1')
+            ->assertOk();
+
+        $ids = collect($response->json('data', []))->pluck('id')->all();
+
+        $this->assertContains($inactiveProduct->id, $ids);
+        $this->assertNotContains($activeProduct->id, $ids);
+    }
 }

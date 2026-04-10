@@ -20,6 +20,7 @@ export type ProductsQuery = {
   brand_id?: number;
   product_type?: ProductType;
   include_inactive?: boolean;
+  only_inactive?: boolean;
 };
 
 export type CreateProductInput = {

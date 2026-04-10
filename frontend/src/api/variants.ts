@@ -10,6 +10,7 @@ export type VariantsQuery = {
   product_id?: number;
   branch_id?: number;
   include_inactive?: boolean;
+  only_inactive?: boolean;
 };
 
 export type CreateVariantInput = {
