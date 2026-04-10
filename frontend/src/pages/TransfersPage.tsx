@@ -301,13 +301,30 @@ export function TransfersPage() {
     );
   };
 
+  const getDraftItemQtyError = (item: DraftItem): string | null => {
+    const rawValue = String(item.qtyInput ?? '').trim();
+    if (rawValue === '') return 'Quantity is required.';
+
+    const qty = Number(rawValue);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      return 'Enter a quantity greater than 0.';
+    }
+
+    const onHand = typeof item.onHand === 'number' && Number.isFinite(item.onHand) ? item.onHand : null;
+    if (onHand !== null && qty > onHand) {
+      return `Max ${qtyFmt(onHand)} available.`;
+    }
+
+    return null;
+  };
+
   const draftTotals = useMemo(() => {
     const itemsCount = draftItems.length;
     const totalQty = draftItems.reduce((sum, it) => sum + (it.qty ?? 0), 0);
     return { itemsCount, totalQty };
   }, [draftItems]);
   const hasInvalidDraftQty = useMemo(
-    () => draftItems.some((item) => item.qty === null || item.qty <= 0),
+    () => draftItems.some((item) => getDraftItemQtyError(item) !== null),
     [draftItems]
   );
 
@@ -1083,6 +1100,7 @@ export function TransfersPage() {
                         const onHand = getVariantOnHand(v);
                         const isMarked = isVariantMarked(id);
                         const selectedDraft = draftItems.find((item) => item.product_variant_id === id);
+                        const qtyError = selectedDraft ? getDraftItemQtyError(selectedDraft) : null;
                         const disablePick = onHand !== null && onHand <= 0;
 
                         return (
@@ -1115,11 +1133,13 @@ export function TransfersPage() {
                                 value={selectedDraft?.qtyInput ?? ''}
                                 disabled={!canTransferCreate || !isMarked}
                                 onChange={(e) => updateDraftItemQty(id, e.target.value)}
-                                error={isMarked && selectedDraft?.qty === null}
+                                error={isMarked && qtyError !== null}
+                                helperText={isMarked ? qtyError ?? ' ' : ' '}
                                 inputProps={{
                                   min: 1,
                                   step: 1,
                                   inputMode: 'numeric',
+                                  max: onHand ?? undefined,
                                 }}
                                 sx={{ width: 110 }}
                               />
@@ -1204,6 +1224,12 @@ export function TransfersPage() {
                   </TableBody>
                 </Table>
               </Paper>
+            )}
+
+            {hasInvalidDraftQty && (
+              <Alert severity="warning">
+                Some selected items exceed available stock or have invalid quantity. Reduce each qty to the on-hand amount before creating the transfer.
+              </Alert>
             )}
 
             <TextField
