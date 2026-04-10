@@ -230,4 +230,107 @@ class StockHistoryReportTest extends TestCase
             Carbon::setTestNow();
         }
     }
+
+    public function test_stock_history_is_sorted_by_highest_movement_volume_first(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2030-01-31 12:00:00', config('app.timezone')));
+
+        $branch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();
+        $this->actingAsUser('admin@madvapers.local');
+
+        $product = Product::query()->create([
+            'name' => 'History Sort Product ' . uniqid(),
+            'product_type' => 'POD',
+            'is_active' => true,
+        ]);
+
+        $highMovementVariant = ProductVariant::query()->create([
+            'product_id' => $product->id,
+            'sku' => 'HSORT-' . strtoupper(substr(uniqid(), -8)),
+            'variant_name' => 'High Movement',
+            'flavor' => 'Grape',
+            'default_cost' => 100,
+            'default_price' => 150,
+            'is_active' => true,
+        ]);
+
+        $lowMovementVariant = ProductVariant::query()->create([
+            'product_id' => $product->id,
+            'sku' => 'LSORT-' . strtoupper(substr(uniqid(), -8)),
+            'variant_name' => 'Low Movement',
+            'flavor' => 'Mango',
+            'default_cost' => 100,
+            'default_price' => 150,
+            'is_active' => true,
+        ]);
+
+        StockLedger::query()->create([
+            'posted_at' => '2029-12-31 09:00:00',
+            'branch_id' => $branch->id,
+            'product_variant_id' => $highMovementVariant->id,
+            'qty_delta' => 5,
+            'movement_type' => 'ADJUSTMENT',
+            'reason_code' => 'OPENING',
+            'unit_cost' => 100,
+            'notes' => 'Opening stock before sort test',
+        ]);
+
+        StockLedger::query()->create([
+            'posted_at' => '2030-01-03 10:00:00',
+            'branch_id' => $branch->id,
+            'product_variant_id' => $highMovementVariant->id,
+            'qty_delta' => 4,
+            'movement_type' => 'PO_RECEIVE',
+            'reason_code' => 'PO_RECEIVE',
+            'unit_cost' => 100,
+            'notes' => 'Large inbound movement',
+        ]);
+
+        StockLedger::query()->create([
+            'posted_at' => '2030-01-05 10:00:00',
+            'branch_id' => $branch->id,
+            'product_variant_id' => $highMovementVariant->id,
+            'qty_delta' => -4,
+            'movement_type' => 'SALE',
+            'reason_code' => 'SALE_PAYMENT',
+            'unit_price' => 150,
+            'notes' => 'Large outbound movement',
+        ]);
+
+        StockLedger::query()->create([
+            'posted_at' => '2029-12-31 09:00:00',
+            'branch_id' => $branch->id,
+            'product_variant_id' => $lowMovementVariant->id,
+            'qty_delta' => 5,
+            'movement_type' => 'ADJUSTMENT',
+            'reason_code' => 'OPENING',
+            'unit_cost' => 100,
+            'notes' => 'Opening stock before sort test',
+        ]);
+
+        StockLedger::query()->create([
+            'posted_at' => '2030-01-04 09:00:00',
+            'branch_id' => $branch->id,
+            'product_variant_id' => $lowMovementVariant->id,
+            'qty_delta' => -1,
+            'movement_type' => 'SALE',
+            'reason_code' => 'SALE_PAYMENT',
+            'unit_price' => 150,
+            'notes' => 'Smaller movement',
+        ]);
+
+        try {
+            $response = $this->getJson("/api/stock-history?branch_id={$branch->id}&month=2030-01&search=History Sort Product")
+                ->assertOk();
+
+            $response->assertJsonCount(2, 'data');
+            $response->assertJsonPath('data.0.product_variant_id', $highMovementVariant->id);
+            $this->assertEquals(8.0, (float) $response->json('data.0.movement_volume'));
+            $this->assertEquals(0.0, (float) $response->json('data.0.month_net_qty'));
+            $response->assertJsonPath('data.1.product_variant_id', $lowMovementVariant->id);
+            $this->assertEquals(1.0, (float) $response->json('data.1.movement_volume'));
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
 }

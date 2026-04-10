@@ -49,8 +49,12 @@ class StockHistoryController extends Controller
             ->where('posted_at', '<', $monthStart)
             ->groupBy('product_variant_id');
 
-        $monthNetSub = DB::table('stock_ledgers')
-            ->selectRaw('product_variant_id, COALESCE(SUM(qty_delta), 0) as month_net_qty')
+        $monthMovementSub = DB::table('stock_ledgers')
+            ->selectRaw('
+                product_variant_id,
+                COALESCE(SUM(qty_delta), 0) as month_net_qty,
+                COALESCE(SUM(ABS(qty_delta)), 0) as movement_volume
+            ')
             ->where('branch_id', $branchId)
             ->when(
                 $hasHistoricalRange,
@@ -65,7 +69,7 @@ class StockHistoryController extends Controller
             ->leftJoinSub($openingSub, 'opening', function ($join) {
                 $join->on('opening.product_variant_id', '=', 'pv.id');
             })
-            ->leftJoinSub($monthNetSub, 'month_movements', function ($join) {
+            ->leftJoinSub($monthMovementSub, 'month_movements', function ($join) {
                 $join->on('month_movements.product_variant_id', '=', 'pv.id');
             })
             ->selectRaw('
@@ -81,12 +85,13 @@ class StockHistoryController extends Controller
                 p.is_active as product_is_active,
                 b.name as brand_name,
                 COALESCE(opening.opening_qty, 0) as opening_qty,
-                COALESCE(month_movements.month_net_qty, 0) as month_net_qty
+                COALESCE(month_movements.month_net_qty, 0) as month_net_qty,
+                COALESCE(month_movements.movement_volume, 0) as movement_volume
             ')
             ->where(function ($query) {
                 $query
                     ->whereRaw('COALESCE(opening.opening_qty, 0) <> 0')
-                    ->orWhereRaw('COALESCE(month_movements.month_net_qty, 0) <> 0');
+                    ->orWhereRaw('COALESCE(month_movements.movement_volume, 0) <> 0');
             });
 
         if ($search !== '') {
@@ -104,6 +109,8 @@ class StockHistoryController extends Controller
         }
 
         $paginator = $rowsQuery
+            ->orderByDesc('movement_volume')
+            ->orderByDesc('month_net_qty')
             ->orderBy('p.name')
             ->orderBy('pv.variant_name')
             ->orderBy('pv.flavor')
@@ -188,6 +195,7 @@ class StockHistoryController extends Controller
                 'variant_is_active' => (bool) $row->variant_is_active,
                 'opening_qty' => round((float) $row->opening_qty, 3),
                 'month_net_qty' => round((float) $row->month_net_qty, 3),
+                'movement_volume' => round((float) $row->movement_volume, 3),
                 'ending_qty' => $hasHistoricalDay
                     ? $lastHistoricalClosing
                     : 0.0,

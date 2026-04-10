@@ -247,7 +247,7 @@ export function StockHistoryPage() {
       <Stack spacing={0.5}>
         <Typography variant="h5">Stock History</Typography>
         <Typography variant="body2" color="text.secondary">
-          Excel-style monthly stock tracker. Rows are product variants, columns are each day’s ending stock.
+          Excel-style monthly stock tracker. Rows are sorted by highest movement volume first, and columns show each day&apos;s ending stock.
         </Typography>
       </Stack>
 
@@ -307,8 +307,8 @@ export function StockHistoryPage() {
 
           <Alert severity="info">
             {isCompact
-              ? 'Swipe horizontally to see all days. Tap a day stock cell to inspect its movement lines.'
-              : 'Scroll horizontally if needed. Click a row for month movements or click a day stock cell for that exact day.'}
+              ? 'Swipe horizontally to see all days. Rows are ordered from highest movement to lowest. Tap a day stock cell to inspect its movement lines.'
+              : 'Scroll horizontally if needed. Rows are ordered from highest movement to lowest. Click a row for month movements or click a day stock cell for that exact day.'}
           </Alert>
 
           <Box>
@@ -329,7 +329,7 @@ export function StockHistoryPage() {
           ) : (
             <>
               <Box sx={{ overflowX: 'auto', border: `1px solid ${theme.palette.divider}`, borderRadius: 3 }}>
-                <Table size="small" stickyHeader sx={{ minWidth: 1200 }}>
+                <Table size="small" stickyHeader sx={{ minWidth: 1330 }}>
                   <TableHead>
                     <TableRow>
                       <TableCell sx={{ ...STICKY_COLUMN_SX, left: 0, minWidth: 220, zIndex: 4 }}>Product</TableCell>
@@ -338,6 +338,9 @@ export function StockHistoryPage() {
                       <TableCell sx={{ ...STICKY_COLUMN_SX, left: 540, minWidth: 170, zIndex: 4 }}>SKU</TableCell>
                       <TableCell sx={{ ...STICKY_COLUMN_SX, left: 710, minWidth: 110, zIndex: 4, textAlign: 'right' }}>
                         Opening
+                      </TableCell>
+                      <TableCell sx={{ ...STICKY_COLUMN_SX, left: 820, minWidth: 130, zIndex: 4, textAlign: 'right' }}>
+                        Movement
                       </TableCell>
                       {days.map((day) => (
                         <TableCell key={day.date} align="right" sx={{ minWidth: 92 }}>
@@ -385,6 +388,19 @@ export function StockHistoryPage() {
                         </TableCell>
                         <TableCell sx={{ ...STICKY_COLUMN_SX, left: 710, minWidth: 110, zIndex: 3, textAlign: 'right' }}>
                           {formatQty(row.opening_qty)}
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            ...STICKY_COLUMN_SX,
+                            left: 820,
+                            minWidth: 130,
+                            zIndex: 3,
+                            textAlign: 'right',
+                            fontWeight: 700,
+                            color: row.movement_volume > 0 ? 'primary.main' : 'text.secondary',
+                          }}
+                        >
+                          {formatQty(row.movement_volume)}
                         </TableCell>
                         {days.map((day) => (
                           <TableCell
@@ -486,6 +502,12 @@ export function StockHistoryPage() {
                       size="small"
                       label={`Entries: ${selectedMovementRows.length}`}
                       color="primary"
+                      variant="outlined"
+                    />
+                    <Chip
+                      size="small"
+                      label={`Movement volume: ${formatQty(selectedHistory.row.movement_volume)}`}
+                      color="secondary"
                       variant="outlined"
                     />
                     <Chip

@@ -22,6 +22,7 @@ export type StockHistoryRow = {
   variant_is_active: boolean;
   opening_qty: number;
   month_net_qty: number;
+  movement_volume: number;
   ending_qty: number;
   daily_net: Record<string, number>;
   closing_by_day: Record<string, number>;
