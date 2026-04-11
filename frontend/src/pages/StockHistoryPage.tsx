@@ -307,8 +307,8 @@ export function StockHistoryPage() {
 
           <Alert severity="info">
             {isCompact
-              ? 'Swipe horizontally to see all days. Rows are ordered from highest movement to lowest. Tap a day stock cell to inspect its movement lines.'
-              : 'Scroll horizontally if needed. Rows are ordered from highest movement to lowest. Click a row for month movements or click a day stock cell for that exact day.'}
+              ? 'Swipe horizontally to see all days. Past and current dates show real remaining stock. Future dates stay at 0 until that day starts. Tap a non-future day cell to inspect its movement lines.'
+              : 'Scroll horizontally if needed. Past and current dates show real remaining stock. Future dates stay at 0 until that day starts. Click a row for month movements or click a non-future day cell for that exact day.'}
           </Alert>
 
           <Box>
@@ -407,12 +407,13 @@ export function StockHistoryPage() {
                             key={`${row.product_variant_id}-${day.date}`}
                             align="right"
                             onClick={(event) => {
+                              if (day.is_future) return;
                               event.stopPropagation();
                               setSelectedHistory({ row, date: day.date });
                             }}
                             sx={{
-                              cursor: 'pointer',
-                              backgroundColor: day.is_future ? '#fafafa' : undefined,
+                              cursor: day.is_future ? 'default' : 'pointer',
+                              backgroundColor: day.is_future ? '#f7f8fb' : undefined,
                               color: day.is_future ? 'text.disabled' : 'inherit',
                             }}
                           >
