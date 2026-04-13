@@ -323,9 +323,9 @@ class TransferController extends Controller
         return $response;
     }
 
-    public function approve(Request $request, Transfer $transfer)
+    public function approve(Request $request, Transfer $transfer, InventoryService $inventoryService)
     {
-        return $this->transactionWithRetry(function () use ($request, $transfer) {
+        return $this->transactionWithRetry(function () use ($request, $transfer, $inventoryService) {
             $locked = $this->lockTransfer($transfer->id);
 
             $this->enforceTransferTouchAccessOrFail(
@@ -340,16 +340,103 @@ class TransferController extends Controller
                 ]);
             }
 
+            $items = $locked->items()
+                ->orderBy('product_variant_id')
+                ->orderBy('id')
+                ->get();
+            $totalQty = (float) $items->sum(function ($item) {
+                return (float) ($item->qty ?? 0);
+            });
+            $actorId = $request->user()?->id;
+            $processedAt = now();
+
+            $this->ensureTransferStockAvailableForSourceBranch(
+                (int) $locked->from_branch_id,
+                $items,
+                'approve'
+            );
+
             $locked->status = 'APPROVED';
-            $locked->approved_by_user_id = $request->user()?->id;
-            $locked->approved_at = now();
+            $locked->approved_by_user_id = $actorId;
+            $locked->approved_at = $processedAt;
             $locked->save();
 
             $this->recordTransferAudit(
                 $locked,
-                $request->user()?->id,
+                $actorId,
                 'TRANSFER_APPROVED',
-                'Transfer approved'
+                'Transfer approved and auto-posted',
+                [
+                    'item_count' => $items->count(),
+                    'total_qty' => round($totalQty, 4),
+                    'auto_completed' => true,
+                ]
+            );
+
+            foreach ($items as $it) {
+                $inventoryService->postMovement([
+                    'branch_id' => $locked->from_branch_id,
+                    'product_variant_id' => $it->product_variant_id,
+                    'qty_delta' => -1 * (float) $it->qty,
+                    'movement_type' => 'TRANSFER_OUT',
+                    'reason_code' => 'TRANSFER_DISPATCH',
+                    'ref_type' => 'transfers',
+                    'ref_id' => $locked->id,
+                    'performed_by_user_id' => $actorId,
+                    'unit_cost' => $it->unit_cost,
+                    'posted_at' => $processedAt,
+                    'notes' => 'Transfer auto-dispatch OUT on approval',
+                ]);
+            }
+
+            $locked->status = 'IN_TRANSIT';
+            $locked->dispatched_by_user_id = $actorId;
+            $locked->dispatched_at = $processedAt;
+            $locked->save();
+
+            $this->recordTransferAudit(
+                $locked,
+                $actorId,
+                'TRANSFER_DISPATCHED',
+                'Transfer auto-dispatched on approval',
+                [
+                    'item_count' => $items->count(),
+                    'total_qty' => round($totalQty, 4),
+                    'auto_completed' => true,
+                ]
+            );
+
+            foreach ($items as $it) {
+                $inventoryService->postMovement([
+                    'branch_id' => $locked->to_branch_id,
+                    'product_variant_id' => $it->product_variant_id,
+                    'qty_delta' => (float) $it->qty,
+                    'movement_type' => 'TRANSFER_IN',
+                    'reason_code' => 'TRANSFER_RECEIVE',
+                    'ref_type' => 'transfers',
+                    'ref_id' => $locked->id,
+                    'performed_by_user_id' => $actorId,
+                    'unit_cost' => $it->unit_cost,
+                    'posted_at' => $processedAt,
+                    'notes' => 'Transfer auto-receive IN on approval',
+                ]);
+            }
+
+            $locked->status = 'RECEIVED';
+            $locked->received_by_user_id = $actorId;
+            $locked->received_at = $processedAt;
+            $locked->save();
+
+            $this->recordTransferAudit(
+                $locked,
+                $actorId,
+                'TRANSFER_RECEIVED',
+                'Transfer auto-received on approval',
+                [
+                    'item_count' => $items->count(),
+                    'total_qty' => round($totalQty, 4),
+                    'auto_completed' => true,
+                ]
             );
 
             return response()->json([
@@ -629,7 +716,12 @@ class TransferController extends Controller
         }
 
         if (!empty($insufficient)) {
-            $label = strtoupper(trim($phase)) === 'REQUEST' ? 'request' : 'dispatch';
+            $phaseCode = strtoupper(trim($phase));
+            $label = match ($phaseCode) {
+                'REQUEST' => 'request',
+                'APPROVE' => 'approve and post',
+                default => 'dispatch',
+            };
             throw ValidationException::withMessages([
                 'stock' => [sprintf('Insufficient stock to %s transfer.', $label)],
                 'details' => $insufficient,

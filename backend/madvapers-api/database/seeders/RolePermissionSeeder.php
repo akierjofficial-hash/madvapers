@@ -129,7 +129,7 @@ class RolePermissionSeeder extends Seeder
         $attach(
             'ADMIN',
             Permission::query()
-                ->where('code', '!=', 'STAFF_ATTENDANCE_CLOCK')
+                ->whereNotIn('code', ['STAFF_ATTENDANCE_CLOCK', 'TRANSFER_DISPATCH', 'TRANSFER_RECEIVE'])
                 ->pluck('code')
                 ->all()
         );
@@ -144,7 +144,7 @@ class RolePermissionSeeder extends Seeder
             'SALES_VIEW', 'SALES_CREATE', 'SALES_POST', 'SALES_VOID_REQUEST', 'SALES_PAYMENT',
             'EXPENSE_VIEW', 'EXPENSE_CREATE', 'EXPENSE_UPDATE', 'EXPENSE_VOID',
             'SUPPLIER_VIEW', 'SUPPLIER_MANAGE',
-            'TRANSFER_VIEW', 'TRANSFER_CREATE', 'TRANSFER_DISPATCH', 'TRANSFER_RECEIVE',
+            'TRANSFER_VIEW', 'TRANSFER_CREATE',
             'COUNT_VIEW', 'COUNT_CREATE', 'COUNT_POST',
             'REPORT_VIEW', 'REPORT_EXPORT',
         ]);

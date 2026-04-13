@@ -46,8 +46,6 @@ import {
   useCancelTransferMutation,
   useCreateTransferMutation,
   useTransferBranchOptionsQuery,
-  useDispatchTransferMutation,
-  useReceiveTransferMutation,
   useRequestTransferMutation,
   useTransferQuery,
   useTransfersQuery,
@@ -136,12 +134,9 @@ export function TransfersPage() {
   const canTransferView = can('TRANSFER_VIEW');
   const canTransferCreate = can('TRANSFER_CREATE');
   const canTransferApprove = can('TRANSFER_APPROVE');
-  const canTransferDispatch = can('TRANSFER_DISPATCH');
-  const canTransferReceive = can('TRANSFER_RECEIVE');
   const canLedgerView = can('LEDGER_VIEW');
   const canDashboardView = can('USER_VIEW');
-  const canMutateTransfers =
-    canTransferCreate || canTransferApprove || canTransferDispatch || canTransferReceive;
+  const canMutateTransfers = canTransferCreate || canTransferApprove;
 
   const navigate = useNavigate();
   const transferBranchOptionsQuery = useTransferBranchOptionsQuery(canTransferView);
@@ -152,8 +147,6 @@ export function TransfersPage() {
   const createMut = useCreateTransferMutation();
   const requestMut = useRequestTransferMutation();
   const approveMut = useApproveTransferMutation();
-  const dispatchMut = useDispatchTransferMutation();
-  const receiveMut = useReceiveTransferMutation();
   const cancelMut = useCancelTransferMutation();
 
   // Filters (list)
@@ -638,12 +631,10 @@ export function TransfersPage() {
 
   const canRequest = canTransferCreate && selected?.status === 'DRAFT';
   const canApprove = canTransferApprove && selected?.status === 'REQUESTED';
-  const canDispatch = canTransferDispatch && selected?.status === 'APPROVED';
-  const canReceive = canTransferReceive && selected?.status === 'IN_TRANSIT';
   const canCancel =
     canTransferCreate && !!selected?.status && !['RECEIVED', 'CANCELLED'].includes(selected.status);
 
-  const runAction = async (action: 'request' | 'approve' | 'dispatch' | 'receive' | 'cancel') => {
+  const runAction = async (action: 'request' | 'approve' | 'cancel') => {
     if (!selected) return;
 
     if ((action === 'request' || action === 'cancel') && !canTransferCreate) {
@@ -654,24 +645,18 @@ export function TransfersPage() {
       showSnack('Not authorized: TRANSFER_APPROVE');
       return;
     }
-    if (action === 'dispatch' && !canTransferDispatch) {
-      showSnack('Not authorized: TRANSFER_DISPATCH');
-      return;
-    }
-    if (action === 'receive' && !canTransferReceive) {
-      showSnack('Not authorized: TRANSFER_RECEIVE');
-      return;
-    }
 
     try {
       if (action === 'request') await requestMut.mutateAsync(selected.id);
       if (action === 'approve') await approveMut.mutateAsync(selected.id);
-      if (action === 'dispatch') await dispatchMut.mutateAsync(selected.id);
-      if (action === 'receive') await receiveMut.mutateAsync(selected.id);
       if (action === 'cancel') await cancelMut.mutateAsync(selected.id);
       transferQuery.refetch();
       transfersQuery.refetch();
-      showSnack(`Transfer ${action} successful.`, 'success');
+      const successMessage =
+        action === 'approve'
+          ? 'Transfer approved and posted to both branches successfully.'
+          : `Transfer ${action} successful.`;
+      showSnack(successMessage, 'success');
     } catch (e: any) {
       const msg = e?.response?.data?.message || `Failed to ${action} transfer.`;
       showSnack(msg);
@@ -1305,6 +1290,11 @@ export function TransfersPage() {
               <Typography variant="body2">
                 <b>To:</b> {resolveBranchLabel(selected.to_branch_id, (selected as any).toBranch?.name)}
               </Typography>
+              {selected.status === 'APPROVED' || selected.status === 'IN_TRANSIT' ? (
+                <Alert severity="warning">
+                  This is a legacy transfer still using the old dispatch/receive workflow. New approvals now complete the transfer automatically.
+                </Alert>
+              ) : null}
               <Typography variant="body2">
                 <b>Created at:</b> {dateTimeFmt((selected as any).created_at ?? null)}
               </Typography>
@@ -1348,25 +1338,7 @@ export function TransfersPage() {
                     disabled={!canApprove || approveMut.isPending}
                     onClick={() => runAction('approve')}
                   >
-                    Approve
-                  </Button>
-                )}
-                {canTransferDispatch && (
-                  <Button
-                    variant="contained"
-                    disabled={!canDispatch || dispatchMut.isPending}
-                    onClick={() => runAction('dispatch')}
-                  >
-                    Dispatch
-                  </Button>
-                )}
-                {canTransferReceive && (
-                  <Button
-                    variant="contained"
-                    disabled={!canReceive || receiveMut.isPending}
-                    onClick={() => runAction('receive')}
-                  >
-                    Receive
+                    Approve &amp; Transfer
                   </Button>
                 )}
                 {canTransferCreate && (
@@ -1380,14 +1352,12 @@ export function TransfersPage() {
                   </Button>
                 )}
               </Stack>
-              {!canTransferCreate && !canTransferApprove && !canTransferDispatch && !canTransferReceive && (
+              {!canTransferCreate && !canTransferApprove && (
                 <Alert severity="info">You have view-only access to transfer workflow actions.</Alert>
               )}
 
               {(requestMut.isPending ||
                 approveMut.isPending ||
-                dispatchMut.isPending ||
-                receiveMut.isPending ||
                 cancelMut.isPending) && <Alert severity="info">Working…</Alert>}
 
               <Divider sx={{ my: 1 }} />

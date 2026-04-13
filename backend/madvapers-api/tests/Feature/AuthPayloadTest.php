@@ -115,8 +115,8 @@ class AuthPayloadTest extends TestCase
         $this->assertContains('INVENTORY_VIEW', $perms);
         $this->assertContains('TRANSFER_VIEW', $perms);
         $this->assertContains('TRANSFER_CREATE', $perms);
-        $this->assertContains('TRANSFER_DISPATCH', $perms);
-        $this->assertContains('TRANSFER_RECEIVE', $perms);
+        $this->assertNotContains('TRANSFER_DISPATCH', $perms);
+        $this->assertNotContains('TRANSFER_RECEIVE', $perms);
         $this->assertNotContains('ADJUSTMENT_VIEW', $perms);
         $this->assertNotContains('ADJUSTMENT_CREATE', $perms);
         $this->assertNotContains('ADJUSTMENT_SUBMIT', $perms);

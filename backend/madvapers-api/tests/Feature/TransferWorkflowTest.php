@@ -28,7 +28,7 @@ class TransferWorkflowTest extends TestCase
         return $user;
     }
 
-    public function test_transfer_workflow_request_approve_dispatch_receive(): void
+    public function test_transfer_workflow_request_and_admin_approval_auto_transfers_immediately(): void
     {
         $fromBranch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();
         $toBranch = Branch::query()->where('code', 'MOTONG')->firstOrFail();
@@ -71,10 +71,6 @@ class TransferWorkflowTest extends TestCase
 
         $this->postJson("/api/transfers/{$transferId}/request")->assertOk();
         $this->postJson("/api/transfers/{$transferId}/approve")->assertOk();
-        $this->postJson("/api/transfers/{$transferId}/dispatch")->assertOk();
-
-        $clerk = $this->actingAsUser('clerk@madvapers.local');
-        $this->postJson("/api/transfers/{$transferId}/receive")->assertOk();
 
         $this->assertDatabaseHas('transfers', [
             'id' => $transferId,
@@ -151,7 +147,7 @@ class TransferWorkflowTest extends TestCase
             'entity_type' => 'transfer',
             'entity_id' => $transferId,
             'branch_id' => $toBranch->id,
-            'user_id' => $clerk->id,
+            'user_id' => $admin->id,
         ]);
     }
 
@@ -218,7 +214,7 @@ class TransferWorkflowTest extends TestCase
         $this->assertSame($activeBranchIds, $toBranchIds);
     }
 
-    public function test_clerk_can_see_incoming_transfer_in_from_branch_filtered_list(): void
+    public function test_clerk_can_see_auto_received_incoming_transfer_in_from_branch_filtered_list(): void
     {
         $clerk = User::query()->where('email', 'clerk@madvapers.local')->firstOrFail();
 
@@ -264,20 +260,19 @@ class TransferWorkflowTest extends TestCase
 
         $this->postJson("/api/transfers/{$transferId}/request")->assertOk();
         $this->postJson("/api/transfers/{$transferId}/approve")->assertOk();
-        $this->postJson("/api/transfers/{$transferId}/dispatch")->assertOk();
 
         $this->actingAsUser('clerk@madvapers.local');
-        $rows = $this->getJson("/api/transfers?from_branch_id={$toBranchId}&status=IN_TRANSIT")
+        $rows = $this->getJson("/api/transfers?from_branch_id={$toBranchId}&status=RECEIVED")
             ->assertOk()
             ->json('data');
 
         $hasTransfer = collect(is_array($rows) ? $rows : [])->contains(function ($row) use ($transferId, $toBranchId) {
             return (int) ($row['id'] ?? 0) === $transferId
                 && (int) ($row['to_branch_id'] ?? 0) === $toBranchId
-                && strtoupper((string) ($row['status'] ?? '')) === 'IN_TRANSIT';
+                && strtoupper((string) ($row['status'] ?? '')) === 'RECEIVED';
         });
 
-        $this->assertTrue($hasTransfer, 'Incoming IN_TRANSIT transfer should be visible in clerk list.');
+        $this->assertTrue($hasTransfer, 'Auto-received incoming transfer should be visible in clerk list.');
     }
 
     public function test_transfer_request_blocks_when_source_stock_is_insufficient(): void
@@ -326,5 +321,64 @@ class TransferWorkflowTest extends TestCase
             'id' => $transferId,
             'status' => 'DRAFT',
         ]);
+    }
+
+    public function test_dashboard_summary_counts_only_requested_transfers_as_pending(): void
+    {
+        $fromBranch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();
+        $toBranch = Branch::query()
+            ->where('is_active', true)
+            ->where('id', '!=', $fromBranch->id)
+            ->orderBy('id')
+            ->firstOrFail();
+
+        $sourceBalance = InventoryBalance::query()
+            ->where('branch_id', $fromBranch->id)
+            ->where('qty_on_hand', '>', 0)
+            ->orderBy('id')
+            ->firstOrFail();
+
+        $this->actingAsUser('admin@madvapers.local');
+
+        $created = $this->postJson('/api/transfers', [
+            'from_branch_id' => $fromBranch->id,
+            'to_branch_id' => $toBranch->id,
+            'notes' => 'Pending transfer dashboard summary test',
+            'items' => [
+                [
+                    'product_variant_id' => (int) $sourceBalance->product_variant_id,
+                    'qty' => 1,
+                    'unit_cost' => 0,
+                ],
+            ],
+        ])->assertCreated()->json();
+
+        $transferId = (int) ($created['id'] ?? 0);
+        $this->assertGreaterThan(0, $transferId);
+
+        $this->postJson("/api/transfers/{$transferId}/request")->assertOk();
+
+        $summaryBeforeApproval = $this->getJson('/api/dashboard/summary?' . http_build_query([
+            'branch_id' => $fromBranch->id,
+            'date_from' => now()->startOfMonth()->toDateString(),
+            'date_to' => now()->endOfMonth()->toDateString(),
+        ]))
+            ->assertOk()
+            ->json();
+
+        $this->assertSame(1, (int) ($summaryBeforeApproval['kpis']['pending_transfers'] ?? 0));
+
+        $this->postJson("/api/transfers/{$transferId}/approve")->assertOk();
+
+        $summaryAfterApproval = $this->getJson('/api/dashboard/summary?' . http_build_query([
+            'branch_id' => $fromBranch->id,
+            'date_from' => now()->startOfMonth()->toDateString(),
+            'date_to' => now()->endOfMonth()->toDateString(),
+        ]))
+            ->assertOk()
+            ->json();
+
+        $this->assertSame(0, (int) ($summaryAfterApproval['kpis']['pending_transfers'] ?? 0));
+        $this->assertEmpty($summaryAfterApproval['approval_queue']['transfers'] ?? []);
     }
 }

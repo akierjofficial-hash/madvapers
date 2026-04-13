@@ -533,7 +533,7 @@ export function ApprovalsPage() {
       authStorage.markSeenPending(user?.id, 'transfers', row.id);
       authStorage.pingApprovalQueue();
       removeQueueItemFromCache('transfers', row.id);
-      showSnack(`Transfer #${row.id} approved.`, 'success');
+      showSnack(`Transfer #${row.id} approved and posted to both branches.`, 'success');
       void syncApprovalNotifications();
     } catch (error: any) {
       showSnack(extractErrorMessage(error, `Failed to approve transfer #${row.id}.`), 'error');

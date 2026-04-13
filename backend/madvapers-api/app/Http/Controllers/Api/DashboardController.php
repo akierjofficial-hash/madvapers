@@ -264,7 +264,7 @@ class DashboardController extends Controller
             DB::table('transfers'),
             $branchIds
         )
-            ->whereIn('status', ['REQUESTED', 'APPROVED', 'IN_TRANSIT'])
+            ->where('status', 'REQUESTED')
             ->count();
 
         $pendingVoidRequests = 0;
@@ -775,7 +775,7 @@ class DashboardController extends Controller
             ->leftJoin('branches as tb', 'tb.id', '=', 't.to_branch_id')
             ->leftJoin('users as u', 'u.id', '=', 't.created_by_user_id')
             ->leftJoin('transfer_items as ti', 'ti.transfer_id', '=', 't.id')
-            ->whereIn('t.status', ['REQUESTED', 'APPROVED', 'IN_TRANSIT'])
+            ->where('t.status', 'REQUESTED')
             ->groupBy(
                 't.id',
                 't.status',
