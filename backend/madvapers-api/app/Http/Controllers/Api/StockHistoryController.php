@@ -43,8 +43,29 @@ class StockHistoryController extends Controller
         $driver = DB::getDriverName();
         $like = $driver === 'pgsql' ? 'ilike' : 'like';
 
+        $currentBalanceSub = DB::table('inventory_balances')
+            ->selectRaw('product_variant_id, COALESCE(SUM(qty_on_hand), 0) as current_qty')
+            ->where('branch_id', $branchId)
+            ->groupBy('product_variant_id');
+
+        $ledgerCurrentQtySub = DB::table('stock_ledgers')
+            ->selectRaw('product_variant_id, COALESCE(SUM(qty_delta), 0) as ledger_current_qty')
+            ->where('branch_id', $branchId)
+            ->where('posted_at', '<=', $todayEnd)
+            ->groupBy('product_variant_id');
+
+        $netSinceMonthStartSub = DB::table('stock_ledgers')
+            ->selectRaw('product_variant_id, COALESCE(SUM(qty_delta), 0) as net_qty_since_month_start')
+            ->where('branch_id', $branchId)
+            ->when(
+                $monthStart->copy()->startOfDay()->lessThanOrEqualTo($todayEnd),
+                fn ($query) => $query->whereBetween('posted_at', [$monthStart->copy()->startOfDay(), $todayEnd]),
+                fn ($query) => $query->whereRaw('1 = 0')
+            )
+            ->groupBy('product_variant_id');
+
         $openingSub = DB::table('stock_ledgers')
-            ->selectRaw('product_variant_id, COALESCE(SUM(qty_delta), 0) as opening_qty')
+            ->selectRaw('product_variant_id, COALESCE(SUM(qty_delta), 0) as ledger_opening_qty')
             ->where('branch_id', $branchId)
             ->where('posted_at', '<', $monthStart)
             ->groupBy('product_variant_id');
@@ -66,6 +87,15 @@ class StockHistoryController extends Controller
         $rowsQuery = DB::table('product_variants as pv')
             ->join('products as p', 'p.id', '=', 'pv.product_id')
             ->leftJoin('brands as b', 'b.id', '=', 'p.brand_id')
+            ->leftJoinSub($currentBalanceSub, 'current_balances', function ($join) {
+                $join->on('current_balances.product_variant_id', '=', 'pv.id');
+            })
+            ->leftJoinSub($ledgerCurrentQtySub, 'ledger_current', function ($join) {
+                $join->on('ledger_current.product_variant_id', '=', 'pv.id');
+            })
+            ->leftJoinSub($netSinceMonthStartSub, 'since_month_start', function ($join) {
+                $join->on('since_month_start.product_variant_id', '=', 'pv.id');
+            })
             ->leftJoinSub($openingSub, 'opening', function ($join) {
                 $join->on('opening.product_variant_id', '=', 'pv.id');
             })
@@ -84,13 +114,22 @@ class StockHistoryController extends Controller
                 p.product_type,
                 p.is_active as product_is_active,
                 b.name as brand_name,
-                COALESCE(opening.opening_qty, 0) as opening_qty,
+                COALESCE(current_balances.current_qty, ledger_current.ledger_current_qty, 0) as current_qty,
+                COALESCE(opening.ledger_opening_qty, 0) as ledger_opening_qty,
+                COALESCE(
+                    current_balances.current_qty,
+                    ledger_current.ledger_current_qty,
+                    0
+                ) - COALESCE(since_month_start.net_qty_since_month_start, 0) as opening_qty,
                 COALESCE(month_movements.month_net_qty, 0) as month_net_qty,
                 COALESCE(month_movements.movement_volume, 0) as movement_volume
             ')
             ->where(function ($query) {
                 $query
-                    ->whereRaw('COALESCE(opening.opening_qty, 0) <> 0')
+                    ->whereRaw('(
+                        COALESCE(current_balances.current_qty, ledger_current.ledger_current_qty, 0)
+                        - COALESCE(since_month_start.net_qty_since_month_start, 0)
+                    ) <> 0')
                     ->orWhereRaw('COALESCE(month_movements.movement_volume, 0) <> 0');
             });
 

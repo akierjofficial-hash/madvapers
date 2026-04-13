@@ -92,6 +92,7 @@ class AuthPayloadTest extends TestCase
         $this->assertContains('PRODUCT_VIEW', $perms);
         $this->assertContains('SALES_VIEW', $perms);
         $this->assertContains('SALES_CREATE', $perms);
+        $this->assertContains('SALES_PAYMENT', $perms);
         $this->assertContains('SALES_VOID_REQUEST', $perms);
         $this->assertNotContains('SALES_VOID', $perms);
         $this->assertNotContains('ADJUSTMENT_POST', $perms);

@@ -199,6 +199,24 @@ export function StockHistoryPage() {
     };
   }, [lastVisibleDate, month, monthLabel, selectedHistory]);
 
+  const selectedDaySummary = useMemo(() => {
+    if (!selectedHistory?.date) return null;
+    const visibleDates = visibleDays.map((day) => day.date);
+    const dayIndex = visibleDates.indexOf(selectedHistory.date);
+    const previousDate = dayIndex > 0 ? visibleDates[dayIndex - 1] : null;
+    const openingQty = previousDate
+      ? Number(selectedHistory.row.closing_by_day?.[previousDate] ?? 0)
+      : Number(selectedHistory.row.opening_qty ?? 0);
+    const netQty = Number(selectedHistory.row.daily_net?.[selectedHistory.date] ?? 0);
+    const closingQty = Number(selectedHistory.row.closing_by_day?.[selectedHistory.date] ?? 0);
+
+    return {
+      openingQty,
+      netQty,
+      closingQty,
+    };
+  }, [selectedHistory, visibleDays]);
+
   const movementQuery = useLedgerQuery(
     {
       branch_id: branchId === '' ? 0 : branchId,
@@ -337,7 +355,7 @@ export function StockHistoryPage() {
                       <TableCell sx={{ ...STICKY_COLUMN_SX, left: 390, minWidth: 150, zIndex: 4 }}>Flavor</TableCell>
                       <TableCell sx={{ ...STICKY_COLUMN_SX, left: 540, minWidth: 170, zIndex: 4 }}>SKU</TableCell>
                       <TableCell sx={{ ...STICKY_COLUMN_SX, left: 710, minWidth: 110, zIndex: 4, textAlign: 'right' }}>
-                        Opening
+                        Month Opening
                       </TableCell>
                       <TableCell sx={{ ...STICKY_COLUMN_SX, left: 820, minWidth: 130, zIndex: 4, textAlign: 'right' }}>
                         Movement
@@ -487,6 +505,36 @@ export function StockHistoryPage() {
                   </Typography>
                 </Stack>
               </Paper>
+
+              {selectedHistory.date ? (
+                <>
+                  <Alert
+                    severity="info"
+                    action={
+                      <Button
+                        color="inherit"
+                        size="small"
+                        onClick={() => setSelectedHistory({ row: selectedHistory.row, date: null })}
+                      >
+                        View month
+                      </Button>
+                    }
+                  >
+                    Showing only movements for {selectedHistory.date}. Use “View month” to see the full monthly trail for this item.
+                  </Alert>
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    <Chip size="small" label={`Day opening: ${formatQty(selectedDaySummary?.openingQty)}`} />
+                    <Chip size="small" label={`Day net: ${formatQty(selectedDaySummary?.netQty)}`} color="primary" variant="outlined" />
+                    <Chip size="small" label={`Day closing: ${formatQty(selectedDaySummary?.closingQty)}`} color="success" variant="outlined" />
+                  </Stack>
+                </>
+              ) : (
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                  <Chip size="small" label={`Month opening: ${formatQty(selectedHistory.row.opening_qty)}`} />
+                  <Chip size="small" label={`Month net: ${formatQty(selectedHistory.row.month_net_qty)}`} color="primary" variant="outlined" />
+                  <Chip size="small" label={`Month closing: ${formatQty(selectedHistory.row.ending_qty)}`} color="success" variant="outlined" />
+                </Stack>
+              )}
 
               {movementQuery.isLoading ? (
                 <Alert severity="info">Loading movement details...</Alert>

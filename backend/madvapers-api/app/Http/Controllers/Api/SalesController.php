@@ -212,20 +212,12 @@ class SalesController extends Controller
             foreach ($qtyByVariant as $variantId => $requestedQty) {
                 $balance = $this->lockInventoryBalanceRow((int) $locked->branch_id, (int) $variantId);
                 $onHand = (float) ($balance->qty_on_hand ?? 0);
-                $reservedByOthers = $this->reservedPostedUnpaidQtyForVariant(
-                    (int) $locked->branch_id,
-                    (int) $variantId,
-                    (int) $locked->id
-                );
-                $available = $onHand - $reservedByOthers;
 
-                if ($available + 1e-9 < $requestedQty) {
+                if ($onHand + 1e-9 < $requestedQty) {
                     $insufficient[] = [
                         'product_variant_id' => (int) $variantId,
                         'required' => round((float) $requestedQty, 3),
                         'on_hand' => round($onHand, 3),
-                        'reserved_qty' => round($reservedByOthers, 3),
-                        'available_qty' => round(max(0.0, $available), 3),
                     ];
                 }
             }
@@ -245,6 +237,14 @@ class SalesController extends Controller
                 $locked->notes = $data['notes'];
             }
             $locked->save();
+            $this->postSaleStockIfNeeded(
+                $request,
+                $locked,
+                app(InventoryService::class),
+                'SALE_POST',
+                $data['notes'] ?? null,
+                'Sale posted and stock deducted'
+            );
 
             AuditTrail::record([
                 'event_type' => 'SALE_POSTED',
@@ -388,7 +388,14 @@ class SalesController extends Controller
             $refreshed = $locked->fresh();
 
             if ($refreshed->payment_status === 'PAID') {
-                $this->postSaleStockOnPayment($request, $refreshed, $inventoryService, $data['notes'] ?? null);
+                $this->postSaleStockIfNeeded(
+                    $request,
+                    $refreshed,
+                    $inventoryService,
+                    'SALE_PAYMENT',
+                    $data['notes'] ?? null,
+                    'Sale payment completed'
+                );
                 $refreshed = $refreshed->fresh();
             }
 
@@ -700,23 +707,13 @@ class SalesController extends Controller
             ->firstOrFail();
     }
 
-    private function reservedPostedUnpaidQtyForVariant(int $branchId, int $variantId, int $excludeSaleId): float
-    {
-        return (float) SaleItem::query()
-            ->join('sales as s', 's.id', '=', 'sale_items.sale_id')
-            ->where('s.branch_id', $branchId)
-            ->where('sale_items.product_variant_id', $variantId)
-            ->where('s.status', 'POSTED')
-            ->where('s.payment_status', '!=', 'PAID')
-            ->where('s.id', '!=', $excludeSaleId)
-            ->sum('sale_items.qty');
-    }
-
-    private function postSaleStockOnPayment(
+    private function postSaleStockIfNeeded(
         Request $request,
         Sale $sale,
         InventoryService $inventoryService,
-        ?string $notes = null
+        string $reasonCode,
+        ?string $notes = null,
+        string $defaultNotes = 'Sale posted and stock deducted'
     ): void {
         $alreadyPosted = StockLedger::query()
             ->where('movement_type', 'SALE')
@@ -786,13 +783,13 @@ class SalesController extends Controller
                 'product_variant_id' => $item->product_variant_id,
                 'qty_delta' => -1 * $qty,
                 'movement_type' => 'SALE',
-                'reason_code' => 'SALE_PAYMENT',
+                'reason_code' => $reasonCode,
                 'ref_type' => 'sales',
                 'ref_id' => $sale->id,
                 'performed_by_user_id' => $request->user()?->id,
                 'unit_cost' => $unitCost > 0 ? round($unitCost, 2) : null,
                 'unit_price' => $item->unit_price,
-                'notes' => $notes ?? 'Sale payment completed',
+                'notes' => $notes ?? $defaultNotes,
             ]);
         }
     }

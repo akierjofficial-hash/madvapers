@@ -188,6 +188,35 @@ function createClientTxnId(): string {
   return `salepay-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function resolveAssignedBranchId(user: { branch_id?: number | null; branch_ids?: number[] } | null | undefined): number | '' {
+  if (typeof user?.branch_id === 'number' && Number.isFinite(user.branch_id) && user.branch_id > 0) {
+    return user.branch_id;
+  }
+
+  const firstAssigned = (user?.branch_ids ?? []).find(
+    (id) => typeof id === 'number' && Number.isFinite(id) && id > 0
+  );
+
+  return typeof firstAssigned === 'number' ? firstAssigned : '';
+}
+
+function extractApiErrorMessage(error: any, fallback: string): string {
+  const validationErrors = error?.response?.data?.errors;
+  if (validationErrors && typeof validationErrors === 'object') {
+    for (const value of Object.values(validationErrors)) {
+      if (Array.isArray(value) && value.length > 0) {
+        const first = String(value[0] ?? '').trim();
+        if (first) return first;
+      }
+    }
+  }
+
+  const directMessage = String(error?.response?.data?.message ?? '').trim();
+  if (directMessage) return directMessage;
+
+  return fallback;
+}
+
 type DraftSaleItem = {
   product_variant_id: number;
   sku?: string | null;
@@ -275,16 +304,19 @@ export function SalesPage() {
   const canSalesPayment = can('SALES_PAYMENT');
   const canLedgerView = can('LEDGER_VIEW');
   const canStaffAttendanceView = can('STAFF_ATTENDANCE_VIEW');
+  const assignedBranchId = resolveAssignedBranchId(user);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const branchesQuery = useBranchesQuery(canBranchView);
   const approvalQueueQuery = useDashboardApprovalQueueQuery({}, !isCashierRole && canSalesVoid && canSalesView);
 
   const [branchId, setBranchId] = useState<number | ''>(() => {
+    const assigned = resolveAssignedBranchId(user);
+    if (assigned !== '') return assigned;
     const fromUrl = toInt(searchParams.get('branch_id'));
     if (fromUrl) return fromUrl;
     const fromStorage = authStorage.getLastBranchId();
-    return fromStorage ?? (user?.branch_id ?? '');
+    return fromStorage ?? assigned;
   });
   const [status, setStatus] = useState<string>(() => searchParams.get('status') ?? '');
   const [paymentStatus, setPaymentStatus] = useState<string>(() => searchParams.get('payment_status') ?? '');
@@ -396,16 +428,18 @@ export function SalesPage() {
   useEffect(() => {
     if (!canBranchView) return;
     if (branchId !== '' || !branchesQuery.data?.length) return;
-    const preferred = user?.branch_id ? branchesQuery.data.find((b) => b.id === user.branch_id) : null;
+    const preferred = typeof assignedBranchId === 'number'
+      ? branchesQuery.data.find((b) => b.id === assignedBranchId)
+      : null;
     const first = preferred ?? branchesQuery.data[0];
     setBranchId(first.id);
     authStorage.setLastBranchId(first.id);
-  }, [canBranchView, branchId, branchesQuery.data, user?.branch_id]);
+  }, [assignedBranchId, canBranchView, branchId, branchesQuery.data]);
 
   // For roles without BRANCH_VIEW (cashier), force assigned branch and ignore stale URL/storage branch ids.
   useEffect(() => {
     if (canBranchView) return;
-    const assigned = user?.branch_id ?? '';
+    const assigned = assignedBranchId;
 
     if (branchId !== assigned) {
       setBranchId(assigned);
@@ -416,7 +450,7 @@ export function SalesPage() {
     if (typeof assigned === 'number' && Number.isFinite(assigned) && assigned > 0) {
       authStorage.setLastBranchId(assigned);
     }
-  }, [canBranchView, user?.branch_id, branchId, createBranchId]);
+  }, [assignedBranchId, canBranchView, branchId, createBranchId]);
 
   useEffect(() => {
     if (branchId === '') return;
@@ -1063,7 +1097,10 @@ export function SalesPage() {
           const total = toNum(created.grand_total);
           setPaymentMethod('CASH');
           setPaymentAmount(total > 0 ? total.toFixed(2) : '');
-          setSnack({ severity: 'success', message: `Sale #${created.id} created and posted. Proceed to payment.` });
+          setSnack({
+            severity: 'success',
+            message: `Sale #${created.id} created and posted. Stock deducted, proceed to payment.`,
+          });
           void Promise.allSettled([salesQuery.refetch(), cashierCatalogQuery.refetch()]);
         } catch (postError: any) {
           const postMessage =
@@ -1096,7 +1133,7 @@ export function SalesPage() {
         setPaymentMethod('CASH');
         setPaymentAmount(dueAmount.toFixed(2));
       }
-      setSnack({ severity: 'success', message: `Sale #${selected.id} posted.` });
+      setSnack({ severity: 'success', message: `Sale #${selected.id} posted. Stock deducted.` });
       void Promise.allSettled([saleQuery.refetch(), salesQuery.refetch(), cashierCatalogQuery.refetch()]);
     } catch (error: any) {
       const details = error?.response?.data?.errors?.stock?.[0] ?? error?.response?.data?.message;
@@ -1144,7 +1181,7 @@ export function SalesPage() {
       });
       void Promise.allSettled([saleQuery.refetch(), salesQuery.refetch()]);
     } catch (error: any) {
-      const message = error?.response?.data?.message || 'Failed to add payment.';
+      const message = extractApiErrorMessage(error, 'Failed to add payment.');
       setSnack({ severity: 'error', message });
     }
   };

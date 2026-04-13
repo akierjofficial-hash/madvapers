@@ -66,9 +66,9 @@ class SalesWorkflowTest extends TestCase
             ->where('product_variant_id', $balance->product_variant_id)
             ->value('qty_on_hand');
 
-        $this->assertSame($beforeQty, $afterPostQty);
+        $this->assertSame($beforeQty - $qtySold, $afterPostQty);
 
-        $this->assertFalse(
+        $this->assertTrue(
             StockLedger::query()
                 ->where('branch_id', $branch->id)
                 ->where('product_variant_id', $balance->product_variant_id)
@@ -90,16 +90,17 @@ class SalesWorkflowTest extends TestCase
             ->where('product_variant_id', $balance->product_variant_id)
             ->value('qty_on_hand');
 
-        $this->assertSame($beforeQty - $qtySold, $afterPaidQty);
+        $this->assertSame($afterPostQty, $afterPaidQty);
 
-        $this->assertTrue(
+        $this->assertSame(
+            1,
             StockLedger::query()
                 ->where('branch_id', $branch->id)
                 ->where('product_variant_id', $balance->product_variant_id)
                 ->where('movement_type', 'SALE')
                 ->where('ref_type', 'sales')
                 ->where('ref_id', $saleId)
-                ->exists()
+                ->count()
         );
 
         $this->assertDatabaseHas('sales', [
@@ -109,7 +110,7 @@ class SalesWorkflowTest extends TestCase
         ]);
     }
 
-    public function test_payment_fails_when_stock_is_insufficient_at_settlement(): void
+    public function test_payment_can_settle_sale_even_if_branch_balance_changes_after_posting(): void
     {
         $branch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();
         $balance = InventoryBalance::query()
@@ -118,10 +119,10 @@ class SalesWorkflowTest extends TestCase
             ->orderBy('id')
             ->firstOrFail();
 
-        $balance->qty_on_hand = 1;
+        $balance->qty_on_hand = 2;
         $balance->save();
 
-        $this->actingAsUser('manager@madvapers.local');
+        $this->actingAsUser('admin@madvapers.local');
 
         $sale = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
@@ -141,6 +142,12 @@ class SalesWorkflowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('sale.status', 'POSTED');
 
+        $afterPostQty = (float) InventoryBalance::query()
+            ->where('branch_id', $branch->id)
+            ->where('product_variant_id', $balance->product_variant_id)
+            ->value('qty_on_hand');
+        $this->assertSame(1.0, $afterPostQty);
+
         InventoryBalance::query()
             ->where('branch_id', $branch->id)
             ->where('product_variant_id', $balance->product_variant_id)
@@ -150,25 +157,26 @@ class SalesWorkflowTest extends TestCase
             'method' => 'CASH',
             'amount' => 100,
         ])
-            ->assertStatus(422)
-            ->assertJsonValidationErrors(['stock']);
+            ->assertOk()
+            ->assertJsonPath('sale.payment_status', 'PAID');
 
         $this->assertDatabaseHas('sales', [
             'id' => $saleId,
             'status' => 'POSTED',
-            'payment_status' => 'UNPAID',
+            'payment_status' => 'PAID',
         ]);
 
-        $this->assertFalse(
+        $this->assertSame(
+            1,
             StockLedger::query()
                 ->where('ref_type', 'sales')
                 ->where('ref_id', $saleId)
                 ->where('movement_type', 'SALE')
-                ->exists()
+                ->count()
         );
     }
 
-    public function test_cannot_post_sale_when_stock_is_already_reserved_by_other_posted_unpaid_sales(): void
+    public function test_cannot_post_sale_when_stock_was_already_consumed_by_previous_posted_sale(): void
     {
         $branch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();
         $balance = InventoryBalance::query()
@@ -180,7 +188,7 @@ class SalesWorkflowTest extends TestCase
         $balance->qty_on_hand = 1;
         $balance->save();
 
-        $this->actingAsUser('manager@madvapers.local');
+        $this->actingAsUser('admin@madvapers.local');
 
         $firstSale = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
@@ -198,6 +206,12 @@ class SalesWorkflowTest extends TestCase
         $this->postJson("/api/sales/{$firstSaleId}/post")
             ->assertOk()
             ->assertJsonPath('sale.status', 'POSTED');
+
+        $afterFirstPostQty = (float) InventoryBalance::query()
+            ->where('branch_id', $branch->id)
+            ->where('product_variant_id', $balance->product_variant_id)
+            ->value('qty_on_hand');
+        $this->assertSame(0.0, $afterFirstPostQty);
 
         $secondSale = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
@@ -232,7 +246,7 @@ class SalesWorkflowTest extends TestCase
             ->orderBy('id')
             ->firstOrFail();
 
-        $this->actingAsUser('manager@madvapers.local');
+        $this->actingAsUser('admin@madvapers.local');
 
         $sale = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
@@ -281,7 +295,7 @@ class SalesWorkflowTest extends TestCase
         $balance->qty_on_hand = $startingQty;
         $balance->save();
 
-        $this->actingAsUser('manager@madvapers.local');
+        $this->actingAsUser('admin@madvapers.local');
 
         $sale = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
@@ -299,16 +313,17 @@ class SalesWorkflowTest extends TestCase
 
         $this->postJson("/api/sales/{$saleId}/post")->assertOk();
 
-        $this->postJson("/api/sales/{$saleId}/payments", [
+        $paymentResponse = $this->postJson("/api/sales/{$saleId}/payments", [
             'method' => 'CASH',
             'amount' => $discountedFinalTotal,
             'apply_discount_to_settle' => true,
-        ])
-            ->assertOk()
-            ->assertJsonPath('sale.payment_status', 'PAID')
-            ->assertJsonPath('sale.grand_total', $discountedFinalTotal)
-            ->assertJsonPath('sale.paid_total', $discountedFinalTotal)
-            ->assertJsonPath('sale.discount_total', $unitPrice - $discountedFinalTotal);
+        ])->assertOk()
+            ->assertJsonPath('sale.payment_status', 'PAID');
+
+        $paidSale = $paymentResponse->json('sale');
+        $this->assertSame($discountedFinalTotal, (float) ($paidSale['grand_total'] ?? 0));
+        $this->assertSame($discountedFinalTotal, (float) ($paidSale['paid_total'] ?? 0));
+        $this->assertSame($unitPrice - $discountedFinalTotal, (float) ($paidSale['discount_total'] ?? 0));
 
         $afterPaidQty = (float) InventoryBalance::query()
             ->where('branch_id', $branch->id)
@@ -341,6 +356,63 @@ class SalesWorkflowTest extends TestCase
         );
     }
 
+    public function test_cashier_can_create_post_and_pay_sale_in_hayahay_branch(): void
+    {
+        $branch = Branch::query()->where('code', 'HAYAHAY')->firstOrFail();
+        $balance = InventoryBalance::query()
+            ->where('branch_id', $branch->id)
+            ->where('qty_on_hand', '>', 0)
+            ->orderBy('id')
+            ->firstOrFail();
+
+        $startingQty = (float) $balance->qty_on_hand;
+
+        $cashier = User::query()->where('email', 'cashier@madvapers.local')->firstOrFail();
+        $cashier->branch_id = $branch->id;
+        $cashier->save();
+        $cashier->branches()->sync([$branch->id]);
+
+        Sanctum::actingAs($cashier->fresh());
+
+        $sale = $this->postJson('/api/sales', [
+            'branch_id' => $branch->id,
+            'items' => [
+                [
+                    'product_variant_id' => $balance->product_variant_id,
+                    'qty' => 1,
+                    'unit_price' => 125,
+                ],
+            ],
+        ])->assertCreated()->json();
+
+        $saleId = (int) ($sale['id'] ?? 0);
+        $this->assertGreaterThan(0, $saleId);
+
+        $this->postJson("/api/sales/{$saleId}/post")
+            ->assertOk()
+            ->assertJsonPath('sale.status', 'POSTED');
+
+        $afterPostQty = (float) InventoryBalance::query()
+            ->where('branch_id', $branch->id)
+            ->where('product_variant_id', $balance->product_variant_id)
+            ->value('qty_on_hand');
+        $this->assertSame($startingQty - 1, $afterPostQty);
+
+        $this->postJson("/api/sales/{$saleId}/payments", [
+            'method' => 'CASH',
+            'amount' => 125,
+        ])
+            ->assertOk()
+            ->assertJsonPath('sale.payment_status', 'PAID');
+
+        $afterPaidQty = (float) InventoryBalance::query()
+            ->where('branch_id', $branch->id)
+            ->where('product_variant_id', $balance->product_variant_id)
+            ->value('qty_on_hand');
+
+        $this->assertSame($afterPostQty, $afterPaidQty);
+    }
+
     public function test_voiding_paid_sale_restores_stock_and_prevents_double_reversal(): void
     {
         $branch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();
@@ -357,7 +429,7 @@ class SalesWorkflowTest extends TestCase
         $balance->qty_on_hand = $startingQty;
         $balance->save();
 
-        $manager = $this->actingAsUser('manager@madvapers.local');
+        $manager = $this->actingAsUser('admin@madvapers.local');
 
         $sale = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
@@ -435,7 +507,7 @@ class SalesWorkflowTest extends TestCase
             ->orderBy('id')
             ->firstOrFail();
 
-        $this->actingAsUser('manager@madvapers.local');
+        $this->actingAsUser('admin@madvapers.local');
 
         $sale = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
@@ -471,7 +543,7 @@ class SalesWorkflowTest extends TestCase
             ->orderBy('id')
             ->firstOrFail();
 
-        $this->actingAsUser('manager@madvapers.local');
+        $this->actingAsUser('admin@madvapers.local');
 
         $sale = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
@@ -505,7 +577,7 @@ class SalesWorkflowTest extends TestCase
 
         $startingQty = (float) $balance->qty_on_hand;
 
-        $manager = $this->actingAsUser('manager@madvapers.local');
+        $manager = $this->actingAsUser('admin@madvapers.local');
         $sale = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
             'items' => [
@@ -546,7 +618,7 @@ class SalesWorkflowTest extends TestCase
             'void_requested_by_user_id' => $cashier->id,
         ]);
 
-        $this->actingAsUser('manager@madvapers.local');
+        $this->actingAsUser('admin@madvapers.local');
         $this->postJson("/api/sales/{$saleId}/void-approve")
             ->assertOk()
             ->assertJsonPath('sale.status', 'VOIDED')
@@ -608,7 +680,7 @@ class SalesWorkflowTest extends TestCase
             ->orderBy('id')
             ->firstOrFail();
 
-        $this->actingAsUser('manager@madvapers.local');
+        $this->actingAsUser('admin@madvapers.local');
         $sale = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
             'items' => [
@@ -631,7 +703,7 @@ class SalesWorkflowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('sale.void_request_status', 'PENDING');
 
-        $manager = $this->actingAsUser('manager@madvapers.local');
+        $manager = $this->actingAsUser('admin@madvapers.local');
         $this->postJson("/api/sales/{$saleId}/void-reject", [
             'notes' => 'Proceed with sale',
         ])
@@ -656,7 +728,7 @@ class SalesWorkflowTest extends TestCase
             ->orderBy('id')
             ->firstOrFail();
 
-        $manager = $this->actingAsUser('manager@madvapers.local');
+        $manager = $this->actingAsUser('admin@madvapers.local');
         $sale = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
             'items' => [
@@ -696,7 +768,7 @@ class SalesWorkflowTest extends TestCase
             ->orderBy('id')
             ->firstOrFail();
 
-        $manager = $this->actingAsUser('manager@madvapers.local');
+        $manager = $this->actingAsUser('admin@madvapers.local');
         $sale = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
             'items' => [
@@ -736,7 +808,7 @@ class SalesWorkflowTest extends TestCase
             ->orderBy('id')
             ->firstOrFail();
 
-        $this->actingAsUser('manager@madvapers.local');
+        $this->actingAsUser('admin@madvapers.local');
         $sale = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
             'items' => [
@@ -771,7 +843,7 @@ class SalesWorkflowTest extends TestCase
             ->orderBy('id')
             ->firstOrFail();
 
-        $this->actingAsUser('manager@madvapers.local');
+        $this->actingAsUser('admin@madvapers.local');
         $sale = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
             'items' => [
@@ -808,7 +880,7 @@ class SalesWorkflowTest extends TestCase
             ->firstOrFail();
 
         $startingQty = (float) $balance->qty_on_hand;
-        $this->actingAsUser('manager@madvapers.local');
+        $this->actingAsUser('admin@madvapers.local');
 
         $sale = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
@@ -859,7 +931,7 @@ class SalesWorkflowTest extends TestCase
         $this->assertSame(1, $paymentCount);
     }
 
-    public function test_payment_settlement_checks_total_required_qty_per_variant(): void
+    public function test_posting_checks_total_required_qty_per_variant(): void
     {
         $branch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();
         $balance = InventoryBalance::query()
@@ -868,10 +940,10 @@ class SalesWorkflowTest extends TestCase
             ->orderBy('id')
             ->firstOrFail();
 
-        $balance->qty_on_hand = 1.5;
+        $balance->qty_on_hand = 1.0;
         $balance->save();
 
-        $this->actingAsUser('manager@madvapers.local');
+        $this->actingAsUser('admin@madvapers.local');
 
         $sale = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
@@ -891,17 +963,7 @@ class SalesWorkflowTest extends TestCase
 
         $saleId = (int) ($sale['id'] ?? 0);
         $this->assertGreaterThan(0, $saleId);
-        $this->postJson("/api/sales/{$saleId}/post")->assertOk();
-
-        InventoryBalance::query()
-            ->where('branch_id', $branch->id)
-            ->where('product_variant_id', $balance->product_variant_id)
-            ->update(['qty_on_hand' => 1.0]);
-
-        $this->postJson("/api/sales/{$saleId}/payments", [
-            'method' => 'CASH',
-            'amount' => 120,
-        ])
+        $this->postJson("/api/sales/{$saleId}/post")
             ->assertStatus(422)
             ->assertJsonValidationErrors(['stock']);
 

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Branch;
+use App\Models\InventoryBalance;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\StockLedger;
@@ -329,6 +330,85 @@ class StockHistoryReportTest extends TestCase
             $this->assertEquals(0.0, (float) $response->json('data.0.month_net_qty'));
             $response->assertJsonPath('data.1.product_variant_id', $lowMovementVariant->id);
             $this->assertEquals(1.0, (float) $response->json('data.1.movement_volume'));
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_stock_history_uses_current_branch_balance_to_backfill_opening_when_pre_month_ledger_is_missing(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2030-01-31 12:00:00', config('app.timezone')));
+
+        $branch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();
+        $this->actingAsUser('admin@madvapers.local');
+
+        $product = Product::query()->create([
+            'name' => 'History Balance Backfill Product ' . uniqid(),
+            'product_type' => 'POD',
+            'is_active' => true,
+        ]);
+
+        $variant = ProductVariant::query()->create([
+            'product_id' => $product->id,
+            'sku' => 'HBAL-' . strtoupper(substr(uniqid(), -8)),
+            'variant_name' => 'Balance Backfill',
+            'flavor' => 'Berry',
+            'default_cost' => 100,
+            'default_price' => 150,
+            'is_active' => true,
+        ]);
+
+        InventoryBalance::query()->create([
+            'branch_id' => $branch->id,
+            'product_variant_id' => $variant->id,
+            'qty_on_hand' => 10,
+        ]);
+
+        StockLedger::query()->create([
+            'posted_at' => '2030-01-08 08:00:00',
+            'branch_id' => $branch->id,
+            'product_variant_id' => $variant->id,
+            'qty_delta' => 23,
+            'movement_type' => 'PO_RECEIVE',
+            'reason_code' => 'PO_RECEIVE',
+            'unit_cost' => 100,
+            'notes' => 'Opening month inbound',
+        ]);
+
+        StockLedger::query()->create([
+            'posted_at' => '2030-01-09 10:00:00',
+            'branch_id' => $branch->id,
+            'product_variant_id' => $variant->id,
+            'qty_delta' => -2,
+            'movement_type' => 'SALE',
+            'reason_code' => 'SALE_PAYMENT',
+            'unit_price' => 150,
+            'notes' => 'Day two sale',
+        ]);
+
+        StockLedger::query()->create([
+            'posted_at' => '2030-01-10 15:00:00',
+            'branch_id' => $branch->id,
+            'product_variant_id' => $variant->id,
+            'qty_delta' => -11,
+            'movement_type' => 'SALE',
+            'reason_code' => 'SALE_PAYMENT',
+            'unit_price' => 150,
+            'notes' => 'Day three sale',
+        ]);
+
+        try {
+            $response = $this->getJson("/api/stock-history?branch_id={$branch->id}&month=2030-01&search={$variant->sku}")
+                ->assertOk();
+
+            $response->assertJsonCount(1, 'data');
+
+            $row = $response->json('data.0');
+            $this->assertEquals(0.0, (float) ($row['opening_qty'] ?? 0));
+            $this->assertEquals(23.0, (float) data_get($row, 'closing_by_day.2030-01-08'));
+            $this->assertEquals(21.0, (float) data_get($row, 'closing_by_day.2030-01-09'));
+            $this->assertEquals(10.0, (float) data_get($row, 'closing_by_day.2030-01-10'));
+            $this->assertEquals(36.0, (float) ($row['movement_volume'] ?? 0));
         } finally {
             Carbon::setTestNow();
         }
