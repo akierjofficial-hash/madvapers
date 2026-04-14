@@ -85,6 +85,9 @@ export type SalesQuery = {
   payment_status?: string;
   void_request_status?: string;
   search?: string;
+  cashier_search?: string;
+  date_from?: string;
+  date_to?: string;
   include_items?: boolean | 0 | 1;
 };
 

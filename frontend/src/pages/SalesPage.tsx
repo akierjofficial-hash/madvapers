@@ -324,6 +324,10 @@ export function SalesPage() {
   const [page, setPage] = useState<number>(() => toInt(searchParams.get('page')) ?? 1);
   const [search, setSearch] = useState<string>(() => searchParams.get('search') ?? '');
   const [searchDebounced, setSearchDebounced] = useState<string>(() => searchParams.get('search') ?? '');
+  const [cashierSearch, setCashierSearch] = useState<string>(() => searchParams.get('cashier_search') ?? '');
+  const [cashierSearchDebounced, setCashierSearchDebounced] = useState<string>(() => searchParams.get('cashier_search') ?? '');
+  const [dateFrom, setDateFrom] = useState<string>(() => searchParams.get('date_from') ?? '');
+  const [dateTo, setDateTo] = useState<string>(() => searchParams.get('date_to') ?? '');
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const saleQuery = useSaleQuery(selectedId ?? 0, !!selectedId && canSalesView);
@@ -420,6 +424,11 @@ export function SalesPage() {
   }, [search]);
 
   useEffect(() => {
+    const t = setTimeout(() => setCashierSearchDebounced(cashierSearch.trim()), 260);
+    return () => clearTimeout(t);
+  }, [cashierSearch]);
+
+  useEffect(() => {
     if (!openCreate) return;
     const t = setTimeout(() => setVariantSearchDebounced(variantSearch.trim()), 260);
     return () => clearTimeout(t);
@@ -460,14 +469,17 @@ export function SalesPage() {
       if (status) next.set('status', status);
       if (paymentStatus) next.set('payment_status', paymentStatus);
       if (voidRequestStatus) next.set('void_request_status', voidRequestStatus);
+      if (dateFrom) next.set('date_from', dateFrom);
+      if (dateTo) next.set('date_to', dateTo);
       if (page !== 1) next.set('page', String(page));
       if (searchDebounced) next.set('search', searchDebounced);
+      if (cashierSearchDebounced) next.set('cashier_search', cashierSearchDebounced);
     }
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branchId, isCashierRole, status, paymentStatus, voidRequestStatus, page, searchDebounced]);
+  }, [branchId, isCashierRole, status, paymentStatus, voidRequestStatus, dateFrom, dateTo, page, searchDebounced, cashierSearchDebounced]);
 
   const salesQuery = useSalesQuery(
     {
@@ -476,7 +488,10 @@ export function SalesPage() {
       status: isCashierRole ? undefined : status || undefined,
       payment_status: isCashierRole ? undefined : paymentStatus || undefined,
       void_request_status: isCashierRole ? undefined : voidRequestStatus || undefined,
+      date_from: isCashierRole ? undefined : dateFrom || undefined,
+      date_to: isCashierRole ? undefined : dateTo || undefined,
       search: isCashierRole ? undefined : searchDebounced || undefined,
+      cashier_search: isCashierRole ? undefined : cashierSearchDebounced || undefined,
       include_items: isCashierRole ? undefined : 1,
     },
     branchId !== '' && canSalesView
@@ -1518,6 +1533,41 @@ export function SalesPage() {
                 </MenuItem>
               ))}
             </TextField>
+            <TextField
+              size="small"
+              label="Date from"
+              type="date"
+              value={dateFrom}
+              onChange={(event) => {
+                setDateFrom(event.target.value);
+                setPage(1);
+              }}
+              InputLabelProps={{ shrink: true }}
+              sx={{ width: { xs: '100%', md: 165 } }}
+            />
+            <TextField
+              size="small"
+              label="Date to"
+              type="date"
+              value={dateTo}
+              onChange={(event) => {
+                setDateTo(event.target.value);
+                setPage(1);
+              }}
+              InputLabelProps={{ shrink: true }}
+              sx={{ width: { xs: '100%', md: 165 } }}
+            />
+            <TextField
+              size="small"
+              label="Cashier"
+              placeholder="Name or email..."
+              value={cashierSearch}
+              onChange={(event) => {
+                setCashierSearch(event.target.value);
+                setPage(1);
+              }}
+              sx={{ width: { xs: '100%', md: 210 } }}
+            />
             <TextField
               size="small"
               label="Search"

@@ -34,6 +34,9 @@ class SalesController extends Controller
             'payment_status' => ['nullable', 'string', 'max:30'],
             'void_request_status' => ['nullable', 'string', 'max:30'],
             'search' => ['nullable', 'string', 'max:120'],
+            'cashier_search' => ['nullable', 'string', 'max:120'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
             // Accept query-string booleans like "true"/"false" from frontend params.
             'include_items' => ['nullable', 'in:0,1,true,false'],
         ]);
@@ -85,6 +88,23 @@ class SalesController extends Controller
                     ->orWhere('notes', $like, $term)
                     ->orWhereRaw("CAST(id AS {$textCast}) {$likeSql} ?", [$term]);
             });
+        }
+
+        if ($request->filled('cashier_search')) {
+            $term = '%' . trim((string) $request->input('cashier_search')) . '%';
+            $q->whereHas('cashier', function ($cashierQuery) use ($term, $like) {
+                $cashierQuery
+                    ->where('name', $like, $term)
+                    ->orWhere('email', $like, $term);
+            });
+        }
+
+        if ($request->filled('date_from')) {
+            $q->whereDate(DB::raw('COALESCE(posted_at, created_at)'), '>=', (string) $request->input('date_from'));
+        }
+
+        if ($request->filled('date_to')) {
+            $q->whereDate(DB::raw('COALESCE(posted_at, created_at)'), '<=', (string) $request->input('date_to'));
         }
 
         return $q->paginate(20);
