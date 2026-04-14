@@ -28,6 +28,7 @@ import {
 import { useTheme } from '@mui/material/styles';
 import { useEffect, useState } from 'react';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
+import { useSearchParams } from 'react-router-dom';
 import type { UpdateUserInput } from '../api/accounts';
 import {
   useBranchesQuery,
@@ -72,9 +73,17 @@ function parseError(error: unknown, fallback: string) {
   return fallback;
 }
 
+function toPositiveInt(value: string | null): number | null {
+  if (value === null || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.trunc(parsed);
+}
+
 export function AccountsPage() {
   const theme = useTheme();
   const isCompact = useMediaQuery(theme.breakpoints.down('md'));
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user: me, can } = useAuth();
 
   const canView = can('USER_VIEW');
@@ -93,12 +102,15 @@ export function AccountsPage() {
   const disableMut = useDisableUserMutation();
   const enableMut = useEnableUserMutation();
 
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState<number | ''>('');
-  const [branchFilter, setBranchFilter] = useState<number | ''>('');
-  const [includeInactive, setIncludeInactive] = useState(false);
+  const [page, setPage] = useState<number>(() => toPositiveInt(searchParams.get('page')) ?? 1);
+  const [search, setSearch] = useState<string>(() => searchParams.get('search') ?? '');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>(() => searchParams.get('search') ?? '');
+  const [roleFilter, setRoleFilter] = useState<number | ''>(() => toPositiveInt(searchParams.get('role_id')) ?? '');
+  const [branchFilter, setBranchFilter] = useState<number | ''>(() => toPositiveInt(searchParams.get('branch_id')) ?? '');
+  const [includeInactive, setIncludeInactive] = useState<boolean>(() => {
+    const raw = String(searchParams.get('include_inactive') ?? '').toLowerCase();
+    return raw === '1' || raw === 'true';
+  });
 
   const [openCreate, setOpenCreate] = useState(false);
   const [createName, setCreateName] = useState('');
@@ -134,6 +146,21 @@ export function AccountsPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  useEffect(() => {
+    const nextPage = toPositiveInt(searchParams.get('page')) ?? 1;
+    const nextSearch = searchParams.get('search') ?? '';
+    const nextRoleFilter = toPositiveInt(searchParams.get('role_id')) ?? '';
+    const nextBranchFilter = toPositiveInt(searchParams.get('branch_id')) ?? '';
+    const nextIncludeInactive = ['1', 'true'].includes(String(searchParams.get('include_inactive') ?? '').toLowerCase());
+
+    if (nextPage !== page) setPage(nextPage);
+    if (nextSearch !== search) setSearch(nextSearch);
+    if (nextSearch !== debouncedSearch) setDebouncedSearch(nextSearch);
+    if (nextRoleFilter !== roleFilter) setRoleFilter(nextRoleFilter);
+    if (nextBranchFilter !== branchFilter) setBranchFilter(nextBranchFilter);
+    if (nextIncludeInactive !== includeInactive) setIncludeInactive(nextIncludeInactive);
+  }, [searchParams]);
+
   const usersQuery = useUsersQuery(
     {
       page,
@@ -147,6 +174,34 @@ export function AccountsPage() {
 
   const rows = usersQuery.data?.data ?? [];
   const totalPages = usersQuery.data?.last_page ?? 1;
+  useEffect(() => {
+    if (totalPages > 0 && page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+
+    if (page > 1) next.set('page', String(page));
+    else next.delete('page');
+
+    if (debouncedSearch) next.set('search', debouncedSearch);
+    else next.delete('search');
+
+    if (typeof roleFilter === 'number') next.set('role_id', String(roleFilter));
+    else next.delete('role_id');
+
+    if (typeof branchFilter === 'number' && canBranchView) next.set('branch_id', String(branchFilter));
+    else next.delete('branch_id');
+
+    if (includeInactive) next.set('include_inactive', '1');
+    else next.delete('include_inactive');
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [branchFilter, canBranchView, debouncedSearch, includeInactive, page, roleFilter, searchParams, setSearchParams]);
   const roleCodeById = new Map((rolesQuery.data ?? []).map((r) => [r.id, (r.code ?? '').toUpperCase()]));
   const branchNameById = new Map((branchesQuery.data ?? []).map((b) => [b.id, b.name]));
   const totalAvailableBranches = (branchesQuery.data ?? []).length;

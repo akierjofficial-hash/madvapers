@@ -23,6 +23,7 @@ import {
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   useBranchesQueryWithParams,
   useCreateBranchMutation,
@@ -49,9 +50,17 @@ function parseError(error: any, fallback: string) {
   return fallback;
 }
 
+function toPositiveInt(value: string | null): number | null {
+  if (value === null || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.trunc(parsed);
+}
+
 export function BranchesPage() {
   const theme = useTheme();
   const isCompact = useMediaQuery(theme.breakpoints.down('md'));
+  const [searchParams, setSearchParams] = useSearchParams();
   const { can } = useAuth();
   const canView = can('BRANCH_VIEW');
   const canManage = can('BRANCH_MANAGE');
@@ -61,7 +70,7 @@ export function BranchesPage() {
   const updateMut = useUpdateBranchMutation();
 
   const [open, setOpen] = useState(false);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState<number>(() => toPositiveInt(searchParams.get('page')) ?? 1);
   const [editing, setEditing] = useState<Branch | null>(null);
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
@@ -90,6 +99,21 @@ export function BranchesPage() {
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
+
+  useEffect(() => {
+    const nextPage = toPositiveInt(searchParams.get('page')) ?? 1;
+    if (nextPage !== page) setPage(nextPage);
+  }, [searchParams]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (page > 1) next.set('page', String(page));
+    else next.delete('page');
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [page, searchParams, setSearchParams]);
 
   const resetForm = () => {
     setCode('');

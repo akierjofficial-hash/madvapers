@@ -25,7 +25,7 @@ import {
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   useBranchesQuery,
   useInventoryQuery,
@@ -63,6 +63,13 @@ type ProductGroup = {
   total_qty: number;
   variants: SelectedItem[];
 };
+
+function toPositiveInt(value: string | null): number | null {
+  if (value === null || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.trunc(parsed);
+}
 
 function playBeep(kind: 'ok' | 'error') {
   try {
@@ -107,6 +114,7 @@ export function InventoryPage() {
   const theme = useTheme();
   const isCompact = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, can } = useAuth();
   const roleCode = String(user?.role?.code ?? '').toUpperCase();
   const disableAutoSearchFocus = roleCode === 'CLERK';
@@ -125,14 +133,19 @@ export function InventoryPage() {
   const canViewLedger = can('LEDGER_VIEW');
 
   const [branchId, setBranchId] = useState<number | ''>(() => {
+    const fromUrl = toPositiveInt(searchParams.get('branch_id'));
+    if (fromUrl !== null) return fromUrl;
     const fromStorage = authStorage.getLastBranchId();
     return fromStorage ?? (user?.branch_id ?? '');
   });
 
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [includeInactive, setIncludeInactive] = useState(false);
+  const [page, setPage] = useState<number>(() => toPositiveInt(searchParams.get('page')) ?? 1);
+  const [search, setSearch] = useState<string>(() => searchParams.get('search') ?? '');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>(() => searchParams.get('search') ?? '');
+  const [includeInactive, setIncludeInactive] = useState<boolean>(() => {
+    const raw = String(searchParams.get('include_inactive') ?? '').toLowerCase();
+    return raw === '1' || raw === 'true';
+  });
 
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -159,6 +172,34 @@ export function InventoryPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  useEffect(() => {
+    const nextBranchId = toPositiveInt(searchParams.get('branch_id'));
+    const nextPage = toPositiveInt(searchParams.get('page')) ?? 1;
+    const nextSearch = searchParams.get('search') ?? '';
+    const nextIncludeInactive = ['1', 'true'].includes(String(searchParams.get('include_inactive') ?? '').toLowerCase());
+
+    if (nextSearch !== search) setSearch(nextSearch);
+    if (nextSearch !== debouncedSearch) setDebouncedSearch(nextSearch);
+    if (nextPage !== page) setPage(nextPage);
+    if (nextIncludeInactive !== includeInactive) setIncludeInactive(nextIncludeInactive);
+
+    if (canBranchView) {
+      if (nextBranchId !== null && nextBranchId !== branchId) {
+        setBranchId(nextBranchId);
+      }
+      return;
+    }
+
+    const assigned = user?.branch_id ?? '';
+    if (branchId !== assigned) {
+      setBranchId(assigned);
+    }
+  }, [
+    canBranchView,
+    searchParams,
+    user?.branch_id,
+  ]);
+
   // Pick a default branch once branches load
   useEffect(() => {
     if (!canBranchView) return;
@@ -178,6 +219,26 @@ export function InventoryPage() {
     }
   }, [canBranchView, user?.branch_id, branchId]);
 
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+
+    if (branchId !== '' && canBranchView) next.set('branch_id', String(branchId));
+    else next.delete('branch_id');
+
+    if (page > 1) next.set('page', String(page));
+    else next.delete('page');
+
+    if (debouncedSearch) next.set('search', debouncedSearch);
+    else next.delete('search');
+
+    if (includeInactive) next.set('include_inactive', '1');
+    else next.delete('include_inactive');
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [branchId, canBranchView, debouncedSearch, includeInactive, page, searchParams, setSearchParams]);
+
   const invQuery = useInventoryQuery(
     {
       branch_id: branchId === '' ? 0 : branchId,
@@ -190,6 +251,12 @@ export function InventoryPage() {
 
   const rows = invQuery.data?.data ?? [];
   const totalPages = invQuery.data?.last_page ?? 1;
+
+  useEffect(() => {
+    if (totalPages > 0 && page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const prettyRows = useMemo(() => {
     return rows.map((r) => {
@@ -342,9 +409,7 @@ export function InventoryPage() {
   };
 
   const afterStockAction = () => {
-    // keep scanner flow clean, but preserve current pagination context
-    setSearch('');
-    setDebouncedSearch('');
+    // Keep the current filters and page intact after editing stock.
     focusSearchInput();
   };
 
@@ -376,6 +441,15 @@ export function InventoryPage() {
       setSnack({ open: true, message: 'Stock posted. Inventory + ledger updated.', severity: 'success' });
       playBeep('ok');
       closeStock();
+      setSelected((prev) => {
+        if (!prev) return prev;
+        const nextQty = Number(prev.qty ?? 0) + v.qty;
+        return {
+          ...prev,
+          qty: nextQty,
+          stock_value: nextQty * Number(prev.default_cost ?? 0),
+        };
+      });
       afterStockAction();
     } catch (e: any) {
       const msg = e?.response?.data?.message || 'Failed to post stock.';

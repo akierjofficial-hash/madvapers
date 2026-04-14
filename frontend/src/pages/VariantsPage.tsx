@@ -27,7 +27,7 @@ import { useTheme } from '@mui/material/styles';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   useBranchesQuery,
   useCreateVariantMutation,
@@ -80,6 +80,13 @@ function suggestedUnitCost(defaultCost: string | number | null | undefined, defa
   return '';
 }
 
+function toPositiveInt(value: string | null): number | null {
+  if (value === null || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.trunc(parsed);
+}
+
 type SnackState = {
   open: boolean;
   message: string;
@@ -92,6 +99,7 @@ export function VariantsPage() {
   const theme = useTheme();
   const isCompact = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, can } = useAuth();
   const canCreate = can('PRODUCT_CREATE');
   const canUpdate = can('PRODUCT_UPDATE');
@@ -102,10 +110,13 @@ export function VariantsPage() {
 
   const branchesQuery = useBranchesQuery(canBranchView);
 
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [includeInactive, setIncludeInactive] = useState(false);
+  const [page, setPage] = useState<number>(() => toPositiveInt(searchParams.get('page')) ?? 1);
+  const [search, setSearch] = useState<string>(() => searchParams.get('search') ?? '');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>(() => searchParams.get('search') ?? '');
+  const [includeInactive, setIncludeInactive] = useState<boolean>(() => {
+    const raw = String(searchParams.get('include_inactive') ?? '').toLowerCase();
+    return raw === '1' || raw === 'true';
+  });
   const [openCreate, setOpenCreate] = useState(false);
   const [openEdit, setOpenEdit] = useState(false);
   const [editingVariantId, setEditingVariantId] = useState<number | null>(null);
@@ -153,6 +164,17 @@ export function VariantsPage() {
   }, [search]);
 
   useEffect(() => {
+    const nextPage = toPositiveInt(searchParams.get('page')) ?? 1;
+    const nextSearch = searchParams.get('search') ?? '';
+    const nextIncludeInactive = ['1', 'true'].includes(String(searchParams.get('include_inactive') ?? '').toLowerCase());
+
+    if (nextPage !== page) setPage(nextPage);
+    if (nextSearch !== search) setSearch(nextSearch);
+    if (nextSearch !== debouncedSearch) setDebouncedSearch(nextSearch);
+    if (nextIncludeInactive !== includeInactive) setIncludeInactive(nextIncludeInactive);
+  }, [searchParams]);
+
+  useEffect(() => {
     if (stockBranchId !== '') return;
     if (user?.branch_id) {
       setStockBranchId(user.branch_id);
@@ -186,6 +208,28 @@ export function VariantsPage() {
 
   const rows = variantsQuery.data?.data ?? [];
   const totalPages = variantsQuery.data?.last_page ?? 1;
+  useEffect(() => {
+    if (totalPages > 0 && page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+
+    if (page > 1) next.set('page', String(page));
+    else next.delete('page');
+
+    if (debouncedSearch) next.set('search', debouncedSearch);
+    else next.delete('search');
+
+    if (includeInactive) next.set('include_inactive', '1');
+    else next.delete('include_inactive');
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [debouncedSearch, includeInactive, page, searchParams, setSearchParams]);
   const products = useMemo(() => {
     const source = productsQuery.data?.data ?? [];
     return [...source].sort((a, b) => String(a.name ?? '').localeCompare(String(b.name ?? ''), undefined, { sensitivity: 'base' }));

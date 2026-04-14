@@ -27,6 +27,7 @@ import { useTheme } from '@mui/material/styles';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
+import { useSearchParams } from 'react-router-dom';
 import type { ProductType } from '../api/products';
 import { PRODUCT_TYPES } from '../api/products';
 import {
@@ -115,9 +116,17 @@ function formatMoney(value: string | number | null | undefined) {
   return n.toFixed(2);
 }
 
+function toPositiveInt(value: string | null): number | null {
+  if (value === null || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.trunc(parsed);
+}
+
 export function ProductsPage() {
   const theme = useTheme();
   const isCompact = useMediaQuery(theme.breakpoints.down('md'));
+  const [searchParams, setSearchParams] = useSearchParams();
   const { can } = useAuth();
   const canView = can('PRODUCT_VIEW');
   const canCreate = can('PRODUCT_CREATE');
@@ -125,12 +134,15 @@ export function ProductsPage() {
   const canDisable = can('PRODUCT_DISABLE');
   const canDelete = can('PRODUCT_DELETE');
 
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<string | ''>('');
-  const [brandFilter, setBrandFilter] = useState<number | ''>('');
-  const [includeInactive, setIncludeInactive] = useState(false);
+  const [page, setPage] = useState<number>(() => toPositiveInt(searchParams.get('page')) ?? 1);
+  const [search, setSearch] = useState<string>(() => searchParams.get('search') ?? '');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>(() => searchParams.get('search') ?? '');
+  const [typeFilter, setTypeFilter] = useState<string | ''>(() => searchParams.get('product_type') ?? '');
+  const [brandFilter, setBrandFilter] = useState<number | ''>(() => toPositiveInt(searchParams.get('brand_id')) ?? '');
+  const [includeInactive, setIncludeInactive] = useState<boolean>(() => {
+    const raw = String(searchParams.get('include_inactive') ?? '').toLowerCase();
+    return raw === '1' || raw === 'true';
+  });
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
@@ -160,6 +172,21 @@ export function ProductsPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  useEffect(() => {
+    const nextPage = toPositiveInt(searchParams.get('page')) ?? 1;
+    const nextSearch = searchParams.get('search') ?? '';
+    const nextTypeFilter = searchParams.get('product_type') ?? '';
+    const nextBrandFilter = toPositiveInt(searchParams.get('brand_id')) ?? '';
+    const nextIncludeInactive = ['1', 'true'].includes(String(searchParams.get('include_inactive') ?? '').toLowerCase());
+
+    if (nextPage !== page) setPage(nextPage);
+    if (nextSearch !== search) setSearch(nextSearch);
+    if (nextSearch !== debouncedSearch) setDebouncedSearch(nextSearch);
+    if (nextTypeFilter !== typeFilter) setTypeFilter(nextTypeFilter);
+    if (nextBrandFilter !== brandFilter) setBrandFilter(nextBrandFilter);
+    if (nextIncludeInactive !== includeInactive) setIncludeInactive(nextIncludeInactive);
+  }, [searchParams]);
+
   const productsQuery = useProductsQuery(
     {
       page,
@@ -181,6 +208,35 @@ export function ProductsPage() {
   const rows = productsQuery.data?.data ?? [];
   const totalPages = productsQuery.data?.last_page ?? 1;
   const brandOptions = brandsQuery.data?.data ?? [];
+
+  useEffect(() => {
+    if (totalPages > 0 && page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+
+    if (page > 1) next.set('page', String(page));
+    else next.delete('page');
+
+    if (debouncedSearch) next.set('search', debouncedSearch);
+    else next.delete('search');
+
+    if (typeFilter) next.set('product_type', typeFilter);
+    else next.delete('product_type');
+
+    if (typeof brandFilter === 'number') next.set('brand_id', String(brandFilter));
+    else next.delete('brand_id');
+
+    if (includeInactive) next.set('include_inactive', '1');
+    else next.delete('include_inactive');
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [brandFilter, debouncedSearch, includeInactive, page, searchParams, setSearchParams, typeFilter]);
 
   const busy =
     createMut.isPending ||
