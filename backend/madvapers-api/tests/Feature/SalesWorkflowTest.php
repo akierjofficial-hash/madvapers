@@ -244,6 +244,96 @@ class SalesWorkflowTest extends TestCase
             ->assertJsonPath('data.0.cashier.name', 'Admin');
     }
 
+    public function test_admin_can_view_daily_totals_filtered_by_cashier_and_date_range(): void
+    {
+        $branch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();
+        $balances = InventoryBalance::query()
+            ->where('branch_id', $branch->id)
+            ->where('qty_on_hand', '>', 0)
+            ->orderBy('id')
+            ->take(3)
+            ->get();
+
+        $this->assertCount(3, $balances);
+
+        $cashier = User::query()->where('email', 'cashier@madvapers.local')->firstOrFail();
+        $cashier->branch_id = $branch->id;
+        $cashier->save();
+        $cashier->branches()->syncWithoutDetaching([$branch->id]);
+
+        Sanctum::actingAs($cashier->fresh());
+
+        $cashierSaleOne = $this->postJson('/api/sales', [
+            'branch_id' => $branch->id,
+            'items' => [[
+                'product_variant_id' => $balances[0]->product_variant_id,
+                'qty' => 1,
+                'unit_price' => 100,
+                'line_discount' => 10,
+            ]],
+        ])->assertCreated()->json();
+        $cashierSaleOneId = (int) ($cashierSaleOne['id'] ?? 0);
+        $this->postJson("/api/sales/{$cashierSaleOneId}/post")->assertOk();
+        $this->postJson("/api/sales/{$cashierSaleOneId}/payments", [
+            'method' => 'CASH',
+            'amount' => 90,
+        ])->assertOk();
+        Sale::query()->whereKey($cashierSaleOneId)->update([
+            'created_at' => '2030-01-05 08:00:00',
+            'updated_at' => '2030-01-05 08:30:00',
+            'posted_at' => '2030-01-05 08:15:00',
+        ]);
+
+        $cashierSaleTwo = $this->postJson('/api/sales', [
+            'branch_id' => $branch->id,
+            'items' => [[
+                'product_variant_id' => $balances[1]->product_variant_id,
+                'qty' => 2,
+                'unit_price' => 50,
+            ]],
+        ])->assertCreated()->json();
+        $cashierSaleTwoId = (int) ($cashierSaleTwo['id'] ?? 0);
+        $this->postJson("/api/sales/{$cashierSaleTwoId}/post")->assertOk();
+        Sale::query()->whereKey($cashierSaleTwoId)->update([
+            'created_at' => '2030-01-05 17:00:00',
+            'updated_at' => '2030-01-05 17:05:00',
+            'posted_at' => '2030-01-05 17:05:00',
+        ]);
+
+        $admin = User::query()->where('email', 'admin@madvapers.local')->firstOrFail();
+        Sanctum::actingAs($admin);
+
+        $adminSale = $this->postJson('/api/sales', [
+            'branch_id' => $branch->id,
+            'items' => [[
+                'product_variant_id' => $balances[2]->product_variant_id,
+                'qty' => 1,
+                'unit_price' => 120,
+            ]],
+        ])->assertCreated()->json();
+        $adminSaleId = (int) ($adminSale['id'] ?? 0);
+        $this->postJson("/api/sales/{$adminSaleId}/post")->assertOk();
+        Sale::query()->whereKey($adminSaleId)->update([
+            'created_at' => '2030-01-10 09:00:00',
+            'updated_at' => '2030-01-10 09:15:00',
+            'posted_at' => '2030-01-10 09:15:00',
+        ]);
+
+        $this->actingAsUser('admin@madvapers.local');
+
+        $this->getJson("/api/sales/daily-totals?branch_id={$branch->id}&cashier_search=Cashier&date_from=2030-01-01&date_to=2030-01-07")
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.sale_date', '2030-01-05')
+            ->assertJsonPath('data.0.transactions_count', 2)
+            ->assertJsonPath('data.0.items_sold', 3)
+            ->assertJsonPath('data.0.gross_total', 200)
+            ->assertJsonPath('data.0.discount_total', 10)
+            ->assertJsonPath('data.0.net_sales', 190)
+            ->assertJsonPath('data.0.paid_total', 90)
+            ->assertJsonPath('data.0.unpaid_total', 100);
+    }
+
     public function test_cannot_post_sale_when_stock_was_already_consumed_by_previous_posted_sale(): void
     {
         $branch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();

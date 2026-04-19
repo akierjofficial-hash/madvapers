@@ -91,6 +91,17 @@ export type SalesQuery = {
   include_items?: boolean | 0 | 1;
 };
 
+export type SaleDailyTotal = {
+  sale_date: string;
+  transactions_count: string | number;
+  items_sold: string | number;
+  gross_total: string | number;
+  discount_total: string | number;
+  net_sales: string | number;
+  paid_total: string | number;
+  unpaid_total: string | number;
+};
+
 export type CreateSaleInput = {
   branch_id: number;
   notes?: string | null;
@@ -117,6 +128,11 @@ export type AddSalePaymentInput = {
 
 export async function getSales(params: SalesQuery) {
   const res = await api.get<LaravelPaginator<Sale>>('/sales', { params });
+  return res.data;
+}
+
+export async function getSalesDailyTotals(params: SalesQuery) {
+  const res = await api.get<LaravelPaginator<SaleDailyTotal>>('/sales/daily-totals', { params });
   return res.data;
 }
 

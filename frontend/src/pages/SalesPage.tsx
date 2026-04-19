@@ -51,6 +51,7 @@ import {
   useRejectSaleVoidRequestMutation,
   useRequestSaleVoidMutation,
   useSaleQuery,
+  useSalesDailyTotalsQuery,
   useSalesQuery,
   useVoidSaleMutation,
   useVariantsQuery,
@@ -87,6 +88,17 @@ function money(v: unknown) {
     currency: 'PHP',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
+  });
+}
+
+function saleDateLabel(value: string | null | undefined) {
+  if (!value) return '-';
+  const d = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
   });
 }
 
@@ -230,6 +242,7 @@ type DraftSaleItem = {
 };
 
 type CashierMobileView = 'CATALOG' | 'CART' | 'QUEUE' | 'ACTIVITY';
+type AdminSalesView = 'transactions' | 'totals';
 
 type ConfirmActionConfig = {
   title: string;
@@ -321,6 +334,10 @@ export function SalesPage() {
   const [status, setStatus] = useState<string>(() => searchParams.get('status') ?? '');
   const [paymentStatus, setPaymentStatus] = useState<string>(() => searchParams.get('payment_status') ?? '');
   const [voidRequestStatus, setVoidRequestStatus] = useState<string>(() => searchParams.get('void_request_status') ?? '');
+  const [adminSalesView, setAdminSalesView] = useState<AdminSalesView>(() => {
+    const raw = String(searchParams.get('view') ?? '').toLowerCase();
+    return raw === 'totals' ? 'totals' : 'transactions';
+  });
   const [page, setPage] = useState<number>(() => toInt(searchParams.get('page')) ?? 1);
   const [search, setSearch] = useState<string>(() => searchParams.get('search') ?? '');
   const [searchDebounced, setSearchDebounced] = useState<string>(() => searchParams.get('search') ?? '');
@@ -466,6 +483,7 @@ export function SalesPage() {
     const next = new URLSearchParams();
     next.set('branch_id', String(branchId));
     if (!isCashierRole) {
+      if (adminSalesView !== 'transactions') next.set('view', adminSalesView);
       if (status) next.set('status', status);
       if (paymentStatus) next.set('payment_status', paymentStatus);
       if (voidRequestStatus) next.set('void_request_status', voidRequestStatus);
@@ -479,7 +497,7 @@ export function SalesPage() {
       setSearchParams(next, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branchId, isCashierRole, status, paymentStatus, voidRequestStatus, dateFrom, dateTo, page, searchDebounced, cashierSearchDebounced]);
+  }, [branchId, isCashierRole, adminSalesView, status, paymentStatus, voidRequestStatus, dateFrom, dateTo, page, searchDebounced, cashierSearchDebounced]);
 
   const salesQuery = useSalesQuery(
     {
@@ -494,7 +512,21 @@ export function SalesPage() {
       cashier_search: isCashierRole ? undefined : cashierSearchDebounced || undefined,
       include_items: isCashierRole ? undefined : 1,
     },
-    branchId !== '' && canSalesView
+    branchId !== '' && canSalesView && (isCashierRole || adminSalesView === 'transactions')
+  );
+  const salesDailyTotalsQuery = useSalesDailyTotalsQuery(
+    {
+      page: isCashierRole ? 1 : page,
+      branch_id: branchId === '' ? undefined : branchId,
+      status: isCashierRole ? undefined : status || undefined,
+      payment_status: isCashierRole ? undefined : paymentStatus || undefined,
+      void_request_status: isCashierRole ? undefined : voidRequestStatus || undefined,
+      date_from: isCashierRole ? undefined : dateFrom || undefined,
+      date_to: isCashierRole ? undefined : dateTo || undefined,
+      search: isCashierRole ? undefined : searchDebounced || undefined,
+      cashier_search: isCashierRole ? undefined : cashierSearchDebounced || undefined,
+    },
+    branchId !== '' && canSalesView && !isCashierRole && adminSalesView === 'totals'
   );
 
   const variantLookup = useVariantsQuery(
@@ -522,11 +554,15 @@ export function SalesPage() {
   );
 
   const rows = salesQuery.data?.data ?? [];
+  const dailyTotalRows = salesDailyTotalsQuery.data?.data ?? [];
   const rowsByRecentAction = useMemo(
     () => [...rows].sort((a: any, b: any) => checkoutActivityAt(b) - checkoutActivityAt(a)),
     [rows]
   );
   const totalPages = salesQuery.data?.last_page ?? 1;
+  const activeAdminTotalPages = adminSalesView === 'totals'
+    ? (salesDailyTotalsQuery.data?.last_page ?? 1)
+    : totalPages;
   const cashierActionRows = useMemo(
     () =>
       rowsByRecentAction
@@ -1388,6 +1424,13 @@ export function SalesPage() {
     setPage(1);
     setPendingVoidBranchAnchorEl(null);
   };
+  const openTransactionsForDay = (saleDate: string) => {
+    if (!saleDate) return;
+    setDateFrom(saleDate);
+    setDateTo(saleDate);
+    setAdminSalesView('transactions');
+    setPage(1);
+  };
 
   if (!canSalesView) {
     return <Alert severity="error">Not authorized to view sales.</Alert>;
@@ -1446,6 +1489,29 @@ export function SalesPage() {
       </Stack>
 
       {canBranchView && branchesQuery.isError && <Alert severity="error">Failed to load branches.</Alert>}
+
+      {!isCashierRole && (
+        <Stack direction="row" spacing={1}>
+          <Button
+            variant={adminSalesView === 'transactions' ? 'contained' : 'outlined'}
+            onClick={() => {
+              setAdminSalesView('transactions');
+              setPage(1);
+            }}
+          >
+            Transactions
+          </Button>
+          <Button
+            variant={adminSalesView === 'totals' ? 'contained' : 'outlined'}
+            onClick={() => {
+              setAdminSalesView('totals');
+              setPage(1);
+            }}
+          >
+            Daily Totals
+          </Button>
+        </Stack>
+      )}
 
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25} alignItems={{ md: 'center' }}>
         <Box sx={{ flex: 1, minWidth: 260 }}>
@@ -2263,6 +2329,105 @@ export function SalesPage() {
           </>
         )}
         </>
+      ) : adminSalesView === 'totals' ? (
+        salesDailyTotalsQuery.isLoading ? (
+          <Alert severity="info">Loading daily totals...</Alert>
+        ) : salesDailyTotalsQuery.isError ? (
+          <Alert severity="error">Failed to load daily totals.</Alert>
+        ) : dailyTotalRows.length === 0 ? (
+          <EmptyStateNotice
+            severity="warning"
+            title="No Daily Totals Found"
+            description="Try widening the date range, changing branch, or clearing your current filters."
+          />
+        ) : isCompactAdminList ? (
+          <Stack spacing={1}>
+            {dailyTotalRows.map((row: any) => (
+              <Paper
+                key={`daily-total-${row.sale_date}`}
+                variant="outlined"
+                role="button"
+                tabIndex={0}
+                onClick={() => openTransactionsForDay(String(row.sale_date ?? ''))}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    openTransactionsForDay(String(row.sale_date ?? ''));
+                  }
+                }}
+                sx={{ p: 1.2, cursor: 'pointer' }}
+              >
+                <Stack spacing={0.75}>
+                  <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="center">
+                    <Typography variant="subtitle2">{saleDateLabel(String(row.sale_date ?? ''))}</Typography>
+                    <Chip size="small" color="primary" label={`${qtyFmt(row.transactions_count)} sale(s)`} />
+                  </Stack>
+                  <Stack direction="row" spacing={1.2} useFlexGap flexWrap="wrap">
+                    <Typography variant="caption" color="text.secondary">
+                      Items: {qtyFmt(row.items_sold)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Gross: {money(row.gross_total)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Discount: {money(row.discount_total)}
+                    </Typography>
+                  </Stack>
+                  <Stack direction="row" spacing={1.2} useFlexGap flexWrap="wrap">
+                    <Typography variant="caption" color="text.secondary">
+                      Net: {money(row.net_sales)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Paid: {money(row.paid_total)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Unpaid: {money(row.unpaid_total)}
+                    </Typography>
+                  </Stack>
+                  <Typography variant="caption" color="primary.main">
+                    Tap to open this day's transactions
+                  </Typography>
+                </Stack>
+              </Paper>
+            ))}
+          </Stack>
+        ) : (
+          <Paper variant="outlined" sx={{ overflowX: 'auto' }}>
+            <Table size="small" sx={{ minWidth: 980 }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Date</TableCell>
+                  <TableCell align="right">Transactions</TableCell>
+                  <TableCell align="right">Items Sold</TableCell>
+                  <TableCell align="right">Gross Total</TableCell>
+                  <TableCell align="right">Discount</TableCell>
+                  <TableCell align="right">Net Sales</TableCell>
+                  <TableCell align="right">Paid</TableCell>
+                  <TableCell align="right">Unpaid</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {dailyTotalRows.map((row: any) => (
+                  <TableRow
+                    key={`daily-total-table-${row.sale_date}`}
+                    hover
+                    sx={{ cursor: 'pointer' }}
+                    onClick={() => openTransactionsForDay(String(row.sale_date ?? ''))}
+                  >
+                    <TableCell>{saleDateLabel(String(row.sale_date ?? ''))}</TableCell>
+                    <TableCell align="right">{qtyFmt(row.transactions_count)}</TableCell>
+                    <TableCell align="right">{qtyFmt(row.items_sold)}</TableCell>
+                    <TableCell align="right">{money(row.gross_total)}</TableCell>
+                    <TableCell align="right">{money(row.discount_total)}</TableCell>
+                    <TableCell align="right">{money(row.net_sales)}</TableCell>
+                    <TableCell align="right">{money(row.paid_total)}</TableCell>
+                    <TableCell align="right">{money(row.unpaid_total)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Paper>
+        )
       ) : salesQuery.isLoading ? (
         <Alert severity="info">Loading sales...</Alert>
       ) : salesQuery.isError ? (
@@ -2474,9 +2639,9 @@ export function SalesPage() {
         </Paper>
       )}
 
-      {!isCashierRole && branchId !== '' && totalPages > 1 && (
+      {!isCashierRole && branchId !== '' && activeAdminTotalPages > 1 && (
         <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-          <Pagination count={totalPages} page={page} onChange={(_, next) => setPage(next)} showFirstButton showLastButton />
+          <Pagination count={activeAdminTotalPages} page={page} onChange={(_, next) => setPage(next)} showFirstButton showLastButton />
         </Box>
       )}
 

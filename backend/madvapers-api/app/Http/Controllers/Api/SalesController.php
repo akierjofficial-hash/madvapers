@@ -12,6 +12,7 @@ use App\Models\StockLedger;
 use App\Services\AdminPushNotificationService;
 use App\Services\InventoryService;
 use App\Support\AuditTrail;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -28,23 +29,7 @@ class SalesController extends Controller
 
     public function index(Request $request)
     {
-        $request->validate([
-            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
-            'status' => ['nullable', 'string', 'max:30'],
-            'payment_status' => ['nullable', 'string', 'max:30'],
-            'void_request_status' => ['nullable', 'string', 'max:30'],
-            'search' => ['nullable', 'string', 'max:120'],
-            'cashier_search' => ['nullable', 'string', 'max:120'],
-            'date_from' => ['nullable', 'date'],
-            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
-            // Accept query-string booleans like "true"/"false" from frontend params.
-            'include_items' => ['nullable', 'in:0,1,true,false'],
-        ]);
-
-        $driver = DB::getDriverName();
-        $like = $driver === 'pgsql' ? 'ilike' : 'like';
-        $textCast = in_array($driver, ['mysql', 'mariadb'], true) ? 'CHAR' : 'TEXT';
-        $likeSql = $driver === 'pgsql' ? 'ILIKE' : 'LIKE';
+        $request->validate($this->salesFilterRules(includeItems: true));
 
         $q = Sale::query()
             ->with(['branch', 'cashier', 'postedBy', 'voidedBy', 'voidRequestedBy', 'voidRejectedBy'])
@@ -61,53 +46,47 @@ class SalesController extends Controller
             ]);
         }
 
-        $this->scopeToAssignedBranch($request, $q, 'branch_id');
-
-        if ($request->filled('branch_id')) {
-            $branchId = $request->integer('branch_id');
-            $this->enforceBranchAccessOrFail($request, $branchId);
-            $q->where('branch_id', $branchId);
-        }
-
-        if ($request->filled('status')) {
-            $q->where('status', strtoupper((string) $request->input('status')));
-        }
-
-        if ($request->filled('payment_status')) {
-            $q->where('payment_status', strtoupper((string) $request->input('payment_status')));
-        }
-
-        if ($request->filled('void_request_status')) {
-            $q->where('void_request_status', strtoupper((string) $request->input('void_request_status')));
-        }
-
-        if ($request->filled('search')) {
-            $term = '%' . trim((string) $request->input('search')) . '%';
-            $q->where(function ($w) use ($term, $like, $likeSql, $textCast) {
-                $w->where('sale_number', $like, $term)
-                    ->orWhere('notes', $like, $term)
-                    ->orWhereRaw("CAST(id AS {$textCast}) {$likeSql} ?", [$term]);
-            });
-        }
-
-        if ($request->filled('cashier_search')) {
-            $term = '%' . trim((string) $request->input('cashier_search')) . '%';
-            $q->whereHas('cashier', function ($cashierQuery) use ($term, $like) {
-                $cashierQuery
-                    ->where('name', $like, $term)
-                    ->orWhere('email', $like, $term);
-            });
-        }
-
-        if ($request->filled('date_from')) {
-            $q->whereDate(DB::raw('COALESCE(posted_at, created_at)'), '>=', (string) $request->input('date_from'));
-        }
-
-        if ($request->filled('date_to')) {
-            $q->whereDate(DB::raw('COALESCE(posted_at, created_at)'), '<=', (string) $request->input('date_to'));
-        }
+        $this->applySalesFilters($request, $q);
 
         return $q->paginate(20);
+    }
+
+    public function dailyTotals(Request $request)
+    {
+        $request->validate($this->salesFilterRules());
+
+        $filteredSales = Sale::query()
+            ->selectRaw('sales.id')
+            ->selectRaw('DATE(COALESCE(sales.posted_at, sales.created_at)) as sale_date')
+            ->selectRaw('sales.subtotal')
+            ->selectRaw('sales.discount_total')
+            ->selectRaw('sales.grand_total')
+            ->selectRaw('sales.paid_total');
+
+        $this->applySalesFilters($request, $filteredSales);
+
+        $itemTotals = SaleItem::query()
+            ->selectRaw('sale_id')
+            ->selectRaw('COALESCE(SUM(qty), 0) as items_sold')
+            ->groupBy('sale_id');
+
+        $totals = DB::query()
+            ->fromSub($filteredSales, 'sales')
+            ->leftJoinSub($itemTotals, 'item_totals', function ($join) {
+                $join->on('item_totals.sale_id', '=', 'sales.id');
+            })
+            ->selectRaw('sales.sale_date')
+            ->selectRaw('COUNT(*) as transactions_count')
+            ->selectRaw('COALESCE(SUM(item_totals.items_sold), 0) as items_sold')
+            ->selectRaw('COALESCE(SUM(sales.subtotal), 0) as gross_total')
+            ->selectRaw('COALESCE(SUM(sales.discount_total), 0) as discount_total')
+            ->selectRaw('COALESCE(SUM(sales.grand_total), 0) as net_sales')
+            ->selectRaw('COALESCE(SUM(sales.paid_total), 0) as paid_total')
+            ->selectRaw('COALESCE(SUM(CASE WHEN sales.grand_total > sales.paid_total THEN sales.grand_total - sales.paid_total ELSE 0 END), 0) as unpaid_total')
+            ->groupBy('sales.sale_date')
+            ->orderByDesc('sales.sale_date');
+
+        return $totals->paginate(31);
     }
 
     public function show(Request $request, Sale $sale)
@@ -725,6 +704,80 @@ class SalesController extends Controller
             ->where($key)
             ->lockForUpdate()
             ->firstOrFail();
+    }
+
+    private function salesFilterRules(bool $includeItems = false): array
+    {
+        $rules = [
+            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+            'status' => ['nullable', 'string', 'max:30'],
+            'payment_status' => ['nullable', 'string', 'max:30'],
+            'void_request_status' => ['nullable', 'string', 'max:30'],
+            'search' => ['nullable', 'string', 'max:120'],
+            'cashier_search' => ['nullable', 'string', 'max:120'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+        ];
+
+        if ($includeItems) {
+            $rules['include_items'] = ['nullable', 'in:0,1,true,false'];
+        }
+
+        return $rules;
+    }
+
+    private function applySalesFilters(Request $request, Builder $q): void
+    {
+        $driver = DB::getDriverName();
+        $like = $driver === 'pgsql' ? 'ilike' : 'like';
+        $textCast = in_array($driver, ['mysql', 'mariadb'], true) ? 'CHAR' : 'TEXT';
+        $likeSql = $driver === 'pgsql' ? 'ILIKE' : 'LIKE';
+
+        $this->scopeToAssignedBranch($request, $q, 'branch_id');
+
+        if ($request->filled('branch_id')) {
+            $branchId = $request->integer('branch_id');
+            $this->enforceBranchAccessOrFail($request, $branchId);
+            $q->where('branch_id', $branchId);
+        }
+
+        if ($request->filled('status')) {
+            $q->where('status', strtoupper((string) $request->input('status')));
+        }
+
+        if ($request->filled('payment_status')) {
+            $q->where('payment_status', strtoupper((string) $request->input('payment_status')));
+        }
+
+        if ($request->filled('void_request_status')) {
+            $q->where('void_request_status', strtoupper((string) $request->input('void_request_status')));
+        }
+
+        if ($request->filled('search')) {
+            $term = '%' . trim((string) $request->input('search')) . '%';
+            $q->where(function ($w) use ($term, $like, $likeSql, $textCast) {
+                $w->where('sale_number', $like, $term)
+                    ->orWhere('notes', $like, $term)
+                    ->orWhereRaw("CAST(id AS {$textCast}) {$likeSql} ?", [$term]);
+            });
+        }
+
+        if ($request->filled('cashier_search')) {
+            $term = '%' . trim((string) $request->input('cashier_search')) . '%';
+            $q->whereHas('cashier', function ($cashierQuery) use ($term, $like) {
+                $cashierQuery
+                    ->where('name', $like, $term)
+                    ->orWhere('email', $like, $term);
+            });
+        }
+
+        if ($request->filled('date_from')) {
+            $q->whereDate(DB::raw('COALESCE(posted_at, created_at)'), '>=', (string) $request->input('date_from'));
+        }
+
+        if ($request->filled('date_to')) {
+            $q->whereDate(DB::raw('COALESCE(posted_at, created_at)'), '<=', (string) $request->input('date_to'));
+        }
     }
 
     private function postSaleStockIfNeeded(

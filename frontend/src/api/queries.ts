@@ -98,10 +98,12 @@ import {
   approveSaleVoidRequest,
   createSale,
   getSale,
+  getSalesDailyTotals,
   getSales,
   postSale,
   rejectSaleVoidRequest,
   requestSaleVoid,
+  type SaleDailyTotal,
   voidSale,
   type AddSalePaymentInput,
   type CreateSaleInput,
@@ -217,6 +219,7 @@ export const qk = {
   purchaseOrders: (params: PurchaseOrdersQuery) => ['purchaseOrders', params] as const,
   purchaseOrder: (id: number) => ['purchaseOrder', id] as const,
   sales: (params: SalesQuery) => ['sales', params] as const,
+  salesDailyTotals: (params: SalesQuery) => ['salesDailyTotals', params] as const,
   sale: (id: number) => ['sale', id] as const,
   expenses: (params: ExpensesQuery) => ['expenses', params] as const,
   expense: (id: number) => ['expense', id] as const,
@@ -769,6 +772,18 @@ export function useSalesQuery(params: SalesQuery, enabled = true) {
   });
 }
 
+export function useSalesDailyTotalsQuery(params: SalesQuery, enabled = true) {
+  return useQuery<LaravelPaginator<SaleDailyTotal>>({
+    queryKey: qk.salesDailyTotals(params),
+    queryFn: () => getSalesDailyTotals(params),
+    enabled,
+    placeholderData: keepPreviousData,
+    refetchInterval: realtimeInterval(enabled, POLL_MS.sales),
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
+}
+
 export function useSaleQuery(id: number, enabled = true) {
   return useQuery<Sale>({
     queryKey: qk.sale(id),
@@ -782,6 +797,7 @@ export function useSaleQuery(id: number, enabled = true) {
 
 function invalidateSales(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['sales'] });
+  qc.invalidateQueries({ queryKey: ['salesDailyTotals'] });
   qc.invalidateQueries({ queryKey: ['sale'] });
   qc.invalidateQueries({ queryKey: ['inventory'] });
   qc.invalidateQueries({ queryKey: ['variants'] });

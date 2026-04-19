@@ -183,6 +183,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
     // Sales / Cashier
     Route::get('/sales', [SalesController::class, 'index'])->middleware('perm:SALES_VIEW');
+    Route::get('/sales/daily-totals', [SalesController::class, 'dailyTotals'])->middleware('perm:SALES_VIEW');
     Route::get('/sales/{sale}', [SalesController::class, 'show'])->middleware('perm:SALES_VIEW');
     Route::post('/sales', [SalesController::class, 'store'])->middleware('perm:SALES_CREATE');
     Route::post('/sales/{sale}/post', [SalesController::class, 'post'])->middleware('perm:SALES_POST');
