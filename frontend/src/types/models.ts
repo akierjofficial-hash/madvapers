@@ -30,6 +30,7 @@ export type StaffAttendance = {
   id: number;
   user_id: number;
   branch_id?: number | null;
+  attendance_date?: string | null;
   scheduled_start_at?: string | null;
   clock_in_requested_at: string;
   clock_in_status: string;
@@ -40,6 +41,7 @@ export type StaffAttendance = {
   review_notes?: string | null;
   clock_out_notes?: string | null;
   late_minutes?: number | null;
+  worked_minutes?: number | null;
   is_open?: boolean;
 
   user?: User | null;

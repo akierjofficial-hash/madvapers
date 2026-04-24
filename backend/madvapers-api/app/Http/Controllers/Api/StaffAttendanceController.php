@@ -5,10 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Api\Concerns\EnforcesBranchAccess;
 use App\Http\Controllers\Controller;
 use App\Models\StaffAttendance;
+use App\Models\User;
 use App\Services\AdminPushNotificationService;
 use App\Support\AuditTrail;
 use Carbon\Carbon;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -112,6 +115,143 @@ class StaffAttendanceController extends Controller
         $perPage = (int) ($request->input('per_page') ?? 30);
 
         return $q->paginate($perPage);
+    }
+
+    public function monthlySummary(Request $request)
+    {
+        $request->validate([
+            'month' => ['nullable', 'date_format:Y-m'],
+            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+            'user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'search' => ['nullable', 'string', 'max:120'],
+            'per_page' => ['nullable', 'integer', 'min:5', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        [$monthStart, $monthEnd] = $this->resolveMonthWindow(
+            (string) ($request->input('month') ?: now()->format('Y-m'))
+        );
+
+        $actor = $request->user();
+        $isPrivileged = $this->isPrivilegedUser($actor);
+
+        $q = StaffAttendance::query()
+            ->with([
+                'user:id,name,email,role_id,branch_id',
+                'user.role:id,code,name',
+                'branch:id,code,name',
+            ])
+            ->whereBetween('clock_in_requested_at', [
+                $monthStart->copy()->startOfDay(),
+                $monthEnd->copy()->endOfDay(),
+            ])
+            ->orderBy('clock_in_requested_at');
+
+        if (!$isPrivileged) {
+            $q->where('user_id', (int) ($actor?->id ?? 0));
+        }
+
+        if ($request->filled('branch_id')) {
+            $branchId = (int) $request->integer('branch_id');
+            if ($isPrivileged) {
+                $this->enforceBranchAccessOrFail($request, $branchId);
+            }
+            $q->where('branch_id', $branchId);
+        } elseif ($isPrivileged) {
+            $this->scopeToAssignedBranch($request, $q, 'branch_id');
+        }
+
+        if ($request->filled('user_id')) {
+            $userId = (int) $request->integer('user_id');
+            if (!$isPrivileged && $userId !== (int) ($actor?->id ?? 0)) {
+                throw ValidationException::withMessages([
+                    'user_id' => ['You can only view your own attendance summary.'],
+                ]);
+            }
+            $q->where('user_id', $userId);
+        }
+
+        if ($request->filled('search')) {
+            $term = trim((string) $request->input('search'));
+            $driver = DB::getDriverName();
+            $like = $driver === 'pgsql' ? 'ilike' : 'like';
+            $q->whereHas('user', function ($w) use ($term, $like) {
+                $needle = '%' . $term . '%';
+                $w->where('name', $like, $needle)
+                    ->orWhere('email', $like, $needle);
+            });
+        }
+
+        $records = $q->get();
+
+        $summaryRows = $records
+            ->groupBy('user_id')
+            ->map(fn (Collection $group) => $this->buildMonthlySummaryRow($group, $monthStart))
+            ->sortBy(fn (array $row) => mb_strtolower((string) data_get($row, 'user.name', '')))
+            ->values();
+
+        $perPage = (int) ($request->input('per_page') ?? 20);
+        $page = max(1, (int) ($request->input('page') ?? 1));
+        $paginator = $this->paginateCollection($summaryRows, $perPage, $page, $request);
+
+        return response()->json($paginator->toArray() + [
+            'month' => $monthStart->format('Y-m'),
+            'month_label' => $monthStart->format('F Y'),
+        ]);
+    }
+
+    public function monthlyDetail(Request $request, User $user)
+    {
+        $request->validate([
+            'month' => ['nullable', 'date_format:Y-m'],
+            'branch_id' => ['nullable', 'integer', 'exists:branches,id'],
+        ]);
+
+        [$monthStart, $monthEnd] = $this->resolveMonthWindow(
+            (string) ($request->input('month') ?: now()->format('Y-m'))
+        );
+
+        $actor = $request->user();
+        $isPrivileged = $this->isPrivilegedUser($actor);
+
+        if (!$isPrivileged && (int) ($actor?->id ?? 0) !== (int) $user->id) {
+            abort(403, 'You are not allowed to view this attendance detail.');
+        }
+
+        $q = StaffAttendance::query()
+            ->with([
+                'user:id,name,email,role_id,branch_id',
+                'user.role:id,code,name',
+                'branch:id,code,name',
+                'reviewedBy:id,name,email',
+            ])
+            ->where('user_id', (int) $user->id)
+            ->whereBetween('clock_in_requested_at', [
+                $monthStart->copy()->startOfDay(),
+                $monthEnd->copy()->endOfDay(),
+            ])
+            ->orderByDesc('clock_in_requested_at')
+            ->orderByDesc('id');
+
+        if ($request->filled('branch_id')) {
+            $branchId = (int) $request->integer('branch_id');
+            if ($isPrivileged) {
+                $this->enforceBranchAccessOrFail($request, $branchId);
+            }
+            $q->where('branch_id', $branchId);
+        } elseif ($isPrivileged) {
+            $this->scopeToAssignedBranch($request, $q, 'branch_id');
+        }
+
+        $records = $q->get();
+
+        return response()->json([
+            'status' => 'ok',
+            'month' => $monthStart->format('Y-m'),
+            'month_label' => $monthStart->format('F Y'),
+            'summary' => $this->buildMonthlySummaryRow($records, $monthStart, $user),
+            'logs' => $records->map(fn (StaffAttendance $attendance) => $this->serializeMonthlyDetailLog($attendance))->values(),
+        ]);
     }
 
     public function requestTimeIn(Request $request)
@@ -488,5 +628,147 @@ class StaffAttendanceController extends Controller
         );
 
         return $scheduled->setTimezone($requestedAt->getTimezone());
+    }
+
+    private function resolveMonthWindow(string $month): array
+    {
+        $monthStart = Carbon::createFromFormat('Y-m', $month, config('app.timezone'))->startOfMonth();
+        $monthEnd = $monthStart->copy()->endOfMonth();
+
+        return [$monthStart, $monthEnd];
+    }
+
+    private function buildMonthlySummaryRow(Collection $records, Carbon $monthStart, ?User $fallbackUser = null): array
+    {
+        /** @var StaffAttendance|null $first */
+        $first = $records->first();
+        $user = $first?->user ?? $fallbackUser?->loadMissing('role:id,code,name', 'branch:id,code,name');
+        $branch = $first?->branch ?? $fallbackUser?->branch;
+
+        $approvedRecords = $records->filter(fn (StaffAttendance $row) => strtoupper((string) $row->clock_in_status) === 'APPROVED');
+        $presentDays = $approvedRecords
+            ->map(fn (StaffAttendance $row) => optional($row->clock_in_requested_at)?->toDateString())
+            ->filter()
+            ->unique()
+            ->count();
+        $lateDays = $approvedRecords->filter(fn (StaffAttendance $row) => ((int) ($row->late_minutes ?? 0)) > 0)->count();
+        $totalLateMinutes = (int) $approvedRecords->sum(fn (StaffAttendance $row) => max(0, (int) ($row->late_minutes ?? 0)));
+        $incompleteLogs = $approvedRecords->filter(fn (StaffAttendance $row) => $row->clock_out_at === null)->count();
+        $pendingRequests = $records->filter(fn (StaffAttendance $row) => strtoupper((string) $row->clock_in_status) === 'PENDING')->count();
+        $rejectedRequests = $records->filter(fn (StaffAttendance $row) => strtoupper((string) $row->clock_in_status) === 'REJECTED')->count();
+        $workedMinutes = (int) $approvedRecords->sum(function (StaffAttendance $row) {
+            return $this->calculateWorkedMinutes($row);
+        });
+        $openRecords = $records->filter(fn (StaffAttendance $row) => (bool) $row->is_open)->count();
+        $lastActivityAt = $records
+            ->map(function (StaffAttendance $row) {
+                return $row->clock_out_at
+                    ?? $row->reviewed_at
+                    ?? $row->clock_in_requested_at;
+            })
+            ->filter()
+            ->sortDesc()
+            ->first();
+
+        return [
+            'user_id' => (int) ($first?->user_id ?? $fallbackUser?->id ?? 0),
+            'month' => $monthStart->format('Y-m'),
+            'month_label' => $monthStart->format('F Y'),
+            'user' => $user ? [
+                'id' => (int) $user->id,
+                'name' => (string) $user->name,
+                'email' => (string) $user->email,
+                'role' => $user->role ? [
+                    'id' => (int) $user->role->id,
+                    'code' => (string) $user->role->code,
+                    'name' => (string) $user->role->name,
+                ] : null,
+            ] : null,
+            'branch' => $branch ? [
+                'id' => (int) $branch->id,
+                'code' => (string) $branch->code,
+                'name' => (string) $branch->name,
+            ] : null,
+            'present_days' => $presentDays,
+            'approved_records' => $approvedRecords->count(),
+            'late_days' => $lateDays,
+            'total_late_minutes' => $totalLateMinutes,
+            'incomplete_logs' => $incompleteLogs,
+            'pending_requests' => $pendingRequests,
+            'rejected_requests' => $rejectedRequests,
+            'worked_minutes' => $workedMinutes,
+            'open_records' => $openRecords,
+            'last_activity_at' => $lastActivityAt?->toISOString(),
+        ];
+    }
+
+    private function serializeMonthlyDetailLog(StaffAttendance $attendance): array
+    {
+        return [
+            'id' => (int) $attendance->id,
+            'attendance_date' => optional($attendance->clock_in_requested_at)?->toDateString(),
+            'scheduled_start_at' => optional($attendance->scheduled_start_at)?->toISOString(),
+            'clock_in_requested_at' => optional($attendance->clock_in_requested_at)?->toISOString(),
+            'clock_in_status' => (string) $attendance->clock_in_status,
+            'reviewed_at' => optional($attendance->reviewed_at)?->toISOString(),
+            'reviewed_by_user_id' => $attendance->reviewed_by_user_id ? (int) $attendance->reviewed_by_user_id : null,
+            'clock_out_at' => optional($attendance->clock_out_at)?->toISOString(),
+            'request_notes' => $attendance->request_notes,
+            'review_notes' => $attendance->review_notes,
+            'clock_out_notes' => $attendance->clock_out_notes,
+            'late_minutes' => $attendance->late_minutes,
+            'worked_minutes' => $this->calculateWorkedMinutes($attendance),
+            'is_open' => (bool) $attendance->is_open,
+            'user' => $attendance->user ? [
+                'id' => (int) $attendance->user->id,
+                'name' => (string) $attendance->user->name,
+                'email' => (string) $attendance->user->email,
+                'role' => $attendance->user->role ? [
+                    'id' => (int) $attendance->user->role->id,
+                    'code' => (string) $attendance->user->role->code,
+                    'name' => (string) $attendance->user->role->name,
+                ] : null,
+            ] : null,
+            'branch' => $attendance->branch ? [
+                'id' => (int) $attendance->branch->id,
+                'code' => (string) $attendance->branch->code,
+                'name' => (string) $attendance->branch->name,
+            ] : null,
+            'reviewed_by' => $attendance->reviewedBy ? [
+                'id' => (int) $attendance->reviewedBy->id,
+                'name' => (string) $attendance->reviewedBy->name,
+                'email' => (string) $attendance->reviewedBy->email,
+            ] : null,
+        ];
+    }
+
+    private function calculateWorkedMinutes(StaffAttendance $attendance): int
+    {
+        if (
+            strtoupper((string) $attendance->clock_in_status) !== 'APPROVED'
+            || !($attendance->clock_in_requested_at instanceof Carbon)
+            || !($attendance->clock_out_at instanceof Carbon)
+        ) {
+            return 0;
+        }
+
+        return max(0, (int) $attendance->clock_in_requested_at->diffInMinutes($attendance->clock_out_at, false));
+    }
+
+    private function paginateCollection(Collection $rows, int $perPage, int $page, Request $request): LengthAwarePaginator
+    {
+        $total = $rows->count();
+        $items = $rows->forPage($page, $perPage)->values();
+
+        return new LengthAwarePaginator(
+            $items,
+            $total,
+            $perPage,
+            $page,
+            [
+                'path' => $request->url(),
+                'query' => $request->query(),
+            ]
+        );
     }
 }

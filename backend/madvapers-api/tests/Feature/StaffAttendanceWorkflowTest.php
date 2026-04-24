@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\StaffAttendance;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -188,5 +189,116 @@ class StaffAttendanceWorkflowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.0.id', $newerTimedOut->id)
             ->assertJsonPath('data.1.id', $older->id);
+    }
+
+    public function test_admin_can_view_monthly_attendance_summary_and_detail_for_payday_review(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-04-24 09:00:00'));
+
+        $cashier = User::query()->where('email', 'cashier@madvapers.local')->firstOrFail();
+        $admin = User::query()->where('email', 'admin@madvapers.local')->firstOrFail();
+
+        StaffAttendance::query()->create([
+            'user_id' => $cashier->id,
+            'branch_id' => $cashier->branch_id,
+            'scheduled_start_at' => Carbon::parse('2026-04-01 09:00:00'),
+            'clock_in_requested_at' => Carbon::parse('2026-04-01 09:12:00'),
+            'clock_in_status' => 'APPROVED',
+            'reviewed_at' => Carbon::parse('2026-04-01 09:15:00'),
+            'reviewed_by_user_id' => $admin->id,
+            'clock_out_at' => Carbon::parse('2026-04-01 17:05:00'),
+        ]);
+
+        StaffAttendance::query()->create([
+            'user_id' => $cashier->id,
+            'branch_id' => $cashier->branch_id,
+            'scheduled_start_at' => Carbon::parse('2026-04-02 09:00:00'),
+            'clock_in_requested_at' => Carbon::parse('2026-04-02 08:58:00'),
+            'clock_in_status' => 'APPROVED',
+            'reviewed_at' => Carbon::parse('2026-04-02 09:02:00'),
+            'reviewed_by_user_id' => $admin->id,
+            'clock_out_at' => Carbon::parse('2026-04-02 17:00:00'),
+        ]);
+
+        StaffAttendance::query()->create([
+            'user_id' => $cashier->id,
+            'branch_id' => $cashier->branch_id,
+            'scheduled_start_at' => Carbon::parse('2026-04-03 09:00:00'),
+            'clock_in_requested_at' => Carbon::parse('2026-04-03 09:01:00'),
+            'clock_in_status' => 'PENDING',
+        ]);
+
+        StaffAttendance::query()->create([
+            'user_id' => $cashier->id,
+            'branch_id' => $cashier->branch_id,
+            'scheduled_start_at' => Carbon::parse('2026-04-04 09:00:00'),
+            'clock_in_requested_at' => Carbon::parse('2026-04-04 09:20:00'),
+            'clock_in_status' => 'REJECTED',
+            'reviewed_at' => Carbon::parse('2026-04-04 09:25:00'),
+            'reviewed_by_user_id' => $admin->id,
+            'review_notes' => 'Rejected for mistake',
+        ]);
+
+        $this->actingAsUser('admin@madvapers.local');
+
+        $summaryResponse = $this->getJson('/api/staff-attendance/monthly-summary?month=2026-04&search=cashier')
+            ->assertOk()
+            ->assertJsonPath('month', '2026-04')
+            ->assertJsonPath('month_label', 'April 2026');
+
+        $row = collect($summaryResponse->json('data'))->firstWhere('user_id', $cashier->id);
+        $this->assertNotNull($row);
+        $this->assertSame(2, $row['present_days']);
+        $this->assertSame(1, $row['late_days']);
+        $this->assertSame(12, $row['total_late_minutes']);
+        $this->assertSame(1, $row['pending_requests']);
+        $this->assertSame(1, $row['rejected_requests']);
+        $this->assertSame(955, $row['worked_minutes']);
+
+        $detailResponse = $this->getJson("/api/staff-attendance/monthly-summary/{$cashier->id}?month=2026-04")
+            ->assertOk()
+            ->assertJsonPath('summary.user_id', $cashier->id)
+            ->assertJsonPath('summary.present_days', 2)
+            ->assertJsonCount(4, 'logs');
+
+        $this->assertSame('2026-04-04', $detailResponse->json('logs.0.attendance_date'));
+        $this->assertSame('REJECTED', $detailResponse->json('logs.0.clock_in_status'));
+        Carbon::setTestNow();
+    }
+
+    public function test_cashier_monthly_summary_is_limited_to_own_records(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-04-24 09:00:00'));
+
+        $cashier = User::query()->where('email', 'cashier@madvapers.local')->firstOrFail();
+        $clerk = User::query()->where('email', 'clerk@madvapers.local')->firstOrFail();
+
+        StaffAttendance::query()->create([
+            'user_id' => $cashier->id,
+            'branch_id' => $cashier->branch_id,
+            'scheduled_start_at' => Carbon::parse('2026-04-10 09:00:00'),
+            'clock_in_requested_at' => Carbon::parse('2026-04-10 09:00:00'),
+            'clock_in_status' => 'APPROVED',
+        ]);
+
+        StaffAttendance::query()->create([
+            'user_id' => $clerk->id,
+            'branch_id' => $clerk->branch_id,
+            'scheduled_start_at' => Carbon::parse('2026-04-11 09:00:00'),
+            'clock_in_requested_at' => Carbon::parse('2026-04-11 09:00:00'),
+            'clock_in_status' => 'APPROVED',
+        ]);
+
+        $this->actingAsUser('cashier@madvapers.local');
+
+        $this->getJson('/api/staff-attendance/monthly-summary?month=2026-04')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.user_id', $cashier->id);
+
+        $this->getJson("/api/staff-attendance/monthly-summary/{$clerk->id}?month=2026-04")
+            ->assertStatus(403);
+
+        Carbon::setTestNow();
     }
 }

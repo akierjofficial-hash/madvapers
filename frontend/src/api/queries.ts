@@ -46,10 +46,14 @@ import {
   approveStaffAttendance,
   closeStaffAttendance,
   getStaffAttendances,
+  getStaffAttendanceMonthlyDetail,
+  getStaffAttendanceMonthlySummary,
   rejectStaffAttendance,
   requestStaffTimeIn,
   requestStaffTimeOut,
   type AttendanceNoteInput,
+  type StaffAttendanceMonthlyDetailResponse,
+  type StaffAttendanceMonthlySummaryResponse,
   type StaffAttendanceQuery,
 } from './staffAttendance';
 
@@ -206,6 +210,9 @@ export const qk = {
   roles: ['roles'] as const,
   users: (params: UsersQuery) => ['users', params] as const,
   staffAttendance: (params: StaffAttendanceQuery) => ['staffAttendance', params] as const,
+  staffAttendanceSummary: (params: StaffAttendanceQuery & { month?: string }) => ['staffAttendanceSummary', params] as const,
+  staffAttendanceDetail: (userId: number, params: Pick<StaffAttendanceQuery, 'branch_id'> & { month?: string }) =>
+    ['staffAttendanceDetail', userId, params] as const,
   suppliers: ['suppliers'] as const,
 
   inventory: (params: InventoryQuery) => ['inventory', params] as const,
@@ -445,6 +452,8 @@ export function useEnableUserMutation() {
 
 function invalidateStaffAttendance(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['staffAttendance'] });
+  qc.invalidateQueries({ queryKey: ['staffAttendanceSummary'] });
+  qc.invalidateQueries({ queryKey: ['staffAttendanceDetail'] });
 }
 
 export function useStaffAttendanceQuery(params: StaffAttendanceQuery, enabled = true) {
@@ -458,6 +467,30 @@ export function useStaffAttendanceQuery(params: StaffAttendanceQuery, enabled = 
     refetchIntervalInBackground: false,
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useStaffAttendanceMonthlySummaryQuery(
+  params: StaffAttendanceQuery & { month?: string },
+  enabled = true
+) {
+  return useQuery<StaffAttendanceMonthlySummaryResponse>({
+    queryKey: qk.staffAttendanceSummary(params),
+    queryFn: () => getStaffAttendanceMonthlySummary(params),
+    enabled,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useStaffAttendanceMonthlyDetailQuery(
+  userId: number | null,
+  params: Pick<StaffAttendanceQuery, 'branch_id'> & { month?: string },
+  enabled = true
+) {
+  return useQuery<StaffAttendanceMonthlyDetailResponse>({
+    queryKey: qk.staffAttendanceDetail(userId ?? 0, params),
+    queryFn: () => getStaffAttendanceMonthlyDetail(userId ?? 0, params),
+    enabled: enabled && !!userId,
   });
 }
 

@@ -90,6 +90,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
     // Staff Attendance
     Route::get('/staff-attendance', [StaffAttendanceController::class, 'index'])->middleware('perm:STAFF_ATTENDANCE_VIEW');
+    Route::get('/staff-attendance/monthly-summary', [StaffAttendanceController::class, 'monthlySummary'])
+        ->middleware('perm:STAFF_ATTENDANCE_VIEW');
+    Route::get('/staff-attendance/monthly-summary/{user}', [StaffAttendanceController::class, 'monthlyDetail'])
+        ->middleware('perm:STAFF_ATTENDANCE_VIEW');
     Route::post('/staff-attendance/time-in', [StaffAttendanceController::class, 'requestTimeIn'])->middleware('perm:STAFF_ATTENDANCE_CLOCK');
     Route::post('/staff-attendance/time-out', [StaffAttendanceController::class, 'requestTimeOut'])
         ->middleware(['perm:STAFF_ATTENDANCE_CLOCK', 'throttle:sensitive-actions']);
