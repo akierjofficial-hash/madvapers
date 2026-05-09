@@ -20,6 +20,10 @@ class StaffAttendanceController extends Controller
 {
     use EnforcesBranchAccess;
 
+    private const DUTY_CHECK_STAFF_ROLES = ['CLERK', 'CASHIER'];
+    private const DUTY_CHECK_INITIAL_HOURS = 6;
+    private const DUTY_CHECK_REPEAT_HOURS = 4;
+
     public function __construct(
         private readonly AdminPushNotificationService $adminPushNotifications
     ) {
@@ -388,6 +392,7 @@ class StaffAttendanceController extends Controller
             }
 
             $attendance->clock_out_at = now();
+            $attendance->duty_check_next_at = null;
             if (array_key_exists('notes', $data)) {
                 $attendance->clock_out_notes = $data['notes'] ?? null;
             }
@@ -419,6 +424,127 @@ class StaffAttendanceController extends Controller
         });
     }
 
+    public function currentDutyCheck(Request $request)
+    {
+        $actor = $request->user();
+        if (!$actor) {
+            abort(401, 'Unauthenticated.');
+        }
+
+        if (!$this->isDutyCheckStaffUser($actor)) {
+            return $this->dutyCheckResponse(null, false);
+        }
+
+        $attendance = StaffAttendance::query()
+            ->where('user_id', (int) $actor->id)
+            ->where('clock_in_status', 'APPROVED')
+            ->whereNull('clock_out_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if (!$attendance) {
+            return $this->dutyCheckResponse(null, true);
+        }
+
+        $attendance = $this->ensureDutyCheckSchedule($attendance);
+
+        return $this->dutyCheckResponse($attendance, true);
+    }
+
+    public function answerDutyCheck(Request $request, StaffAttendance $attendance)
+    {
+        $data = $request->validate([
+            'answer' => ['required', 'string', Rule::in(['yes', 'no'])],
+        ]);
+
+        return $this->transactionWithRetry(function () use ($request, $attendance, $data) {
+            $actor = $request->user();
+            if (!$actor) {
+                abort(401, 'Unauthenticated.');
+            }
+            if (!$this->isDutyCheckStaffUser($actor)) {
+                abort(403, 'Only clerk and cashier accounts can answer duty checks.');
+            }
+
+            $locked = $this->lockAttendance($attendance->id);
+            if ((int) $locked->user_id !== (int) $actor->id) {
+                abort(403, 'You can only answer your own duty check.');
+            }
+
+            if (strtoupper((string) $locked->clock_in_status) !== 'APPROVED' || $locked->clock_out_at !== null) {
+                throw ValidationException::withMessages([
+                    'attendance' => ['No approved open time-in record found for duty check.'],
+                ]);
+            }
+
+            $locked = $this->ensureDutyCheckSchedule($locked);
+            $now = now();
+            $nextCheckAt = $locked->duty_check_next_at instanceof Carbon
+                ? $locked->duty_check_next_at
+                : null;
+
+            if (!$nextCheckAt || $nextCheckAt->gt($now)) {
+                throw ValidationException::withMessages([
+                    'attendance' => ['Duty check is not due yet.'],
+                ]);
+            }
+
+            $answer = strtolower((string) $data['answer']);
+            $locked->duty_check_last_answered_at = $now;
+            $locked->duty_check_count = ((int) ($locked->duty_check_count ?? 0)) + 1;
+
+            if ($answer === 'yes') {
+                $locked->duty_check_next_at = $now->copy()->addHours(self::DUTY_CHECK_REPEAT_HOURS);
+                $locked->save();
+
+                AuditTrail::record([
+                    'event_type' => 'STAFF_DUTY_CHECK_CONFIRMED',
+                    'entity_type' => 'staff_attendance',
+                    'entity_id' => (int) $locked->id,
+                    'branch_id' => $locked->branch_id ? (int) $locked->branch_id : null,
+                    'user_id' => (int) $actor->id,
+                    'summary' => 'Staff confirmed still on duty',
+                    'meta' => [
+                        'staff_user_id' => (int) $locked->user_id,
+                        'answered_at' => optional($locked->duty_check_last_answered_at)->toISOString(),
+                        'next_check_at' => optional($locked->duty_check_next_at)->toISOString(),
+                        'duty_check_count' => (int) $locked->duty_check_count,
+                    ],
+                ]);
+
+                return response()->json([
+                    'status' => 'confirmed',
+                    'attendance' => $this->loadAttendanceForResponse($locked->fresh()),
+                ]);
+            }
+
+            $locked->clock_out_at = $now;
+            $locked->clock_out_notes = 'Automatic time-out from duty check.';
+            $locked->duty_check_next_at = null;
+            $locked->save();
+
+            AuditTrail::record([
+                'event_type' => 'STAFF_DUTY_CHECK_AUTO_TIMEOUT',
+                'entity_type' => 'staff_attendance',
+                'entity_id' => (int) $locked->id,
+                'branch_id' => $locked->branch_id ? (int) $locked->branch_id : null,
+                'user_id' => (int) $actor->id,
+                'summary' => 'Staff automatically timed out from duty check',
+                'meta' => [
+                    'staff_user_id' => (int) $locked->user_id,
+                    'answered_at' => optional($locked->duty_check_last_answered_at)->toISOString(),
+                    'clock_out_at' => optional($locked->clock_out_at)->toISOString(),
+                    'duty_check_count' => (int) $locked->duty_check_count,
+                ],
+            ]);
+
+            return response()->json([
+                'status' => 'timed_out',
+                'attendance' => $this->loadAttendanceForResponse($locked->fresh()),
+            ]);
+        });
+    }
+
     public function approve(Request $request, StaffAttendance $attendance)
     {
         $data = $request->validate([
@@ -439,6 +565,18 @@ class StaffAttendanceController extends Controller
             $locked->reviewed_at = now();
             $locked->reviewed_by_user_id = $request->user()?->id;
             $locked->review_notes = array_key_exists('notes', $data) ? ($data['notes'] ?? null) : null;
+            $staffUser = User::query()
+                ->with('role:id,code,name')
+                ->find((int) $locked->user_id);
+            if ($this->isDutyCheckStaffUser($staffUser)) {
+                $locked->duty_check_next_at = $this->firstDutyCheckAt($locked);
+                $locked->duty_check_last_answered_at = null;
+                $locked->duty_check_count = 0;
+            } else {
+                $locked->duty_check_next_at = null;
+                $locked->duty_check_last_answered_at = null;
+                $locked->duty_check_count = 0;
+            }
             $locked->save();
 
             AuditTrail::record([
@@ -489,6 +627,7 @@ class StaffAttendanceController extends Controller
             $locked->review_notes = array_key_exists('notes', $data)
                 ? ($data['notes'] ?? null)
                 : 'Time-in request rejected';
+            $locked->duty_check_next_at = null;
             $locked->save();
 
             AuditTrail::record([
@@ -565,6 +704,7 @@ class StaffAttendanceController extends Controller
 
             $locked->clock_out_at = now();
             $locked->clock_out_notes = $closingNote ?: $defaultClosingNote;
+            $locked->duty_check_next_at = null;
             $locked->save();
 
             AuditTrail::record([
@@ -592,6 +732,76 @@ class StaffAttendanceController extends Controller
                 ]),
             ]);
         });
+    }
+
+    private function dutyCheckResponse(?StaffAttendance $attendance, bool $eligible)
+    {
+        $attendance = $attendance ? $this->loadAttendanceForResponse($attendance) : null;
+        $now = now();
+        $nextCheckAt = $attendance?->duty_check_next_at instanceof Carbon
+            ? $attendance->duty_check_next_at
+            : null;
+        $due = $eligible
+            && $attendance !== null
+            && $attendance->clock_out_at === null
+            && $nextCheckAt !== null
+            && $nextCheckAt->lte($now);
+
+        return response()->json([
+            'status' => 'ok',
+            'eligible' => $eligible,
+            'due' => $due,
+            'now' => $now->toISOString(),
+            'next_check_at' => $nextCheckAt?->toISOString(),
+            'attendance' => $attendance,
+        ]);
+    }
+
+    private function loadAttendanceForResponse(?StaffAttendance $attendance): ?StaffAttendance
+    {
+        return $attendance?->load([
+            'user:id,name,email,role_id,branch_id',
+            'user.role:id,code,name',
+            'branch:id,code,name',
+            'reviewedBy:id,name,email',
+        ]);
+    }
+
+    private function isDutyCheckStaffUser(?User $user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        $user->loadMissing('role:id,code,name');
+        $roleCode = strtoupper((string) ($user->role?->code ?? ''));
+
+        return in_array($roleCode, self::DUTY_CHECK_STAFF_ROLES, true);
+    }
+
+    private function ensureDutyCheckSchedule(StaffAttendance $attendance): StaffAttendance
+    {
+        if (
+            strtoupper((string) $attendance->clock_in_status) !== 'APPROVED'
+            || $attendance->clock_out_at !== null
+            || $attendance->duty_check_next_at !== null
+        ) {
+            return $attendance;
+        }
+
+        $attendance->duty_check_next_at = $this->firstDutyCheckAt($attendance);
+        $attendance->save();
+
+        return $attendance;
+    }
+
+    private function firstDutyCheckAt(StaffAttendance $attendance): Carbon
+    {
+        $clockInAt = $attendance->clock_in_requested_at instanceof Carbon
+            ? $attendance->clock_in_requested_at->copy()
+            : now();
+
+        return $clockInAt->addHours(self::DUTY_CHECK_INITIAL_HOURS);
     }
 
     private function lockAttendance(int $attendanceId): StaffAttendance

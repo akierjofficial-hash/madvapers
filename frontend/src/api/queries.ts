@@ -43,8 +43,10 @@ import {
   type UpdateUserInput,
 } from './accounts';
 import {
+  answerStaffDutyCheck,
   approveStaffAttendance,
   closeStaffAttendance,
+  getStaffDutyCheck,
   getStaffAttendances,
   getStaffAttendanceMonthlyDetail,
   getStaffAttendanceMonthlySummary,
@@ -52,6 +54,8 @@ import {
   requestStaffTimeIn,
   requestStaffTimeOut,
   type AttendanceNoteInput,
+  type StaffDutyCheckAnswerInput,
+  type StaffDutyCheckResponse,
   type StaffAttendanceMonthlyDetailResponse,
   type StaffAttendanceMonthlySummaryResponse,
   type StaffAttendanceQuery,
@@ -212,6 +216,7 @@ export const qk = {
   roles: ['roles'] as const,
   users: (params: UsersQuery) => ['users', params] as const,
   staffAttendance: (params: StaffAttendanceQuery) => ['staffAttendance', params] as const,
+  staffDutyCheck: ['staffDutyCheck'] as const,
   staffAttendanceSummary: (params: StaffAttendanceQuery & { month?: string }) => ['staffAttendanceSummary', params] as const,
   staffAttendanceDetail: (userId: number, params: Pick<StaffAttendanceQuery, 'branch_id'> & { month?: string }) =>
     ['staffAttendanceDetail', userId, params] as const,
@@ -454,6 +459,7 @@ export function useEnableUserMutation() {
 
 function invalidateStaffAttendance(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['staffAttendance'] });
+  qc.invalidateQueries({ queryKey: qk.staffDutyCheck });
   qc.invalidateQueries({ queryKey: ['staffAttendanceSummary'] });
   qc.invalidateQueries({ queryKey: ['staffAttendanceDetail'] });
 }
@@ -469,6 +475,19 @@ export function useStaffAttendanceQuery(params: StaffAttendanceQuery, enabled = 
     refetchIntervalInBackground: false,
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useStaffDutyCheckQuery(enabled = true) {
+  return useQuery<StaffDutyCheckResponse>({
+    queryKey: qk.staffDutyCheck,
+    queryFn: getStaffDutyCheck,
+    enabled,
+    refetchInterval: enabled ? POLL_MS.staffAttendance : false,
+    refetchIntervalInBackground: false,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    retry: false,
   });
 }
 
@@ -508,6 +527,18 @@ export function useRequestStaffTimeOutMutation() {
   const qc = useQueryClient();
   return useMutation<{ status: string; attendance: StaffAttendance }, unknown, AttendanceNoteInput | undefined>({
     mutationFn: (input) => requestStaffTimeOut(input),
+    onSuccess: () => invalidateStaffAttendance(qc),
+  });
+}
+
+export function useAnswerStaffDutyCheckMutation() {
+  const qc = useQueryClient();
+  return useMutation<
+    { status: string; attendance: StaffAttendance },
+    unknown,
+    { id: number; input: StaffDutyCheckAnswerInput }
+  >({
+    mutationFn: ({ id, input }) => answerStaffDutyCheck(id, input),
     onSuccess: () => invalidateStaffAttendance(qc),
   });
 }

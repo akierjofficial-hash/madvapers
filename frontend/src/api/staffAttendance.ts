@@ -18,6 +18,19 @@ export type AttendanceNoteInput = {
   notes?: string | null;
 };
 
+export type StaffDutyCheckResponse = {
+  status: string;
+  eligible: boolean;
+  due: boolean;
+  now: string;
+  next_check_at?: string | null;
+  attendance?: StaffAttendance | null;
+};
+
+export type StaffDutyCheckAnswerInput = {
+  answer: 'yes' | 'no';
+};
+
 export type StaffAttendanceMonthlySummary = {
   user_id: number;
   month: string;
@@ -81,6 +94,19 @@ export async function requestStaffTimeOut(input?: AttendanceNoteInput) {
   const res = await api.post<{ status: string; attendance: StaffAttendance }>(
     '/staff-attendance/time-out',
     input ?? {}
+  );
+  return res.data;
+}
+
+export async function getStaffDutyCheck() {
+  const res = await api.get<StaffDutyCheckResponse>('/staff-attendance/duty-check');
+  return res.data;
+}
+
+export async function answerStaffDutyCheck(id: number, input: StaffDutyCheckAnswerInput) {
+  const res = await api.post<{ status: string; attendance: StaffAttendance }>(
+    `/staff-attendance/${id}/duty-check`,
+    input
   );
   return res.data;
 }

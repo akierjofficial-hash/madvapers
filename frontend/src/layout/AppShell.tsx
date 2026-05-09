@@ -10,6 +10,10 @@ import {
   Chip,
   Collapse,
   Divider,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Drawer,
   IconButton,
   List,
@@ -54,7 +58,12 @@ import type { ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
 import { authStorage } from '../auth/authStorage';
-import { useDashboardApprovalQueueQuery, useDashboardSummaryQuery } from '../api/queries';
+import {
+  useAnswerStaffDutyCheckMutation,
+  useDashboardApprovalQueueQuery,
+  useDashboardSummaryQuery,
+  useStaffDutyCheckQuery,
+} from '../api/queries';
 import { registerPushSubscription, removePushSubscription } from '../api/pushSubscriptions';
 
 type NavItem = {
@@ -111,6 +120,20 @@ function resolvePushSubscribeErrorMessage(error: any): string {
   }
 
   return 'Unable to subscribe this device for push notifications.';
+}
+
+function resolveDutyCheckErrorMessage(error: any): string {
+  const apiMessage = String(error?.response?.data?.message ?? '').trim();
+  const validationMessage = Object.values(error?.response?.data?.errors ?? {})
+    .flat()
+    .map((value) => String(value ?? '').trim())
+    .find(Boolean);
+
+  if (validationMessage) return validationMessage;
+  if (apiMessage) return apiMessage;
+  if (Number(error?.response?.status ?? 0) === 401) return 'Session expired. Log in again to continue.';
+
+  return 'Unable to record your duty check answer.';
 }
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -179,6 +202,10 @@ export function AppShell() {
   const roleCode = String(user?.role?.code ?? '').toUpperCase();
   const isAdminRole = roleCode === 'ADMIN';
   const isCashierRole = roleCode === 'CASHIER';
+  const isDutyCheckStaffRole = roleCode === 'CLERK' || roleCode === 'CASHIER';
+  const canUseStaffClock = can('STAFF_ATTENDANCE_CLOCK');
+  const dutyCheckQuery = useStaffDutyCheckQuery(isDutyCheckStaffRole && canUseStaffClock);
+  const answerDutyCheckMutation = useAnswerStaffDutyCheckMutation();
   const canOfferInstall = !isStandaloneMode && !!installPromptEvent;
   const supportsNotificationApi = typeof window !== 'undefined' && 'Notification' in window;
   const isSecureNotificationContext = typeof window !== 'undefined' && window.isSecureContext;
@@ -864,6 +891,43 @@ export function AppShell() {
     await logout();
   };
 
+  const dutyCheckAttendance = dutyCheckQuery.data?.attendance ?? null;
+  const shouldShowDutyCheck = Boolean(
+    isDutyCheckStaffRole &&
+    canUseStaffClock &&
+    dutyCheckQuery.data?.eligible &&
+    dutyCheckQuery.data?.due &&
+    dutyCheckAttendance?.id &&
+    !dutyCheckAttendance?.clock_out_at
+  );
+
+  const handleDutyCheckAnswer = async (answer: 'yes' | 'no') => {
+    if (!dutyCheckAttendance?.id || answerDutyCheckMutation.isPending) return;
+
+    try {
+      const result = await answerDutyCheckMutation.mutateAsync({
+        id: dutyCheckAttendance.id,
+        input: { answer },
+      });
+      await dutyCheckQuery.refetch();
+
+      setNotificationSnack({
+        open: true,
+        severity: answer === 'yes' ? 'success' : 'warning',
+        message: result.status === 'timed_out'
+          ? 'Time-out recorded automatically.'
+          : 'Duty confirmed. We will check again in 4 hours.',
+      });
+    } catch (error: any) {
+      setNotificationSnack({
+        open: true,
+        severity: 'error',
+        message: resolveDutyCheckErrorMessage(error),
+      });
+      void dutyCheckQuery.refetch();
+    }
+  };
+
   const navDrawer = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Box sx={{ px: 2.5, py: 2 }}>
@@ -1391,6 +1455,52 @@ export function AppShell() {
           </List>
         </Drawer>
       )}
+
+      <Dialog
+        open={shouldShowDutyCheck}
+        disableEscapeKeyDown
+        aria-labelledby="staff-duty-check-title"
+        PaperProps={{
+          sx: {
+            width: 'min(100%, 420px)',
+            mx: { xs: 2, sm: 'auto' },
+            borderRadius: 2,
+          },
+        }}
+      >
+        <DialogTitle id="staff-duty-check-title" sx={{ pb: 1.2 }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <AccessTimeOutlinedIcon color="warning" />
+            <Typography variant="h6" sx={{ fontWeight: 800 }}>
+              Are you still on duty?
+            </Typography>
+          </Stack>
+        </DialogTitle>
+        <DialogContent dividers sx={{ py: 2 }}>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            Select Yes to stay timed in. Select No if your shift has ended.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 2.5, py: 1.6 }}>
+          <Button
+            color="error"
+            variant="outlined"
+            onClick={() => void handleDutyCheckAnswer('no')}
+            disabled={answerDutyCheckMutation.isPending}
+          >
+            No
+          </Button>
+          <Button
+            color="primary"
+            variant="contained"
+            onClick={() => void handleDutyCheckAnswer('yes')}
+            disabled={answerDutyCheckMutation.isPending}
+            autoFocus
+          >
+            Yes
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={notificationSnack.open}

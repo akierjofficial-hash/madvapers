@@ -37,6 +37,9 @@ export type StaffAttendance = {
   reviewed_at?: string | null;
   reviewed_by_user_id?: number | null;
   clock_out_at?: string | null;
+  duty_check_next_at?: string | null;
+  duty_check_last_answered_at?: string | null;
+  duty_check_count?: number;
   request_notes?: string | null;
   review_notes?: string | null;
   clock_out_notes?: string | null;

@@ -65,6 +65,93 @@ class StaffAttendanceWorkflowTest extends TestCase
         $this->assertNotNull($attendance->clock_out_at);
     }
 
+    public function test_cashier_duty_check_is_due_after_six_hours_and_yes_schedules_four_hour_followup(): void
+    {
+        try {
+            Carbon::setTestNow(Carbon::parse('2026-05-09 08:00:00'));
+
+            $cashier = $this->actingAsUser('cashier@madvapers.local');
+            $attendanceId = (int) $this->postJson('/api/staff-attendance/time-in')
+                ->assertCreated()
+                ->json('attendance.id');
+
+            $this->actingAsUser('admin@madvapers.local');
+            $this->postJson("/api/staff-attendance/{$attendanceId}/approve")
+                ->assertOk()
+                ->assertJsonPath('attendance.clock_in_status', 'APPROVED');
+
+            $attendance = StaffAttendance::query()->findOrFail($attendanceId);
+            $this->assertTrue($attendance->duty_check_next_at->equalTo(Carbon::parse('2026-05-09 14:00:00')));
+
+            Sanctum::actingAs($cashier);
+            $this->getJson('/api/staff-attendance/duty-check')
+                ->assertOk()
+                ->assertJsonPath('eligible', true)
+                ->assertJsonPath('due', false)
+                ->assertJsonPath('attendance.id', $attendanceId);
+
+            Carbon::setTestNow(Carbon::parse('2026-05-09 14:00:01'));
+
+            $this->getJson('/api/staff-attendance/duty-check')
+                ->assertOk()
+                ->assertJsonPath('due', true)
+                ->assertJsonPath('attendance.id', $attendanceId);
+
+            $this->postJson("/api/staff-attendance/{$attendanceId}/duty-check", [
+                'answer' => 'yes',
+            ])
+                ->assertOk()
+                ->assertJsonPath('status', 'confirmed')
+                ->assertJsonPath('attendance.clock_out_at', null);
+
+            $attendance->refresh();
+            $this->assertNull($attendance->clock_out_at);
+            $this->assertSame(1, (int) $attendance->duty_check_count);
+            $this->assertTrue($attendance->duty_check_next_at->equalTo(Carbon::parse('2026-05-09 18:00:01')));
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_cashier_duty_check_no_answer_records_automatic_time_out(): void
+    {
+        try {
+            Carbon::setTestNow(Carbon::parse('2026-05-09 08:00:00'));
+
+            $cashier = $this->actingAsUser('cashier@madvapers.local');
+            $attendanceId = (int) $this->postJson('/api/staff-attendance/time-in')
+                ->assertCreated()
+                ->json('attendance.id');
+
+            $this->actingAsUser('admin@madvapers.local');
+            $this->postJson("/api/staff-attendance/{$attendanceId}/approve")
+                ->assertOk();
+
+            Carbon::setTestNow(Carbon::parse('2026-05-09 14:00:00'));
+            Sanctum::actingAs($cashier);
+
+            $this->postJson("/api/staff-attendance/{$attendanceId}/duty-check", [
+                'answer' => 'no',
+            ])
+                ->assertOk()
+                ->assertJsonPath('status', 'timed_out')
+                ->assertJsonPath('attendance.clock_out_notes', 'Automatic time-out from duty check.');
+
+            $attendance = StaffAttendance::query()->findOrFail($attendanceId);
+            $this->assertSame('APPROVED', (string) $attendance->clock_in_status);
+            $this->assertNotNull($attendance->clock_out_at);
+            $this->assertNull($attendance->duty_check_next_at);
+            $this->assertSame(1, (int) $attendance->duty_check_count);
+
+            $this->getJson('/api/staff-attendance/duty-check')
+                ->assertOk()
+                ->assertJsonPath('due', false)
+                ->assertJsonPath('attendance', null);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     public function test_cashier_cannot_approve_attendance_request(): void
     {
         $this->actingAsUser('cashier@madvapers.local');

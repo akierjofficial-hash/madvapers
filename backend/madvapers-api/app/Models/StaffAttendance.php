@@ -17,6 +17,9 @@ class StaffAttendance extends Model
         'reviewed_at',
         'reviewed_by_user_id',
         'clock_out_at',
+        'duty_check_next_at',
+        'duty_check_last_answered_at',
+        'duty_check_count',
         'request_notes',
         'review_notes',
         'clock_out_notes',
@@ -27,6 +30,9 @@ class StaffAttendance extends Model
         'clock_in_requested_at' => 'datetime',
         'reviewed_at' => 'datetime',
         'clock_out_at' => 'datetime',
+        'duty_check_next_at' => 'datetime',
+        'duty_check_last_answered_at' => 'datetime',
+        'duty_check_count' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -75,4 +81,3 @@ class StaffAttendance extends Model
             && in_array(strtoupper((string) $this->clock_in_status), ['PENDING', 'APPROVED'], true);
     }
 }
-

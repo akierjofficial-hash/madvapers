@@ -97,6 +97,10 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::post('/staff-attendance/time-in', [StaffAttendanceController::class, 'requestTimeIn'])->middleware('perm:STAFF_ATTENDANCE_CLOCK');
     Route::post('/staff-attendance/time-out', [StaffAttendanceController::class, 'requestTimeOut'])
         ->middleware(['perm:STAFF_ATTENDANCE_CLOCK', 'throttle:sensitive-actions']);
+    Route::get('/staff-attendance/duty-check', [StaffAttendanceController::class, 'currentDutyCheck'])
+        ->middleware('perm:STAFF_ATTENDANCE_CLOCK');
+    Route::post('/staff-attendance/{attendance}/duty-check', [StaffAttendanceController::class, 'answerDutyCheck'])
+        ->middleware(['perm:STAFF_ATTENDANCE_CLOCK', 'throttle:sensitive-actions']);
     Route::post('/staff-attendance/{attendance}/approve', [StaffAttendanceController::class, 'approve'])
         ->middleware(['perm:STAFF_ATTENDANCE_APPROVE', 'throttle:sensitive-actions']);
     Route::post('/staff-attendance/{attendance}/reject', [StaffAttendanceController::class, 'reject'])
