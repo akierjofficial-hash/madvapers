@@ -88,8 +88,26 @@ export type CreateTransferInput = {
   items: CreateTransferItemInput[];
 };
 
+export type UpdateTransferItemInput = {
+  product_variant_id: number;
+  qty: number;
+  unit_cost?: number | null;
+};
+
+export type UpdateTransferInput = {
+  from_branch_id?: number;
+  to_branch_id?: number;
+  notes?: string | null;
+  items?: UpdateTransferItemInput[];
+};
+
 export async function createTransfer(input: CreateTransferInput) {
   const res = await api.post<Transfer>('/transfers', input);
+  return res.data;
+}
+
+export async function updateTransfer(id: number, input: UpdateTransferInput) {
+  const res = await api.put<Transfer>(`/transfers/${id}`, input);
   return res.data;
 }
 

@@ -73,6 +73,7 @@ import {
   getTransfers,
   getTransfer,
   createTransfer,
+  updateTransfer,
   requestTransfer,
   approveTransfer,
   dispatchTransfer,
@@ -82,6 +83,7 @@ import {
   type TransfersQuery,
   type Transfer,
   type CreateTransferInput,
+  type UpdateTransferInput,
 } from './transfers';
 
 // Purchase Orders
@@ -674,6 +676,14 @@ export function useCreateTransferMutation() {
   const qc = useQueryClient();
   return useMutation<Transfer, unknown, CreateTransferInput>({
     mutationFn: (input) => createTransfer(input),
+    onSuccess: () => invalidateTransfers(qc),
+  });
+}
+
+export function useUpdateTransferMutation() {
+  const qc = useQueryClient();
+  return useMutation<Transfer, unknown, { id: number; input: UpdateTransferInput }>({
+    mutationFn: ({ id, input }) => updateTransfer(id, input),
     onSuccess: () => invalidateTransfers(qc),
   });
 }

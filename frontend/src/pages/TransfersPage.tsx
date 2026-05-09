@@ -29,6 +29,7 @@ import {
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
@@ -49,6 +50,7 @@ import {
   useRequestTransferMutation,
   useTransferQuery,
   useTransfersQuery,
+  useUpdateTransferMutation,
   useVariantsQuery,
   useDashboardApprovalQueueQuery,
 } from '../api/queries';
@@ -116,6 +118,45 @@ function getTransferItemDisplay(it: any): string {
   return `${productName} / ${variantLabel} / ${flavor} (Qty: ${qty})`;
 }
 
+function getTransferItemVariantLabel(it: any): string {
+  const variant = it?.variant ?? null;
+  if (!variant) return '-';
+
+  const label = String(getVariantLabel(variant) ?? '').trim();
+  return label || '-';
+}
+
+function qtyInputFmt(v: string | number | null | undefined): string {
+  if (v === null || v === undefined) return '';
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v);
+  const fixed = Number(n.toFixed(3));
+  return Number.isInteger(fixed) ? String(fixed) : String(fixed);
+}
+
+function getQtyInputError(rawValue: string): string | null {
+  const raw = rawValue.trim();
+  if (raw === '') return 'Required.';
+
+  const qty = Number(raw);
+  if (!Number.isFinite(qty) || qty <= 0) return 'Must be greater than 0.';
+
+  return null;
+}
+
+function getTransferErrorMessage(error: any, fallback: string): string {
+  const errors = error?.response?.data?.errors ?? {};
+  const message =
+    errors?.status?.[0] ??
+    errors?.items?.[0] ??
+    errors?.stock?.[0] ??
+    errors?.details?.[0] ??
+    error?.response?.data?.message ??
+    fallback;
+
+  return String(message || fallback);
+}
+
 type DraftItem = {
   product_variant_id: number;
   qty: number | null;
@@ -145,6 +186,7 @@ export function TransfersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const createMut = useCreateTransferMutation();
+  const updateMut = useUpdateTransferMutation();
   const requestMut = useRequestTransferMutation();
   const approveMut = useApproveTransferMutation();
   const cancelMut = useCancelTransferMutation();
@@ -173,6 +215,7 @@ export function TransfersPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const transferQuery = useTransferQuery(selectedId ?? 0, !!selectedId && canTransferView);
   const selected = transferQuery.data ?? null;
+  const [drawerQtyInputs, setDrawerQtyInputs] = useState<Record<number, string>>({});
 
   // Create dialog state
   const [openCreate, setOpenCreate] = useState(false);
@@ -205,6 +248,22 @@ export function TransfersPage() {
   useEffect(() => {
     setSeenRequestedTransferId(authStorage.getSeenPending(user?.id).transfers);
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!selected) {
+      setDrawerQtyInputs({});
+      return;
+    }
+
+    const nextInputs: Record<number, string> = {};
+    for (const item of selected.items ?? []) {
+      const variantId = Number((item as any).product_variant_id ?? (item as any).variant?.id ?? 0);
+      if (!Number.isFinite(variantId) || variantId <= 0) continue;
+      nextInputs[variantId] = qtyInputFmt((item as any).qty);
+    }
+
+    setDrawerQtyInputs(nextInputs);
+  }, [selected?.id, selected?.status, selected?.updated_at, selected?.items]);
 
   useEffect(() => {
     if (!openCreate) return;
@@ -629,10 +688,88 @@ export function TransfersPage() {
 
   const closeDrawer = () => setSelectedId(null);
 
-  const canRequest = canTransferCreate && selected?.status === 'DRAFT';
+  const selectedItems = selected?.items ?? [];
+  const canEditDrawerQty = canTransferCreate && selected?.status === 'DRAFT';
+  const drawerQtyErrors = useMemo(() => {
+    const errors: Record<number, string> = {};
+    if (!canEditDrawerQty) return errors;
+
+    for (const item of selectedItems) {
+      const variantId = Number((item as any).product_variant_id ?? (item as any).variant?.id ?? 0);
+      if (!Number.isFinite(variantId) || variantId <= 0) continue;
+
+      const error = getQtyInputError(drawerQtyInputs[variantId] ?? qtyInputFmt((item as any).qty));
+      if (error) errors[variantId] = error;
+    }
+
+    return errors;
+  }, [canEditDrawerQty, drawerQtyInputs, selectedItems]);
+  const hasDrawerQtyErrors = Object.keys(drawerQtyErrors).length > 0;
+  const hasDrawerQtyChanges = useMemo(() => {
+    if (!canEditDrawerQty) return false;
+
+    return selectedItems.some((item) => {
+      const variantId = Number((item as any).product_variant_id ?? (item as any).variant?.id ?? 0);
+      if (!Number.isFinite(variantId) || variantId <= 0) return false;
+
+      const currentQty = Number((item as any).qty ?? 0);
+      const nextQty = Number(drawerQtyInputs[variantId] ?? qtyInputFmt((item as any).qty));
+      if (!Number.isFinite(currentQty) || !Number.isFinite(nextQty)) return true;
+
+      return Math.abs(currentQty - nextQty) > 0.0005;
+    });
+  }, [canEditDrawerQty, drawerQtyInputs, selectedItems]);
+
+  const canRequest = canTransferCreate && selected?.status === 'DRAFT' && !hasDrawerQtyChanges && !hasDrawerQtyErrors;
   const canApprove = canTransferApprove && selected?.status === 'REQUESTED';
   const canCancel =
     canTransferCreate && !!selected?.status && !['RECEIVED', 'CANCELLED'].includes(selected.status);
+
+  const saveDrawerQtyChanges = async () => {
+    if (!selected || !canEditDrawerQty) return;
+    if (hasDrawerQtyErrors) {
+      showSnack('Enter a valid quantity for every transfer item.');
+      return;
+    }
+    if (!hasDrawerQtyChanges) return;
+
+    try {
+      const updated = await updateMut.mutateAsync({
+        id: selected.id,
+        input: {
+          items: selectedItems.map((item: any) => {
+            const variantId = Number(item.product_variant_id ?? item.variant?.id ?? 0);
+            const rawUnitCost = item.unit_cost;
+            const unitCost = rawUnitCost === null || rawUnitCost === undefined ? null : Number(rawUnitCost);
+            const line: { product_variant_id: number; qty: number; unit_cost?: number | null } = {
+              product_variant_id: variantId,
+              qty: Number(drawerQtyInputs[variantId] ?? item.qty),
+            };
+
+            if (unitCost === null || Number.isFinite(unitCost)) {
+              line.unit_cost = unitCost;
+            }
+
+            return line;
+          }),
+        },
+      });
+
+      const nextInputs: Record<number, string> = {};
+      for (const item of updated.items ?? []) {
+        const variantId = Number((item as any).product_variant_id ?? (item as any).variant?.id ?? 0);
+        if (!Number.isFinite(variantId) || variantId <= 0) continue;
+        nextInputs[variantId] = qtyInputFmt((item as any).qty);
+      }
+      setDrawerQtyInputs(nextInputs);
+
+      transferQuery.refetch();
+      transfersQuery.refetch();
+      showSnack('Transfer quantities updated.', 'success');
+    } catch (e: any) {
+      showSnack(getTransferErrorMessage(e, 'Failed to update transfer quantities.'));
+    }
+  };
 
   const runAction = async (action: 'request' | 'approve' | 'cancel') => {
     if (!selected) return;
@@ -1357,23 +1494,43 @@ export function TransfersPage() {
               )}
 
               {(requestMut.isPending ||
+                updateMut.isPending ||
                 approveMut.isPending ||
                 cancelMut.isPending) && <Alert severity="info">Working…</Alert>}
 
               <Divider sx={{ my: 1 }} />
 
-              <Typography variant="subtitle2">Items</Typography>
+              <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                <Typography variant="subtitle2">Items</Typography>
+                {canEditDrawerQty && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<SaveRoundedIcon fontSize="small" />}
+                    onClick={saveDrawerQtyChanges}
+                    disabled={updateMut.isPending || !hasDrawerQtyChanges || hasDrawerQtyErrors}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    Save quantities
+                  </Button>
+                )}
+              </Stack>
+              {canEditDrawerQty && hasDrawerQtyChanges && (
+                <Alert severity="info">Save quantity changes before requesting this transfer.</Alert>
+              )}
               {(selected.items ?? []).length === 0 ? (
                 <Alert severity="warning">No items loaded.</Alert>
               ) : (
                 <Paper variant="outlined">
+                  <Box sx={{ overflowX: 'auto' }}>
                   <Table size="small">
                     <TableHead>
                       <TableRow>
                         <TableCell width={150}>Variant ID</TableCell>
                         <TableCell>SKU</TableCell>
                         <TableCell>Product</TableCell>
-                        <TableCell align="right" width={120}>Qty</TableCell>
+                        <TableCell>Variant</TableCell>
+                        <TableCell align="right" width={150}>Qty</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -1381,6 +1538,8 @@ export function TransfersPage() {
                         const vid = Number(it.product_variant_id ?? it.variant?.id ?? 0) || 0;
                         const sku = it.variant?.sku ?? '-';
                         const prod = it.variant?.product?.name ?? '-';
+                        const variant = getTransferItemVariantLabel(it);
+                        const qtyError = vid ? drawerQtyErrors[vid] ?? null : null;
 
                         return (
                           <TableRow key={it.id ?? `${vid}-${sku}`}>
@@ -1405,12 +1564,38 @@ export function TransfersPage() {
                             </TableCell>
                             <TableCell>{sku}</TableCell>
                             <TableCell>{prod}</TableCell>
-                            <TableCell align="right">{qtyFmt(it.qty)}</TableCell>
+                            <TableCell>{variant}</TableCell>
+                            <TableCell align="right">
+                              {canEditDrawerQty && vid ? (
+                                <TextField
+                                  size="small"
+                                  type="number"
+                                  value={drawerQtyInputs[vid] ?? qtyInputFmt(it.qty)}
+                                  onChange={(e) =>
+                                    setDrawerQtyInputs((prev) => ({
+                                      ...prev,
+                                      [vid]: e.target.value,
+                                    }))
+                                  }
+                                  error={Boolean(qtyError)}
+                                  helperText={qtyError ?? ' '}
+                                  inputProps={{
+                                    min: 1,
+                                    step: 1,
+                                    inputMode: 'numeric',
+                                  }}
+                                  sx={{ width: 120 }}
+                                />
+                              ) : (
+                                qtyFmt(it.qty)
+                              )}
+                            </TableCell>
                           </TableRow>
                         );
                       })}
                     </TableBody>
                   </Table>
+                  </Box>
                 </Paper>
               )}
             </Stack>
