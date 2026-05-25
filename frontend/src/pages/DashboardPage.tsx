@@ -115,7 +115,8 @@ type KpiCardKey =
   | 'pending-adjustments'
   | 'pending-po'
   | 'pending-transfers'
-  | 'inventory-value';
+  | 'inventory-value'
+  | 'retail-value';
 
 type PieBreakdownItem = {
   label: string;
@@ -131,6 +132,7 @@ const KPI_DETAIL_TYPE_BY_CARD: Record<KpiCardKey, DashboardKpiDetailType> = {
   'pending-po': 'pending_po',
   'pending-transfers': 'pending_transfers',
   'inventory-value': 'inventory_value',
+  'retail-value': 'retail_value',
 };
 
 const PIE_COLORS = ['#0f766e', '#2ea99f', '#f59e0b', '#b45309', '#475467', '#64748b', '#7c8ea3'];
@@ -868,7 +870,7 @@ export function DashboardPage() {
     },
     {
       key: 'inventory-value',
-      label: 'Inventory Value',
+      label: 'Wholesale Value',
       value: Number(summary?.kpis.inventory_value ?? 0).toLocaleString(undefined, {
         style: 'currency',
         currency: 'PHP',
@@ -877,6 +879,18 @@ export function DashboardPage() {
       hint: 'Wholesale cost estimate',
       icon: <AccountBalanceWalletOutlinedIcon fontSize="small" />,
       accent: '#0f766e',
+    },
+    {
+      key: 'retail-value',
+      label: 'Retail Value',
+      value: Number(summary?.kpis.retail_inventory_value ?? 0).toLocaleString(undefined, {
+        style: 'currency',
+        currency: 'PHP',
+        maximumFractionDigits: 2,
+      }),
+      hint: 'Sellable value at retail cost',
+      icon: <ShoppingBagOutlinedIcon fontSize="small" />,
+      accent: '#2563eb',
     },
   ];
 
@@ -1116,6 +1130,13 @@ export function DashboardPage() {
           <InventoryKpiTable
             rows={rows as DashboardInventoryKpiItem[]}
             emptyMessage="No inventory value rows found for the selected filters."
+          />
+        );
+      case 'retail-value':
+        return (
+          <InventoryKpiTable
+            rows={rows as DashboardInventoryKpiItem[]}
+            emptyMessage="No retail value rows found for the selected filters."
           />
         );
       case 'pending-adjustments':
@@ -1645,7 +1666,7 @@ export function DashboardPage() {
             }}
           >
             <MetricTile
-              label="Inventory Value"
+              label="Wholesale Value"
               value={Number(summary?.kpis.inventory_value ?? 0).toLocaleString(undefined, {
                 style: 'currency',
                 currency: 'PHP',
@@ -1655,6 +1676,29 @@ export function DashboardPage() {
               icon={<AccountBalanceWalletOutlinedIcon sx={{ fontSize: 14 }} />}
               clean
               onClick={() => setActiveKpiKey('inventory-value')}
+            />
+            <MetricTile
+              label="Retail Value"
+              value={Number(summary?.kpis.retail_inventory_value ?? 0).toLocaleString(undefined, {
+                style: 'currency',
+                currency: 'PHP',
+                maximumFractionDigits: 2,
+              })}
+              accent="#2563eb"
+              icon={<ShoppingBagOutlinedIcon sx={{ fontSize: 14 }} />}
+              clean
+              onClick={() => setActiveKpiKey('retail-value')}
+            />
+            <MetricTile
+              label="Potential Margin"
+              value={Number(summary?.kpis.potential_margin ?? 0).toLocaleString(undefined, {
+                style: 'currency',
+                currency: 'PHP',
+                maximumFractionDigits: 2,
+              })}
+              accent="#10b981"
+              icon={<AutoGraphOutlinedIcon sx={{ fontSize: 14 }} />}
+              clean
             />
             <MetricTile
               label="Missing Wholesale Cost"
@@ -2443,7 +2487,8 @@ export function DashboardPage() {
         <DialogActions>
           {(activeKpiKey === 'low-stock' ||
             activeKpiKey === 'out-of-stock' ||
-            activeKpiKey === 'inventory-value') && (
+            activeKpiKey === 'inventory-value' ||
+            activeKpiKey === 'retail-value') && (
             <Button variant="outlined" onClick={() => openInventoryModule()}>
               Open Inventory
             </Button>
@@ -3231,7 +3276,10 @@ function InventoryKpiTable({
             <TableCell>Variant</TableCell>
             <TableCell align="right">Qty</TableCell>
             <TableCell align="right">Wholesale Cost</TableCell>
-            <TableCell align="right">Stock Value</TableCell>
+            <TableCell align="right">Retail Cost</TableCell>
+            <TableCell align="right">Wholesale Value</TableCell>
+            <TableCell align="right">Retail Value</TableCell>
+            <TableCell align="right">Potential Margin</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -3252,7 +3300,28 @@ function InventoryKpiTable({
                 })}
               </TableCell>
               <TableCell align="right">
+                {Number(row.default_price ?? 0).toLocaleString(undefined, {
+                  style: 'currency',
+                  currency: 'PHP',
+                  maximumFractionDigits: 2,
+                })}
+              </TableCell>
+              <TableCell align="right">
                 {Number(row.stock_value ?? 0).toLocaleString(undefined, {
+                  style: 'currency',
+                  currency: 'PHP',
+                  maximumFractionDigits: 2,
+                })}
+              </TableCell>
+              <TableCell align="right">
+                {Number(row.retail_value ?? 0).toLocaleString(undefined, {
+                  style: 'currency',
+                  currency: 'PHP',
+                  maximumFractionDigits: 2,
+                })}
+              </TableCell>
+              <TableCell align="right">
+                {Number(row.potential_margin ?? 0).toLocaleString(undefined, {
                   style: 'currency',
                   currency: 'PHP',
                   maximumFractionDigits: 2,

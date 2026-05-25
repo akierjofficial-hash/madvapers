@@ -15,7 +15,9 @@ export type DashboardKpiDetailType =
   | 'low_stock'
   | 'out_of_stock'
   | 'inventory_value'
+  | 'retail_value'
   | 'missing_cost'
+  | 'missing_retail_price'
   | 'pending_adjustments'
   | 'pending_po'
   | 'pending_transfers';
@@ -35,7 +37,10 @@ export type DashboardKpis = {
   pending_transfers: number;
   pending_void_requests: number;
   inventory_value: number;
+  retail_inventory_value: number;
+  potential_margin: number;
   missing_cost_count: number;
+  missing_retail_price_count: number;
   tracked_variant_count: number;
 };
 
@@ -48,10 +53,14 @@ export type DashboardInventoryKpiItem = {
   sku?: string | null;
   product_name?: string | null;
   variant_name?: string | null;
+  category_name?: string | null;
   brand_name?: string | null;
   qty_on_hand: number;
   default_cost: number;
+  default_price: number;
   stock_value: number;
+  retail_value: number;
+  potential_margin: number;
 };
 
 export type DashboardAlert = {
@@ -231,7 +240,9 @@ export type DashboardSummaryResponse = {
     low_stock: DashboardInventoryKpiItem[];
     out_of_stock: DashboardInventoryKpiItem[];
     inventory_value: DashboardInventoryKpiItem[];
+    retail_value: DashboardInventoryKpiItem[];
     missing_cost: DashboardInventoryKpiItem[];
+    missing_retail_price: DashboardInventoryKpiItem[];
   };
   finance: DashboardFinance;
   voided_sales_by_branch: DashboardVoidedSalesBranch[];

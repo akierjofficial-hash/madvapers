@@ -23,7 +23,9 @@ class DashboardController extends Controller
         'low_stock',
         'out_of_stock',
         'inventory_value',
+        'retail_value',
         'missing_cost',
+        'missing_retail_price',
         'pending_adjustments',
         'pending_po',
         'pending_transfers',
@@ -141,7 +143,9 @@ class DashboardController extends Controller
             'low_stock' => $this->paginateInventoryKpiRows($branchIds, 'low_stock', $search, $perPage, $page),
             'out_of_stock' => $this->paginateInventoryKpiRows($branchIds, 'out_of_stock', $search, $perPage, $page),
             'inventory_value' => $this->paginateInventoryKpiRows($branchIds, 'inventory_value', $search, $perPage, $page),
+            'retail_value' => $this->paginateInventoryKpiRows($branchIds, 'retail_value', $search, $perPage, $page),
             'missing_cost' => $this->paginateInventoryKpiRows($branchIds, 'missing_cost', $search, $perPage, $page),
+            'missing_retail_price' => $this->paginateInventoryKpiRows($branchIds, 'missing_retail_price', $search, $perPage, $page),
             'pending_adjustments' => $this->paginatePendingAdjustments($branchIds, $search, $perPage, $page),
             'pending_po' => $this->paginatePendingPurchaseOrders($branchIds, $search, $perPage, $page),
             'pending_transfers' => $this->paginatePendingTransfers($branchIds, $search, $perPage, $page),
@@ -228,13 +232,19 @@ class DashboardController extends Controller
             ->where('qty_on_hand', '<=', 0)
             ->count();
 
-        $inventoryValue = (float) $this->applyBranchFilter(
+        $inventoryValueRow = $this->applyBranchFilter(
             DB::table('inventory_balances as ib')
                 ->leftJoin('product_variants as pv', 'pv.id', '=', 'ib.product_variant_id')
-                ->selectRaw('COALESCE(SUM(ib.qty_on_hand * COALESCE(pv.default_cost, 0)), 0) as total_value'),
+                ->selectRaw('
+                    COALESCE(SUM(ib.qty_on_hand * COALESCE(pv.default_cost, 0)), 0) as wholesale_value,
+                    COALESCE(SUM(ib.qty_on_hand * COALESCE(pv.default_price, 0)), 0) as retail_value
+                '),
             $branchIds,
             'ib.branch_id'
-        )->value('total_value');
+        )->first();
+
+        $inventoryValue = (float) ($inventoryValueRow->wholesale_value ?? 0);
+        $retailInventoryValue = (float) ($inventoryValueRow->retail_value ?? 0);
 
         $missingCostCount = $this->applyBranchFilter(
             DB::table('inventory_balances as ib')
@@ -244,6 +254,16 @@ class DashboardController extends Controller
         )
             ->where('ib.qty_on_hand', '>', 0)
             ->whereRaw('COALESCE(pv.default_cost, 0) <= 0')
+            ->count();
+
+        $missingRetailPriceCount = $this->applyBranchFilter(
+            DB::table('inventory_balances as ib')
+                ->leftJoin('product_variants as pv', 'pv.id', '=', 'ib.product_variant_id'),
+            $branchIds,
+            'ib.branch_id'
+        )
+            ->where('ib.qty_on_hand', '>', 0)
+            ->whereRaw('COALESCE(pv.default_price, 0) <= 0')
             ->count();
 
         $pendingAdjustments = $this->applyBranchFilter(
@@ -286,7 +306,10 @@ class DashboardController extends Controller
             'pending_transfers' => $pendingTransfers,
             'pending_void_requests' => $pendingVoidRequests,
             'inventory_value' => round($inventoryValue, 2),
+            'retail_inventory_value' => round($retailInventoryValue, 2),
+            'potential_margin' => round($retailInventoryValue - $inventoryValue, 2),
             'missing_cost_count' => (int) $missingCostCount,
+            'missing_retail_price_count' => (int) $missingRetailPriceCount,
             'tracked_variant_count' => (int) $trackedVariantCount,
         ];
     }
@@ -296,13 +319,17 @@ class DashboardController extends Controller
         $lowStock = $this->buildInventoryKpiRows($branchIds, 'low_stock', 80);
         $outOfStock = $this->buildInventoryKpiRows($branchIds, 'out_of_stock', 80);
         $inventoryValue = $this->buildInventoryKpiRows($branchIds, 'inventory_value', 80);
+        $retailValue = $this->buildInventoryKpiRows($branchIds, 'retail_value', 80);
         $missingCost = $this->buildInventoryKpiRows($branchIds, 'missing_cost', 80);
+        $missingRetailPrice = $this->buildInventoryKpiRows($branchIds, 'missing_retail_price', 80);
 
         return [
             'low_stock' => $lowStock,
             'out_of_stock' => $outOfStock,
             'inventory_value' => $inventoryValue,
+            'retail_value' => $retailValue,
             'missing_cost' => $missingCost,
+            'missing_retail_price' => $missingRetailPrice,
         ];
     }
 
@@ -563,7 +590,10 @@ class DashboardController extends Controller
                 c.name as category_name,
                 ib.qty_on_hand,
                 COALESCE(pv.default_cost, 0) as default_cost,
-                (ib.qty_on_hand * COALESCE(pv.default_cost, 0)) as stock_value
+                COALESCE(pv.default_price, 0) as default_price,
+                (ib.qty_on_hand * COALESCE(pv.default_cost, 0)) as stock_value,
+                (ib.qty_on_hand * COALESCE(pv.default_price, 0)) as retail_value,
+                (ib.qty_on_hand * (COALESCE(pv.default_price, 0) - COALESCE(pv.default_cost, 0))) as potential_margin
             ');
 
         $query = $this->applyBranchFilter($query, $branchIds, 'ib.branch_id');
@@ -599,9 +629,20 @@ class DashboardController extends Controller
                 ->orderByDesc('stock_value')
                 ->orderBy('p.name')
                 ->orderBy('pv.sku'),
+            'retail_value' => $query
+                ->where('ib.qty_on_hand', '>', 0)
+                ->orderByDesc('retail_value')
+                ->orderBy('p.name')
+                ->orderBy('pv.sku'),
             'missing_cost' => $query
                 ->where('ib.qty_on_hand', '>', 0)
                 ->whereRaw('COALESCE(pv.default_cost, 0) <= 0')
+                ->orderByDesc('ib.qty_on_hand')
+                ->orderBy('p.name')
+                ->orderBy('pv.sku'),
+            'missing_retail_price' => $query
+                ->where('ib.qty_on_hand', '>', 0)
+                ->whereRaw('COALESCE(pv.default_price, 0) <= 0')
                 ->orderByDesc('ib.qty_on_hand')
                 ->orderBy('p.name')
                 ->orderBy('pv.sku'),
@@ -624,7 +665,10 @@ class DashboardController extends Controller
             'category_name' => $row->category_name,
             'qty_on_hand' => (float) $row->qty_on_hand,
             'default_cost' => (float) $row->default_cost,
+            'default_price' => (float) $row->default_price,
             'stock_value' => (float) $row->stock_value,
+            'retail_value' => (float) $row->retail_value,
+            'potential_margin' => (float) $row->potential_margin,
         ];
     }
 

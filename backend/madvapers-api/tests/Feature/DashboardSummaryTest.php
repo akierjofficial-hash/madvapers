@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Branch;
 use App\Models\InventoryBalance;
+use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -47,14 +49,19 @@ class DashboardSummaryTest extends TestCase
                     'pending_transfers',
                     'pending_void_requests',
                     'inventory_value',
+                    'retail_inventory_value',
+                    'potential_margin',
                     'missing_cost_count',
+                    'missing_retail_price_count',
                     'tracked_variant_count',
                 ],
                 'kpi_details' => [
                     'low_stock',
                     'out_of_stock',
                     'inventory_value',
+                    'retail_value',
                     'missing_cost',
+                    'missing_retail_price',
                 ],
                 'finance' => [
                     'revenue',
@@ -83,6 +90,58 @@ class DashboardSummaryTest extends TestCase
                 'trends',
                 'quick_actions',
             ]);
+    }
+
+    public function test_dashboard_summary_includes_retail_value_and_potential_margin(): void
+    {
+        $this->actingAsUser('admin@madvapers.local');
+
+        $branch = Branch::query()->create([
+            'code' => 'RETAIL-KPI',
+            'name' => 'Retail KPI Branch',
+            'is_active' => true,
+        ]);
+
+        $product = Product::query()->create([
+            'name' => 'Retail KPI Product',
+            'product_type' => 'DEVICE',
+            'base_price' => 150,
+            'is_active' => true,
+        ]);
+
+        $variant = ProductVariant::query()->create([
+            'product_id' => $product->id,
+            'sku' => 'RETAIL-KPI-SKU',
+            'variant_name' => 'Retail KPI Variant',
+            'default_cost' => 100,
+            'default_price' => 150,
+            'is_active' => true,
+        ]);
+
+        InventoryBalance::query()->create([
+            'branch_id' => $branch->id,
+            'product_variant_id' => $variant->id,
+            'qty_on_hand' => 3,
+        ]);
+
+        $response = $this->getJson('/api/dashboard/summary?' . http_build_query([
+            'branch_id' => $branch->id,
+            'date_from' => now()->startOfMonth()->toDateString(),
+            'date_to' => now()->endOfMonth()->toDateString(),
+        ]))
+            ->assertOk()
+            ->json();
+
+        $this->assertSame(300.0, (float) ($response['kpis']['inventory_value'] ?? 0));
+        $this->assertSame(450.0, (float) ($response['kpis']['retail_inventory_value'] ?? 0));
+        $this->assertSame(150.0, (float) ($response['kpis']['potential_margin'] ?? 0));
+        $this->assertSame(0, (int) ($response['kpis']['missing_retail_price_count'] ?? -1));
+
+        $retailRows = $response['kpi_details']['retail_value'] ?? [];
+        $this->assertNotEmpty($retailRows);
+        $this->assertSame(150.0, (float) ($retailRows[0]['default_price'] ?? 0));
+        $this->assertSame(450.0, (float) ($retailRows[0]['retail_value'] ?? 0));
+        $this->assertSame(150.0, (float) ($retailRows[0]['potential_margin'] ?? 0));
     }
 
     public function test_admin_can_load_paginated_kpi_details(): void
@@ -172,7 +231,7 @@ class DashboardSummaryTest extends TestCase
             ->orderBy('id')
             ->firstOrFail();
 
-        $this->actingAsUser('manager@madvapers.local');
+        $this->actingAsUser('admin@madvapers.local');
 
         $sale = $this->postJson('/api/sales', [
             'branch_id' => $branch->id,
