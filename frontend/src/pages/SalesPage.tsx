@@ -343,13 +343,11 @@ export function SalesPage() {
   const [searchDebounced, setSearchDebounced] = useState<string>(() => searchParams.get('search') ?? '');
   const [cashierSearch, setCashierSearch] = useState<string>(() => searchParams.get('cashier_search') ?? '');
   const [cashierSearchDebounced, setCashierSearchDebounced] = useState<string>(() => searchParams.get('cashier_search') ?? '');
-  const [dateFrom, setDateFrom] = useState<string>(() => searchParams.get('date_from') ?? '');
-  const [dateTo, setDateTo] = useState<string>(() => {
+  const [saleDate, setSaleDate] = useState<string>(() => {
     const from = searchParams.get('date_from') ?? '';
     const to = searchParams.get('date_to') ?? '';
-    return from && to && to < from ? from : to;
+    return to || from;
   });
-  const effectiveDateTo = dateFrom && dateTo && dateTo < dateFrom ? dateFrom : dateTo;
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const saleQuery = useSaleQuery(selectedId ?? 0, !!selectedId && canSalesView);
@@ -457,12 +455,6 @@ export function SalesPage() {
   }, [variantSearch, openCreate]);
 
   useEffect(() => {
-    if (!dateFrom || !dateTo || dateTo >= dateFrom) return;
-    setDateTo(dateFrom);
-    setPage(1);
-  }, [dateFrom, dateTo]);
-
-  useEffect(() => {
     if (!canBranchView) return;
     if (branchId !== '' || !branchesQuery.data?.length) return;
     const preferred = typeof assignedBranchId === 'number'
@@ -498,8 +490,10 @@ export function SalesPage() {
       if (status) next.set('status', status);
       if (paymentStatus) next.set('payment_status', paymentStatus);
       if (voidRequestStatus) next.set('void_request_status', voidRequestStatus);
-      if (dateFrom) next.set('date_from', dateFrom);
-      if (effectiveDateTo) next.set('date_to', effectiveDateTo);
+      if (saleDate) {
+        next.set('date_from', saleDate);
+        next.set('date_to', saleDate);
+      }
       if (page !== 1) next.set('page', String(page));
       if (searchDebounced) next.set('search', searchDebounced);
       if (cashierSearchDebounced) next.set('cashier_search', cashierSearchDebounced);
@@ -508,7 +502,7 @@ export function SalesPage() {
       setSearchParams(next, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branchId, isCashierRole, adminSalesView, status, paymentStatus, voidRequestStatus, dateFrom, effectiveDateTo, page, searchDebounced, cashierSearchDebounced]);
+  }, [branchId, isCashierRole, adminSalesView, status, paymentStatus, voidRequestStatus, saleDate, page, searchDebounced, cashierSearchDebounced]);
 
   const salesQuery = useSalesQuery(
     {
@@ -517,8 +511,8 @@ export function SalesPage() {
       status: isCashierRole ? undefined : status || undefined,
       payment_status: isCashierRole ? undefined : paymentStatus || undefined,
       void_request_status: isCashierRole ? undefined : voidRequestStatus || undefined,
-      date_from: isCashierRole ? undefined : dateFrom || undefined,
-      date_to: isCashierRole ? undefined : effectiveDateTo || undefined,
+      date_from: isCashierRole ? undefined : saleDate || undefined,
+      date_to: isCashierRole ? undefined : saleDate || undefined,
       search: isCashierRole ? undefined : searchDebounced || undefined,
       cashier_search: isCashierRole ? undefined : cashierSearchDebounced || undefined,
       include_items: isCashierRole ? undefined : 1,
@@ -532,8 +526,8 @@ export function SalesPage() {
       status: isCashierRole ? undefined : status || undefined,
       payment_status: isCashierRole ? undefined : paymentStatus || undefined,
       void_request_status: isCashierRole ? undefined : voidRequestStatus || undefined,
-      date_from: isCashierRole ? undefined : dateFrom || undefined,
-      date_to: isCashierRole ? undefined : effectiveDateTo || undefined,
+      date_from: isCashierRole ? undefined : saleDate || undefined,
+      date_to: isCashierRole ? undefined : saleDate || undefined,
       search: isCashierRole ? undefined : searchDebounced || undefined,
       cashier_search: isCashierRole ? undefined : cashierSearchDebounced || undefined,
     },
@@ -1441,8 +1435,7 @@ export function SalesPage() {
   };
   const openTransactionsForDay = (saleDate: string) => {
     if (!saleDate) return;
-    setDateFrom(saleDate);
-    setDateTo(saleDate);
+    setSaleDate(saleDate);
     setAdminSalesView('transactions');
     setPage(1);
   };
@@ -1616,32 +1609,14 @@ export function SalesPage() {
             </TextField>
             <TextField
               size="small"
-              label="Date from"
+              label="Date"
               type="date"
-              value={dateFrom}
+              value={saleDate}
               onChange={(event) => {
-                const nextDateFrom = event.target.value;
-                setDateFrom(nextDateFrom);
-                if (nextDateFrom && dateTo && dateTo < nextDateFrom) {
-                  setDateTo(nextDateFrom);
-                }
+                setSaleDate(event.target.value);
                 setPage(1);
               }}
               InputLabelProps={{ shrink: true }}
-              sx={{ width: { xs: '100%', md: 165 } }}
-            />
-            <TextField
-              size="small"
-              label="Date to"
-              type="date"
-              value={dateTo}
-              onChange={(event) => {
-                const nextDateTo = event.target.value;
-                setDateTo(dateFrom && nextDateTo && nextDateTo < dateFrom ? dateFrom : nextDateTo);
-                setPage(1);
-              }}
-              InputLabelProps={{ shrink: true }}
-              inputProps={{ min: dateFrom || undefined }}
               sx={{ width: { xs: '100%', md: 165 } }}
             />
             <TextField
