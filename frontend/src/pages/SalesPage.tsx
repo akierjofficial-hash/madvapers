@@ -566,6 +566,10 @@ export function SalesPage() {
 
   const rows = salesQuery.data?.data ?? [];
   const dailyTotalRows = salesDailyTotalsQuery.data?.data ?? [];
+  const hasSalesRows = rows.length > 0;
+  const hasDailyTotalRows = dailyTotalRows.length > 0;
+  const hasSalesLoadError = salesQuery.isError && !hasSalesRows;
+  const hasDailyTotalsLoadError = salesDailyTotalsQuery.isError && !hasDailyTotalRows;
   const rowsByRecentAction = useMemo(
     () => [...rows].sort((a: any, b: any) => checkoutActivityAt(b) - checkoutActivityAt(a)),
     [rows]
@@ -2142,7 +2146,7 @@ export function SalesPage() {
               </Typography>
               {salesQuery.isLoading ? (
                 <Alert severity="info">Loading checkout queue...</Alert>
-              ) : salesQuery.isError ? (
+              ) : hasSalesLoadError ? (
                 <Alert severity="error">Failed to load checkout queue.</Alert>
               ) : cashierActionRows.length === 0 ? (
                 <EmptyStateNotice
@@ -2205,7 +2209,7 @@ export function SalesPage() {
               </Typography>
               {salesQuery.isLoading ? (
                 <Alert severity="info">Loading recent activity...</Alert>
-              ) : salesQuery.isError ? (
+              ) : hasSalesLoadError ? (
                 <Alert severity="error">Failed to load recent activity.</Alert>
               ) : cashierActivityRows.length === 0 ? (
                 <EmptyStateNotice
@@ -2349,11 +2353,11 @@ export function SalesPage() {
       ) : adminSalesView === 'totals' ? (
         salesDailyTotalsQuery.isLoading ? (
           <Alert severity="info">Loading daily totals...</Alert>
-        ) : salesDailyTotalsQuery.isError ? (
+        ) : hasDailyTotalsLoadError ? (
           <Alert severity="error">
             {extractApiErrorMessage(salesDailyTotalsQuery.error, 'Failed to load daily totals.')}
           </Alert>
-        ) : dailyTotalRows.length === 0 ? (
+        ) : !hasDailyTotalRows ? (
           <EmptyStateNotice
             severity="warning"
             title="No Daily Totals Found"
@@ -2449,11 +2453,11 @@ export function SalesPage() {
         )
       ) : salesQuery.isLoading ? (
         <Alert severity="info">Loading sales...</Alert>
-      ) : salesQuery.isError ? (
+      ) : hasSalesLoadError ? (
         <Alert severity="error">
           {extractApiErrorMessage(salesQuery.error, 'Failed to load sales.')}
         </Alert>
-      ) : rows.length === 0 ? (
+      ) : !hasSalesRows ? (
         <EmptyStateNotice
           severity="warning"
           title="No Sales Found"
