@@ -344,7 +344,12 @@ export function SalesPage() {
   const [cashierSearch, setCashierSearch] = useState<string>(() => searchParams.get('cashier_search') ?? '');
   const [cashierSearchDebounced, setCashierSearchDebounced] = useState<string>(() => searchParams.get('cashier_search') ?? '');
   const [dateFrom, setDateFrom] = useState<string>(() => searchParams.get('date_from') ?? '');
-  const [dateTo, setDateTo] = useState<string>(() => searchParams.get('date_to') ?? '');
+  const [dateTo, setDateTo] = useState<string>(() => {
+    const from = searchParams.get('date_from') ?? '';
+    const to = searchParams.get('date_to') ?? '';
+    return from && to && to < from ? from : to;
+  });
+  const effectiveDateTo = dateFrom && dateTo && dateTo < dateFrom ? dateFrom : dateTo;
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const saleQuery = useSaleQuery(selectedId ?? 0, !!selectedId && canSalesView);
@@ -452,6 +457,12 @@ export function SalesPage() {
   }, [variantSearch, openCreate]);
 
   useEffect(() => {
+    if (!dateFrom || !dateTo || dateTo >= dateFrom) return;
+    setDateTo(dateFrom);
+    setPage(1);
+  }, [dateFrom, dateTo]);
+
+  useEffect(() => {
     if (!canBranchView) return;
     if (branchId !== '' || !branchesQuery.data?.length) return;
     const preferred = typeof assignedBranchId === 'number'
@@ -488,7 +499,7 @@ export function SalesPage() {
       if (paymentStatus) next.set('payment_status', paymentStatus);
       if (voidRequestStatus) next.set('void_request_status', voidRequestStatus);
       if (dateFrom) next.set('date_from', dateFrom);
-      if (dateTo) next.set('date_to', dateTo);
+      if (effectiveDateTo) next.set('date_to', effectiveDateTo);
       if (page !== 1) next.set('page', String(page));
       if (searchDebounced) next.set('search', searchDebounced);
       if (cashierSearchDebounced) next.set('cashier_search', cashierSearchDebounced);
@@ -497,7 +508,7 @@ export function SalesPage() {
       setSearchParams(next, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branchId, isCashierRole, adminSalesView, status, paymentStatus, voidRequestStatus, dateFrom, dateTo, page, searchDebounced, cashierSearchDebounced]);
+  }, [branchId, isCashierRole, adminSalesView, status, paymentStatus, voidRequestStatus, dateFrom, effectiveDateTo, page, searchDebounced, cashierSearchDebounced]);
 
   const salesQuery = useSalesQuery(
     {
@@ -507,7 +518,7 @@ export function SalesPage() {
       payment_status: isCashierRole ? undefined : paymentStatus || undefined,
       void_request_status: isCashierRole ? undefined : voidRequestStatus || undefined,
       date_from: isCashierRole ? undefined : dateFrom || undefined,
-      date_to: isCashierRole ? undefined : dateTo || undefined,
+      date_to: isCashierRole ? undefined : effectiveDateTo || undefined,
       search: isCashierRole ? undefined : searchDebounced || undefined,
       cashier_search: isCashierRole ? undefined : cashierSearchDebounced || undefined,
       include_items: isCashierRole ? undefined : 1,
@@ -522,7 +533,7 @@ export function SalesPage() {
       payment_status: isCashierRole ? undefined : paymentStatus || undefined,
       void_request_status: isCashierRole ? undefined : voidRequestStatus || undefined,
       date_from: isCashierRole ? undefined : dateFrom || undefined,
-      date_to: isCashierRole ? undefined : dateTo || undefined,
+      date_to: isCashierRole ? undefined : effectiveDateTo || undefined,
       search: isCashierRole ? undefined : searchDebounced || undefined,
       cashier_search: isCashierRole ? undefined : cashierSearchDebounced || undefined,
     },
@@ -1605,7 +1616,11 @@ export function SalesPage() {
               type="date"
               value={dateFrom}
               onChange={(event) => {
-                setDateFrom(event.target.value);
+                const nextDateFrom = event.target.value;
+                setDateFrom(nextDateFrom);
+                if (nextDateFrom && dateTo && dateTo < nextDateFrom) {
+                  setDateTo(nextDateFrom);
+                }
                 setPage(1);
               }}
               InputLabelProps={{ shrink: true }}
@@ -1617,10 +1632,12 @@ export function SalesPage() {
               type="date"
               value={dateTo}
               onChange={(event) => {
-                setDateTo(event.target.value);
+                const nextDateTo = event.target.value;
+                setDateTo(dateFrom && nextDateTo && nextDateTo < dateFrom ? dateFrom : nextDateTo);
                 setPage(1);
               }}
               InputLabelProps={{ shrink: true }}
+              inputProps={{ min: dateFrom || undefined }}
               sx={{ width: { xs: '100%', md: 165 } }}
             />
             <TextField
@@ -2333,7 +2350,9 @@ export function SalesPage() {
         salesDailyTotalsQuery.isLoading ? (
           <Alert severity="info">Loading daily totals...</Alert>
         ) : salesDailyTotalsQuery.isError ? (
-          <Alert severity="error">Failed to load daily totals.</Alert>
+          <Alert severity="error">
+            {extractApiErrorMessage(salesDailyTotalsQuery.error, 'Failed to load daily totals.')}
+          </Alert>
         ) : dailyTotalRows.length === 0 ? (
           <EmptyStateNotice
             severity="warning"
@@ -2431,7 +2450,9 @@ export function SalesPage() {
       ) : salesQuery.isLoading ? (
         <Alert severity="info">Loading sales...</Alert>
       ) : salesQuery.isError ? (
-        <Alert severity="error">Failed to load sales.</Alert>
+        <Alert severity="error">
+          {extractApiErrorMessage(salesQuery.error, 'Failed to load sales.')}
+        </Alert>
       ) : rows.length === 0 ? (
         <EmptyStateNotice
           severity="warning"

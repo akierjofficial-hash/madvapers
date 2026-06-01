@@ -57,7 +57,7 @@ class SalesController extends Controller
 
         $filteredSales = Sale::query()
             ->selectRaw('sales.id')
-            ->selectRaw('DATE(COALESCE(sales.posted_at, sales.created_at)) as sale_date')
+            ->selectRaw($this->salesBusinessDateExpression('sales.posted_at', 'sales.created_at') . ' as sale_date')
             ->selectRaw('sales.subtotal')
             ->selectRaw('sales.discount_total')
             ->selectRaw('sales.grand_total')
@@ -732,6 +732,7 @@ class SalesController extends Controller
         $like = $driver === 'pgsql' ? 'ilike' : 'like';
         $textCast = in_array($driver, ['mysql', 'mariadb'], true) ? 'CHAR' : 'TEXT';
         $likeSql = $driver === 'pgsql' ? 'ILIKE' : 'LIKE';
+        $saleDateExpression = $this->salesBusinessDateExpression();
 
         $this->scopeToAssignedBranch($request, $q, 'branch_id');
 
@@ -772,12 +773,24 @@ class SalesController extends Controller
         }
 
         if ($request->filled('date_from')) {
-            $q->whereDate(DB::raw('COALESCE(posted_at, created_at)'), '>=', (string) $request->input('date_from'));
+            $q->whereRaw("{$saleDateExpression} >= ?", [(string) $request->input('date_from')]);
         }
 
         if ($request->filled('date_to')) {
-            $q->whereDate(DB::raw('COALESCE(posted_at, created_at)'), '<=', (string) $request->input('date_to'));
+            $q->whereRaw("{$saleDateExpression} <= ?", [(string) $request->input('date_to')]);
         }
+    }
+
+    private function salesBusinessDateExpression(string $postedAtColumn = 'posted_at', string $createdAtColumn = 'created_at'): string
+    {
+        $source = "COALESCE({$postedAtColumn}, {$createdAtColumn})";
+
+        return match (DB::getDriverName()) {
+            'pgsql' => "DATE(({$source} AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Manila')",
+            'mysql', 'mariadb' => "DATE(CONVERT_TZ({$source}, '+00:00', '+08:00'))",
+            'sqlite' => "DATE(datetime({$source}, '+8 hours'))",
+            default => "DATE({$source})",
+        };
     }
 
     private function postSaleStockIfNeeded(

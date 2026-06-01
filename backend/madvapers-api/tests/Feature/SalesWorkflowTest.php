@@ -295,9 +295,9 @@ class SalesWorkflowTest extends TestCase
         $cashierSaleTwoId = (int) ($cashierSaleTwo['id'] ?? 0);
         $this->postJson("/api/sales/{$cashierSaleTwoId}/post")->assertOk();
         Sale::query()->whereKey($cashierSaleTwoId)->update([
-            'created_at' => '2030-01-05 17:00:00',
-            'updated_at' => '2030-01-05 17:05:00',
-            'posted_at' => '2030-01-05 17:05:00',
+            'created_at' => '2030-01-05 09:00:00',
+            'updated_at' => '2030-01-05 09:05:00',
+            'posted_at' => '2030-01-05 09:05:00',
         ]);
 
         $admin = User::query()->where('email', 'admin@madvapers.local')->firstOrFail();
@@ -332,6 +332,49 @@ class SalesWorkflowTest extends TestCase
             ->assertJsonPath('data.0.net_sales', 190)
             ->assertJsonPath('data.0.paid_total', 90)
             ->assertJsonPath('data.0.unpaid_total', 100);
+    }
+
+    public function test_admin_sales_filters_use_manila_business_date(): void
+    {
+        $branch = Branch::query()->where('code', 'BAGACAY')->firstOrFail();
+        $balance = InventoryBalance::query()
+            ->where('branch_id', $branch->id)
+            ->where('qty_on_hand', '>', 0)
+            ->orderBy('id')
+            ->firstOrFail();
+
+        $this->actingAsUser('admin@madvapers.local');
+
+        $sale = $this->postJson('/api/sales', [
+            'branch_id' => $branch->id,
+            'items' => [[
+                'product_variant_id' => $balance->product_variant_id,
+                'qty' => 1,
+                'unit_price' => 100,
+            ]],
+        ])->assertCreated()->json();
+        $saleId = (int) ($sale['id'] ?? 0);
+        $this->postJson("/api/sales/{$saleId}/post")->assertOk();
+
+        Sale::query()->whereKey($saleId)->update([
+            'created_at' => '2030-01-05 16:20:00',
+            'updated_at' => '2030-01-05 16:30:00',
+            'posted_at' => '2030-01-05 16:30:00',
+        ]);
+
+        $this->getJson("/api/sales?branch_id={$branch->id}&date_from=2030-01-06&date_to=2030-01-06")
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $saleId);
+
+        $this->getJson("/api/sales/daily-totals?branch_id={$branch->id}&date_from=2030-01-06&date_to=2030-01-06")
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.sale_date', '2030-01-06');
+
+        $this->getJson("/api/sales?branch_id={$branch->id}&date_from=2030-01-05&date_to=2030-01-05")
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
     }
 
     public function test_cannot_post_sale_when_stock_was_already_consumed_by_previous_posted_sale(): void
